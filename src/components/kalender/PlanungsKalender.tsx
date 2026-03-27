@@ -257,6 +257,7 @@ export function PlanungsKalender() {
 
       const heute = format(new Date(), "yyyy-MM-dd");
 
+      /** Projekte mit mindestens einem Einsatz ab heute gelten als „eingeplant“. */
       const { data: busyRows } = await supabase
         .from("assignments")
         .select("project_id")
@@ -269,16 +270,55 @@ export function PlanungsKalender() {
           .filter(Boolean)
       );
 
-      const { data: geplantRows } = await supabase
+      const { data: offeneProjektRows, error: offenErr } = await supabase
         .from("projects")
         .select(projektSelect)
-        .eq("status", "geplant")
-        .order("title");
+        .neq("status", "abgeschlossen");
 
-      const ungeplant = (geplantRows ?? []).filter(
-        (p) => !busyIds.has(p.id as string)
-      ) as Record<string, unknown>[];
-      setUngeplanteProjekte(ungeplant.map(mapUngeplantRow));
+      if (offenErr) {
+        toast.error(
+          `Offene Projekte konnten nicht geladen werden: ${offenErr.message}`
+        );
+        setUngeplanteProjekte([]);
+      } else {
+        const ohneArchiviert = (offeneProjektRows ?? []).filter(
+          (p) => (p.status as string) !== "archiviert"
+        ) as Record<string, unknown>[];
+
+        const ungeplant = ohneArchiviert.filter(
+          (p) => !busyIds.has(p.id as string)
+        );
+
+        function prioRang(prio: string): number {
+          switch (prio) {
+            case "kritisch":
+              return 1;
+            case "hoch":
+              return 2;
+            case "normal":
+            case "mittel":
+              return 3;
+            case "niedrig":
+              return 4;
+            default:
+              return 5;
+          }
+        }
+
+        ungeplant.sort((a, b) => {
+          const pa = prioRang((a.priority as string) ?? "normal");
+          const pb = prioRang((b.priority as string) ?? "normal");
+          if (pa !== pb) return pa - pb;
+          const as = (a.planned_start as string | null) ?? null;
+          const bs = (b.planned_start as string | null) ?? null;
+          if (as == null && bs == null) return 0;
+          if (as == null) return 1;
+          if (bs == null) return -1;
+          return as.localeCompare(bs);
+        });
+
+        setUngeplanteProjekte(ungeplant.map(mapUngeplantRow));
+      }
 
       const selectMitPrioritaet =
         "id,employee_id,project_id,project_title,team_id,date,start_time,end_time,notes,prioritaet, projects(title,priority), teams(name,farbe)";
