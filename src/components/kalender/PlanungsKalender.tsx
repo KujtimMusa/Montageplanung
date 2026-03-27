@@ -181,9 +181,10 @@ export function PlanungsKalender() {
 
   const [zeitraumLabel, setZeitraumLabel] = useState("");
 
+  /** v2: alte Keys wiesen minSize in px aus; Storage-Key bump leert fehlerhafte Layouts. */
   const { defaultLayout: planungLayout, onLayoutChanged: planungLayoutChanged } =
     useDefaultLayout({
-      id: "planung-layout",
+      id: "planung-layout-v2",
       panelIds: ["projekte-sidebar", "kalender-mitte", "teams-sidebar"],
       storage:
         typeof window !== "undefined" ? window.localStorage : undefined,
@@ -1040,17 +1041,17 @@ export function PlanungsKalender() {
       />
 
       <ResizablePanelGroup
-        id="planung-layout"
+        id="planung-layout-v2"
         orientation="horizontal"
         defaultLayout={planungLayout}
         onLayoutChanged={planungLayoutChanged}
-        className="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950"
+        className="flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950"
       >
         <ResizablePanel
           id="projekte-sidebar"
           defaultSize="18%"
-          minSize={14}
-          maxSize={28}
+          minSize="14%"
+          maxSize="28%"
           collapsible
           className="flex min-h-0 min-w-0 flex-col"
         >
@@ -1059,13 +1060,13 @@ export function PlanungsKalender() {
 
         <ResizableHandle
           withHandle
-          className="w-px bg-zinc-800 transition-colors hover:bg-zinc-700 data-[resize-handle-active]:bg-blue-500"
+          className="w-px shrink-0 bg-zinc-800 transition-colors hover:bg-zinc-700 data-[resize-handle-active]:bg-blue-500"
         />
 
         <ResizablePanel
           id="kalender-mitte"
           defaultSize="64%"
-          minSize={50}
+          minSize="44%"
           className="flex min-h-0 min-w-0 flex-1 flex-col"
         >
           <div
@@ -1078,14 +1079,14 @@ export function PlanungsKalender() {
 
         <ResizableHandle
           withHandle
-          className="w-px bg-zinc-800 transition-colors hover:bg-zinc-700 data-[resize-handle-active]:bg-blue-500"
+          className="w-px shrink-0 bg-zinc-800 transition-colors hover:bg-zinc-700 data-[resize-handle-active]:bg-blue-500"
         />
 
         <ResizablePanel
           id="teams-sidebar"
           defaultSize="18%"
-          minSize={14}
-          maxSize={28}
+          minSize="14%"
+          maxSize="28%"
           collapsible
           className="flex min-h-0 min-w-0 flex-col"
         >
