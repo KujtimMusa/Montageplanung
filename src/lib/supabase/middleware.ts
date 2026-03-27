@@ -26,6 +26,7 @@ function istGeschuetzteRoute(pfad: string): boolean {
     "/notfall",
     "/einstellungen",
     "/teams",
+    "/ki",
     "/ki-assistent",
     "/benachrichtigungen",
   ];

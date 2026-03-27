@@ -44,7 +44,7 @@ export const sidebarNavigation: NavEintrag[] = [
     icon: Truck,
   },
   {
-    href: "/ki-assistent",
+    href: "/ki",
     label: "KI-Assistent",
     labelKurz: "KI",
     icon: Bot,

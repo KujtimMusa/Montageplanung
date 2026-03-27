@@ -214,24 +214,29 @@ export function NotfallModus() {
     [ausfallId, ausfall?.department_id, datum, mitarbeiter, supabase]
   );
 
-  async function abwesenheitenFuerDatum(): Promise<
+  const abwesenheitenFuerDatum = useCallback(async (): Promise<
     { employeeId: string; startDate: string; endDate: string; type: string }[]
-  > {
+  > => {
     const { data, error } = await supabase
       .from("absences")
       .select("employee_id,start_date,end_date,type")
       .lte("start_date", datum)
       .gte("end_date", datum);
     if (error || !data) return [];
-    return (data as { employee_id: string; start_date: string; end_date: string; type: string }[]).map(
-      (r) => ({
-        employeeId: r.employee_id,
-        startDate: r.start_date,
-        endDate: r.end_date,
-        type: r.type,
-      })
-    );
-  }
+    return (
+      data as {
+        employee_id: string;
+        start_date: string;
+        end_date: string;
+        type: string;
+      }[]
+    ).map((r) => ({
+      employeeId: r.employee_id,
+      startDate: r.start_date,
+      endDate: r.end_date,
+      type: r.type,
+    }));
+  }, [datum, supabase]);
 
   const notfallAusloesen = useCallback(async () => {
     if (!ausfallId || !datum) {
@@ -346,7 +351,15 @@ export function NotfallModus() {
     } finally {
       setKiLaed(false);
     }
-  }, [ausfallId, datum, betroffeneLaden, ausfall, supabase, mitarbeiter]);
+  }, [
+    ausfallId,
+    datum,
+    betroffeneLaden,
+    ausfall,
+    supabase,
+    mitarbeiter,
+    abwesenheitenFuerDatum,
+  ]);
 
   function ersatzManuellSetzen(einsatzId: string, employeeId: string | null) {
     setManuellerErsatz((prev) => {

@@ -45,7 +45,6 @@ import {
   Clock,
   Eye,
   ExternalLink,
-  GripVertical,
   ListOrdered,
   Mail,
   MessageCircle,
