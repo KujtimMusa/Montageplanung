@@ -103,7 +103,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         antwort:
           `Die KI konnte gerade nicht antworten (${detail}). ` +
-          `Prüfen Sie GEMINI_API_KEY, ggf. GEMINI_MODEL (Standard: gemini-1.5-flash) und Kontingent bei Google AI Studio.`,
+          `Prüfen Sie GEMINI_API_KEY, ggf. GEMINI_MODEL (Standard: gemini-2.5-flash) und Kontingent bei Google AI Studio.`,
       });
     }
   } catch (e) {

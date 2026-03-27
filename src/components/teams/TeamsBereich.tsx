@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Building2, Users, UsersRound } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -19,8 +19,6 @@ import { cn } from "@/lib/utils";
 const tabs = ["mitarbeiter", "teams", "abteilungen"] as const;
 
 export function TeamsBereich() {
-  const router = useRouter();
-  const pathname = usePathname();
   const sp = useSearchParams();
   const param = sp.get("tab");
   const initial =
@@ -35,9 +33,26 @@ export function TeamsBereich() {
     }
   }, [param]);
 
+  /** Tab nur per History aktualisieren — kein router.replace (vermeidet RSC-Reload & Toasts). */
+  useEffect(() => {
+    function onPopState() {
+      const p = new URL(window.location.href).searchParams.get("tab");
+      if (p && tabs.includes(p as (typeof tabs)[number])) {
+        setTab(p);
+      } else {
+        setTab("mitarbeiter");
+      }
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
   function onTabChange(v: string) {
     setTab(v);
-    router.replace(`${pathname}?tab=${v}`, { scroll: false });
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", v);
+    window.history.replaceState(null, "", url.pathname + url.search + url.hash);
   }
 
   return (
@@ -61,7 +76,7 @@ export function TeamsBereich() {
             <TabsList
               variant="default"
               className={cn(
-                "grid h-auto w-full max-w-xl grid-cols-3 gap-1 rounded-lg bg-zinc-950/80 p-1 ring-1 ring-zinc-800/90"
+                "grid h-auto w-full grid-cols-3 gap-1 rounded-lg bg-zinc-950/80 p-1 ring-1 ring-zinc-800/90"
               )}
             >
               <TabsTrigger

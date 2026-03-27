@@ -44,6 +44,16 @@ export async function POST() {
       );
     }
 
+    const { count: mitarbeiterAnzahl, error: countErr } = await admin
+      .from("employees")
+      .select("id", { count: "exact", head: true });
+    if (countErr) {
+      return NextResponse.json({ fehler: countErr.message }, { status: 500 });
+    }
+
+    const ersterInDerDatenbank = (mitarbeiterAnzahl ?? 0) === 0;
+    const rolle = ersterInDerDatenbank ? "admin" : "teamleiter";
+
     const meta = user.user_metadata as { name?: string } | undefined;
     const name =
       (meta?.name && String(meta.name).trim()) ||
@@ -53,7 +63,7 @@ export async function POST() {
     const { error } = await admin.from("employees").insert({
       name,
       email: user.email ?? null,
-      role: "teamleiter",
+      role: rolle,
       auth_user_id: user.id,
       active: true,
     });

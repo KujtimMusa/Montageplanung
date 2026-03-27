@@ -38,6 +38,9 @@ import { toast } from "sonner";
 import { Loader2, Pencil, Plus, Trash2, Users } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { nachrichtAusUnbekannt } from "@/lib/fehler";
+import { StammdatenSection } from "@/components/stammdaten/StammdatenSection";
+import { StammdatenFilterBar } from "@/components/stammdaten/StammdatenFilterBar";
+import { StammdatenSheetFooter } from "@/components/stammdaten/StammdatenSheetFooter";
 
 type Zeile = {
   id: string;
@@ -70,10 +73,26 @@ const koordinatorRollen = [
   { wert: "admin", label: "Admin" },
   { wert: "abteilungsleiter", label: "Abteilungsleiter" },
   { wert: "teamleiter", label: "Teamleiter" },
+  { wert: "monteur", label: "Mitarbeiter (Ausführung)" },
 ] as const;
 
 function apiFehler(json: { error?: string; fehler?: string }): string {
   return json.error ?? json.fehler ?? "Unbekannter Fehler.";
+}
+
+/** Entspricht darfMitarbeiterVerwalten (nur für Client, ohne server-Import). */
+function darfAlleMitarbeiterVerwalten(rolle: string | undefined): boolean {
+  return rolle === "admin" || rolle === "abteilungsleiter";
+}
+
+function rollenLabel(rolle: string): string {
+  const m: Record<string, string> = {
+    admin: "Admin",
+    abteilungsleiter: "Abteilungsleiter",
+    teamleiter: "Teamleiter",
+    monteur: "Mitarbeiter (Ausführung)",
+  };
+  return m[rolle] ?? rolle;
 }
 
 export function MitarbeiterVerwaltung() {
@@ -102,6 +121,7 @@ export function MitarbeiterVerwaltung() {
   const [koordinatorLaedt, setKoordinatorLaedt] = useState(false);
 
   const [loeschenId, setLoeschenId] = useState<string | null>(null);
+  const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [koorBearbeiten, setKoorBearbeiten] = useState<Zeile | null>(null);
   const [koorAktiv, setKoorAktiv] = useState(true);
   const [koorSpeichert, setKoorSpeichert] = useState(false);
@@ -123,6 +143,14 @@ export function MitarbeiterVerwaltung() {
   const laden = useCallback(async () => {
     setLaedt(true);
     try {
+      const syncRes = await fetch("/api/profil/self-sync", { method: "POST" });
+      if (syncRes.ok) {
+        const sj = (await syncRes.json()) as { erstellt?: boolean };
+        if (sj.erstellt) {
+          toast.success("Dein Mitarbeiterprofil wurde angelegt.");
+        }
+      }
+
       const [{ data: mitarbeiter, error: e1 }, { data: ab }, { data: tm }] =
         await Promise.all([
           supabase
@@ -177,7 +205,7 @@ export function MitarbeiterVerwaltung() {
       );
     } catch (e) {
       toast.error(
-        e instanceof Error ? e.message : "Mitarbeiter konnten nicht geladen werden."
+        nachrichtAusUnbekannt(e, "Mitarbeiter konnten nicht geladen werden.")
       );
     } finally {
       setLaedt(false);
@@ -187,6 +215,17 @@ export function MitarbeiterVerwaltung() {
   useEffect(() => {
     void laden();
   }, [laden]);
+
+  useEffect(() => {
+    void supabase.auth.getUser().then(({ data }) => {
+      setAuthUserId(data.user?.id ?? null);
+    });
+  }, [supabase]);
+
+  const meineRolle = useMemo(() => {
+    if (!authUserId) return null;
+    return zeilen.find((z) => z.auth_user_id === authUserId)?.role ?? null;
+  }, [zeilen, authUserId]);
 
   const abteilungFuerTeam = useCallback(
     (teamId: string | null) => {
@@ -204,7 +243,7 @@ export function MitarbeiterVerwaltung() {
 
   const gefilterteZeilen = useMemo(() => {
     const q = suche.trim().toLowerCase();
-    return zeilen.filter((z) => {
+    const filtered = zeilen.filter((z) => {
       if (q && !z.name.toLowerCase().includes(q)) return false;
       if (typFilter === "monteur" && z.auth_user_id !== null) return false;
       if (typFilter === "koordinator" && z.auth_user_id === null) return false;
@@ -213,7 +252,21 @@ export function MitarbeiterVerwaltung() {
       if (teamFilter !== "alle" && z.team_id !== teamFilter) return false;
       return true;
     });
-  }, [zeilen, suche, typFilter, abteilungFilter, teamFilter]);
+    if (!authUserId) return filtered;
+    return [...filtered].sort((a, b) => {
+      const aSel = a.auth_user_id === authUserId ? 0 : 1;
+      const bSel = b.auth_user_id === authUserId ? 0 : 1;
+      if (aSel !== bSel) return aSel - bSel;
+      return a.name.localeCompare(b.name, "de");
+    });
+  }, [
+    zeilen,
+    suche,
+    typFilter,
+    abteilungFilter,
+    teamFilter,
+    authUserId,
+  ]);
 
   async function rolleAendern(id: string, neueRolle: string) {
     const res = await fetch(`/api/admin/mitarbeiter/${id}`, {
@@ -296,7 +349,7 @@ export function MitarbeiterVerwaltung() {
           });
           if (e2) throw e2;
         }
-        toast.success("Monteur gespeichert.");
+        toast.success("Mitarbeiter gespeichert.");
       } else {
         const { data: neu, error } = await supabase
           .from("employees")
@@ -312,7 +365,7 @@ export function MitarbeiterVerwaltung() {
           });
           if (e2) throw e2;
         }
-        toast.success("Monteur angelegt.");
+        toast.success("Mitarbeiter angelegt.");
       }
       setMonteurSheetOffen(false);
       void laden();
@@ -419,12 +472,11 @@ export function MitarbeiterVerwaltung() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-lg font-semibold tracking-tight text-zinc-50">
-          Mitarbeiter
-        </h2>
-        <div className="flex flex-wrap gap-2">
+    <StammdatenSection
+      title="Mitarbeiter"
+      description="Aktionen → Filter → Tabelle. Rolle in der Spalte „Rolle“ (nur bei Eintrag mit App-Konto)."
+      actions={
+        <>
           <Button
             type="button"
             variant="outline"
@@ -433,7 +485,7 @@ export function MitarbeiterVerwaltung() {
             onClick={() => monteurSheetOeffnen()}
           >
             <Plus className="size-4" />
-            Monteur hinzufügen
+            Mitarbeiter hinzufügen
           </Button>
           <Button
             type="button"
@@ -443,10 +495,10 @@ export function MitarbeiterVerwaltung() {
           >
             Koordinator einladen
           </Button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 rounded-xl border border-zinc-800/70 bg-zinc-900/25 p-4 sm:grid-cols-2 lg:grid-cols-4">
+        </>
+      }
+    >
+      <StammdatenFilterBar>
         <Input
           placeholder="Suche nach Name…"
           value={suche}
@@ -464,7 +516,7 @@ export function MitarbeiterVerwaltung() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="alle">Alle Typen</SelectItem>
-            <SelectItem value="monteur">Monteure</SelectItem>
+            <SelectItem value="monteur">Nur ohne App-Konto</SelectItem>
             <SelectItem value="koordinator">Koordinatoren</SelectItem>
           </SelectContent>
         </Select>
@@ -500,7 +552,7 @@ export function MitarbeiterVerwaltung() {
             ))}
           </SelectContent>
         </Select>
-      </div>
+      </StammdatenFilterBar>
 
       {zeilen.length === 0 ? (
         <Card className="border-dashed border-zinc-700 bg-zinc-900/40">
@@ -510,11 +562,11 @@ export function MitarbeiterVerwaltung() {
               Noch keine Mitarbeiter vorhanden
             </p>
             <p className="max-w-sm text-sm text-zinc-500">
-              Lege Monteure an oder lade Koordinatoren per E-Mail ein.
+              Lege Mitarbeiter an oder lade Koordinatoren per E-Mail ein.
             </p>
             <Button type="button" onClick={() => monteurSheetOeffnen()}>
               <Plus className="mr-1 size-4" />
-              Monteur hinzufügen
+              Mitarbeiter hinzufügen
             </Button>
           </CardContent>
         </Card>
@@ -548,12 +600,24 @@ export function MitarbeiterVerwaltung() {
                   const istKoordinator = z.auth_user_id !== null;
                   return (
                     <TableRow key={z.id} className="border-zinc-800">
-                      <TableCell className="font-medium">{z.name}</TableCell>
+                      <TableCell className="font-medium">
+                        <span className="inline-flex flex-wrap items-center gap-2">
+                          {z.name}
+                          {authUserId && z.auth_user_id === authUserId ? (
+                            <Badge
+                              variant="outline"
+                              className="border-emerald-600/50 text-emerald-400"
+                            >
+                              Du
+                            </Badge>
+                          ) : null}
+                        </span>
+                      </TableCell>
                       <TableCell>
                         {istKoordinator ? (
                           <Badge>Koordinator</Badge>
                         ) : (
-                          <Badge variant="secondary">Monteur</Badge>
+                          <Badge variant="secondary">Mitarbeiter</Badge>
                         )}
                       </TableCell>
                       <TableCell>{z.abteilungsName ?? "—"}</TableCell>
@@ -572,23 +636,46 @@ export function MitarbeiterVerwaltung() {
                       </TableCell>
                       <TableCell>
                         {istKoordinator ? (
-                          <Select
-                            value={z.role}
-                            onValueChange={(v) => {
-                              if (v) void rolleAendern(z.id, v);
-                            }}
-                          >
-                            <SelectTrigger className="h-8 w-[190px] border-zinc-600">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {koordinatorRollen.map((r) => (
-                                <SelectItem key={r.wert} value={r.wert}>
-                                  {r.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          (() => {
+                            const darfAlle =
+                              meineRolle !== null &&
+                              darfAlleMitarbeiterVerwalten(meineRolle);
+                            const eigeneZeile =
+                              authUserId !== null &&
+                              z.auth_user_id === authUserId;
+                            const kannDropdown =
+                              darfAlle ||
+                              (eigeneZeile &&
+                                (z.role === "monteur" || z.role === "teamleiter"));
+                            const optionen = darfAlle
+                              ? koordinatorRollen
+                              : koordinatorRollen.filter((r) =>
+                                  ["monteur", "teamleiter"].includes(r.wert)
+                                );
+                            return kannDropdown ? (
+                              <Select
+                                value={z.role}
+                                onValueChange={(v) => {
+                                  if (v) void rolleAendern(z.id, v);
+                                }}
+                              >
+                                <SelectTrigger className="h-8 min-w-[12rem] max-w-[220px] border-zinc-600">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {optionen.map((r) => (
+                                    <SelectItem key={r.wert} value={r.wert}>
+                                      {r.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <span className="text-muted-foreground">
+                                {rollenLabel(z.role)}
+                              </span>
+                            );
+                          })()
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
@@ -636,12 +723,14 @@ export function MitarbeiterVerwaltung() {
           className="flex w-full max-h-[90dvh] flex-col gap-0 overflow-y-auto border-zinc-800 bg-zinc-950 p-0 shadow-2xl sm:max-w-md"
         >
           <form
-            onSubmit={monteurF.handleSubmit((d) => void monteurSpeichern(d))}
+            onSubmit={monteurF.handleSubmit(async (d) => {
+              await monteurSpeichern(d);
+            })}
             className="flex flex-col"
           >
             <SheetHeader className="sticky top-0 z-10 border-b border-zinc-800/80 bg-zinc-950/95 px-4 pb-3 pt-4 pr-12 backdrop-blur-sm">
               <SheetTitle className="text-lg">
-                {bearbeitenId ? "Monteur bearbeiten" : "Monteur hinzufügen"}
+                {bearbeitenId ? "Mitarbeiter bearbeiten" : "Mitarbeiter hinzufügen"}
               </SheetTitle>
             </SheetHeader>
             <div className="space-y-5 px-4 py-5">
@@ -757,11 +846,10 @@ export function MitarbeiterVerwaltung() {
                 </div>
               </div>
             </div>
-            <div className="sticky bottom-0 border-t border-zinc-800/90 bg-zinc-950/95 px-4 py-4 backdrop-blur-sm">
-              <Button type="submit" className="w-full sm:w-auto">
-                Speichern
-              </Button>
-            </div>
+            <StammdatenSheetFooter
+              onCancel={() => setMonteurSheetOffen(false)}
+              isSubmitting={monteurF.formState.isSubmitting}
+            />
           </form>
         </SheetContent>
       </Sheet>
@@ -876,6 +964,6 @@ export function MitarbeiterVerwaltung() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </StammdatenSection>
   );
 }

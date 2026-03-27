@@ -6,6 +6,7 @@ const erlaubteRollen = [
   "admin",
   "abteilungsleiter",
   "teamleiter",
+  "monteur",
 ] as const;
 
 /**
@@ -27,18 +28,34 @@ export async function PATCH(
 
   const { data: ich } = await supabase
     .from("employees")
-    .select("role")
+    .select("id, role")
     .eq("auth_user_id", user.id)
     .maybeSingle();
-
-  if (!darfMitarbeiterVerwalten(ich?.role)) {
-    return NextResponse.json({ fehler: "Keine Berechtigung." }, { status: 403 });
-  }
 
   const body = (await request.json()) as {
     role?: string;
     active?: boolean;
   };
+
+  const canManageAll = darfMitarbeiterVerwalten(ich?.role);
+  const selbstNurMonteurTeamleiter =
+    ich &&
+    id === ich.id &&
+    ich.role !== undefined &&
+    ["monteur", "teamleiter"].includes(ich.role as string) &&
+    body.role !== undefined &&
+    ["monteur", "teamleiter"].includes(body.role as string);
+
+  if (!canManageAll && !selbstNurMonteurTeamleiter) {
+    return NextResponse.json({ fehler: "Keine Berechtigung." }, { status: 403 });
+  }
+
+  if (!canManageAll && selbstNurMonteurTeamleiter && body.active !== undefined) {
+    return NextResponse.json(
+      { fehler: "Nur Leitung kann den Aktiv-Status ändern." },
+      { status: 403 }
+    );
+  }
 
   const update: Record<string, unknown> = {};
   if (typeof body.active === "boolean") {

@@ -1,9 +1,9 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-/** Standard: 1.5 Flash ist stabil; per GEMINI_MODEL überschreibbar (z. B. gemini-2.0-flash). */
+/** Standard: 2.5 Flash; per GEMINI_MODEL überschreibbar. */
 function modellId(): string {
   return (
-    process.env.GEMINI_MODEL?.trim() || "gemini-1.5-flash"
+    process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash"
   );
 }
 

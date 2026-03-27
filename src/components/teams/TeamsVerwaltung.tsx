@@ -27,11 +27,17 @@ import {
 } from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import {
-  Avatar,
-  AvatarFallback,
-  AvatarGroup,
-  AvatarGroupCount,
-} from "@/components/ui/avatar";
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { StammdatenSection } from "@/components/stammdaten/StammdatenSection";
+import { StammdatenFilterBar } from "@/components/stammdaten/StammdatenFilterBar";
+import { StammdatenSheetFooter } from "@/components/stammdaten/StammdatenSheetFooter";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Popover,
   PopoverContent,
@@ -118,6 +124,7 @@ export function TeamsVerwaltung() {
   const [sucheMitglied, setSucheMitglied] = useState("");
 
   const [loeschenTeam, setLoeschenTeam] = useState<TeamRow | null>(null);
+  const [sucheTeam, setSucheTeam] = useState("");
 
   const teamF = useForm<TeamForm>({
     resolver: zodResolver(teamSchema),
@@ -229,6 +236,17 @@ export function TeamsVerwaltung() {
   useEffect(() => {
     void laden();
   }, [laden]);
+
+  const teamsGefiltert = useMemo(() => {
+    const q = sucheTeam.trim().toLowerCase();
+    if (!q) return teams;
+    return teams.filter(
+      (t) =>
+        t.name.toLowerCase().includes(q) ||
+        (t.abteilungName ?? "").toLowerCase().includes(q) ||
+        (t.description ?? "").toLowerCase().includes(q)
+    );
+  }, [teams, sucheTeam]);
 
   const mitgliederNachTeam = useMemo(() => {
     const m: Record<string, Mitglied[]> = {};
@@ -394,11 +412,10 @@ export function TeamsVerwaltung() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-lg font-semibold tracking-tight text-zinc-50">
-          Teams
-        </h2>
+    <StammdatenSection
+      title="Teams"
+      description="Aktionen → Suche → Tabelle. Mitglieder über „Mitglieder“; Bearbeiten öffnet das Formular mit Speichern."
+      actions={
         <Button
           type="button"
           size="sm"
@@ -408,7 +425,16 @@ export function TeamsVerwaltung() {
           <Plus className="size-4" />
           Neues Team
         </Button>
-      </div>
+      }
+    >
+      <StammdatenFilterBar>
+        <Input
+          placeholder="Team oder Abteilung suchen…"
+          value={sucheTeam}
+          onChange={(e) => setSucheTeam(e.target.value)}
+          className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-950/90 sm:col-span-2 lg:col-span-4"
+        />
+      </StammdatenFilterBar>
 
       {teams.length === 0 ? (
         <Card className="border-dashed border-zinc-700 bg-zinc-900/40">
@@ -424,98 +450,96 @@ export function TeamsVerwaltung() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {teams.map((team) => {
-            const mm = mitgliederNachTeam[team.id] ?? [];
-            const leaderName = team.leader_id
-              ? mm.find((m) => m.employee_id === team.leader_id)?.name ??
-                alleMitarbeiter.find((a) => a.id === team.leader_id)?.name ??
-                null
-              : null;
-            const avatare = mm.slice(0, 4);
-            const mehr = mm.length > 4 ? mm.length - 4 : 0;
-
-            return (
-              <Card
-                key={team.id}
-                className="overflow-hidden border-zinc-800 bg-zinc-900/60"
-                style={{
-                  borderLeftColor: team.farbe,
-                  borderLeftWidth: 4,
-                }}
-              >
-                <CardContent className="space-y-3 p-4">
-                  <div>
-                    <p className="text-base font-semibold text-zinc-50">
-                      {team.name}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {team.abteilungName ?? "—"}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <AvatarGroup className="pl-0.5">
-                      {avatare.map((m) => (
-                        <Avatar
-                          key={m.employee_id}
+        <div className="overflow-x-auto rounded-md border border-zinc-800">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-zinc-800 hover:bg-transparent">
+                <TableHead className="w-12">Farbe</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Abteilung</TableHead>
+                <TableHead>Leitung</TableHead>
+                <TableHead className="w-24 text-right">Mitglieder</TableHead>
+                <TableHead className="text-right">Aktionen</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {teamsGefiltert.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={6}
+                    className="text-center text-muted-foreground"
+                  >
+                    Keine Treffer für die Suche.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                teamsGefiltert.map((team) => {
+                  const mm = mitgliederNachTeam[team.id] ?? [];
+                  const leaderName = team.leader_id
+                    ? mm.find((m) => m.employee_id === team.leader_id)?.name ??
+                      alleMitarbeiter.find((a) => a.id === team.leader_id)
+                        ?.name ??
+                      null
+                    : null;
+                  return (
+                    <TableRow key={team.id} className="border-zinc-800">
+                      <TableCell>
+                        <div
+                          className="size-4 rounded-full ring-1 ring-zinc-700"
+                          style={{ backgroundColor: team.farbe }}
+                          title={team.farbe}
+                        />
+                      </TableCell>
+                      <TableCell className="font-medium text-zinc-50">
+                        {team.name}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {team.abteilungName ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {leaderName ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {mm.length}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          type="button"
+                          variant="ghost"
                           size="sm"
-                          className="ring-2 ring-zinc-900"
-                          style={{
-                            backgroundColor: hexZuRgb(team.farbe, 0.45),
-                          }}
+                          className="h-8 gap-1"
+                          onClick={() => setDrawerTeam(team)}
                         >
-                          <AvatarFallback className="bg-transparent text-xs font-medium text-zinc-100">
-                            {initialen(m.name)}
-                          </AvatarFallback>
-                        </Avatar>
-                      ))}
-                      {mehr > 0 && (
-                        <AvatarGroupCount className="text-xs">
-                          +{mehr}
-                        </AvatarGroupCount>
-                      )}
-                    </AvatarGroup>
-                  </div>
-
-                  <p className="text-xs text-muted-foreground">
-                    Leitung: {leaderName ?? "—"}
-                  </p>
-
-                  <div className="flex flex-wrap items-center gap-1 border-t border-zinc-800 pt-3">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-8"
-                      onClick={() => setDrawerTeam(team)}
-                    >
-                      <UserPlus className="mr-1 size-3.5" />
-                      Mitglieder verwalten
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="size-8"
-                      onClick={() => teamSheetOeffnen(team)}
-                    >
-                      <Pencil className="size-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 text-destructive"
-                      onClick={() => setLoeschenTeam(team)}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+                          <UserPlus className="size-3.5" />
+                          Mitglieder
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-8"
+                          onClick={() => teamSheetOeffnen(team)}
+                          title="Bearbeiten"
+                        >
+                          <Pencil className="size-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 text-destructive"
+                          onClick={() => setLoeschenTeam(team)}
+                          title="Löschen"
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
         </div>
       )}
 
@@ -525,7 +549,9 @@ export function TeamsVerwaltung() {
           className="flex w-full max-h-[90dvh] flex-col gap-0 overflow-y-auto border-zinc-800 bg-zinc-950 p-0 shadow-2xl sm:max-w-md"
         >
           <form
-            onSubmit={teamF.handleSubmit((d) => void teamSpeichern(d))}
+            onSubmit={teamF.handleSubmit(async (d) => {
+              await teamSpeichern(d);
+            })}
             className="flex flex-col"
           >
             <SheetHeader className="sticky top-0 z-10 border-b border-zinc-800/80 bg-zinc-950/95 px-4 pb-3 pt-4 pr-12 backdrop-blur-sm">
@@ -625,11 +651,10 @@ export function TeamsVerwaltung() {
                 />
               </div>
             </div>
-            <div className="sticky bottom-0 border-t border-zinc-800/90 bg-zinc-950/95 px-4 py-4 backdrop-blur-sm">
-              <Button type="submit" className="w-full sm:w-auto">
-                Speichern
-              </Button>
-            </div>
+            <StammdatenSheetFooter
+              onCancel={() => setTeamSheetOffen(false)}
+              isSubmitting={teamF.formState.isSubmitting}
+            />
           </form>
         </SheetContent>
       </Sheet>
@@ -788,6 +813,6 @@ export function TeamsVerwaltung() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </StammdatenSection>
   );
 }

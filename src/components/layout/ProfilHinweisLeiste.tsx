@@ -17,7 +17,7 @@ type Props = {
 };
 
 /**
- * Oben unterhalb der Navigation: fehlendes Profil oder Rolle Monteur.
+ * Oben unterhalb der Navigation: fehlendes Profil oder Rolle ohne Leitungsrechte.
  */
 export function ProfilHinweisLeiste({ profil }: Props) {
   const router = useRouter();
@@ -82,8 +82,9 @@ export function ProfilHinweisLeiste({ profil }: Props) {
       <div className="mb-4 flex items-start gap-2 rounded-lg border border-zinc-700 bg-zinc-900/80 px-4 py-2.5 text-xs text-zinc-400">
         <Info className="mt-0.5 size-4 shrink-0 text-zinc-500" />
         <p>
-          Sie sind als <strong className="text-zinc-300">Monteur</strong>{" "}
-          eingetragen — Kalender und eigene Einsätze sind sichtbar.{" "}
+          Sie sind als <strong className="text-zinc-300">Mitarbeiter</strong>{" "}
+          ohne Leitungsrolle eingetragen — Kalender und eigene Einsätze sind
+          sichtbar.{" "}
           <strong className="text-zinc-300">Teams, Stammdaten und Projekte</strong>{" "}
           dürfen nur mit Leitungsrolle bearbeitet werden. Bitte einen Admin
           bitten, unter{" "}

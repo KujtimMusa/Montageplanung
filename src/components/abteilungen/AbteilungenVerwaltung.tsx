@@ -41,6 +41,7 @@ import { toast } from "sonner";
 import * as LucideIcons from "lucide-react";
 import { Building2, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { nachrichtAusUnbekannt } from "@/lib/fehler";
+import { StammdatenSection } from "@/components/stammdaten/StammdatenSection";
 
 type Zeile = {
   id: string;
@@ -226,25 +227,29 @@ export function AbteilungenVerwaltung() {
 
   if (listeLaedt) {
     return (
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <Loader2 className="size-5 animate-spin" />
-        Lade Abteilungen…
-      </div>
+      <StammdatenSection
+        title="Abteilungen"
+        description="Aktionen → Tabelle. Farbe und Icon im Seitenfeld; unten Abbrechen oder Speichern."
+      >
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Loader2 className="size-5 animate-spin" />
+          Lade Abteilungen…
+        </div>
+      </StammdatenSection>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-lg font-semibold tracking-tight text-zinc-50">
-          Abteilungen
-        </h2>
+    <StammdatenSection
+      title="Abteilungen"
+      description="Aktionen → Tabelle. Farbe und Icon im Seitenfeld; unten Abbrechen oder Speichern."
+      actions={
         <Button type="button" size="sm" className="gap-1" onClick={oeffnenNeu}>
           <Plus className="size-4" />
           Neue Abteilung
         </Button>
-      </div>
-
+      }
+    >
       {zeilen.length === 0 ? (
         <Card className="border-dashed border-zinc-700 bg-zinc-900/40">
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
@@ -443,6 +448,6 @@ export function AbteilungenVerwaltung() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </StammdatenSection>
   );
 }
