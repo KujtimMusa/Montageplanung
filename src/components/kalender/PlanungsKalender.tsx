@@ -37,7 +37,7 @@ import {
   parseISO,
 } from "date-fns";
 import { de } from "date-fns/locale";
-import { Clock, MapPin } from "lucide-react";
+import { CircleHelp, Clock, MapPin } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { ortLabelFromProjektJoin } from "@/lib/planung/ort-label";
@@ -50,6 +50,12 @@ import {
   type SyncfusionEvent,
 } from "@/lib/syncfusion/transform";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -147,7 +153,17 @@ function EinsatzTemplate(props: Record<string, unknown>) {
   const konflikt = Boolean(props.HatKonflikt);
   const projekt = String(props.ProjektTitel ?? "").trim();
   const ort = String(props.OrtLabel ?? "").trim();
-  const title = [String(props.Subject ?? ""), projekt, ort].filter(Boolean).join(" · ");
+  const rolleTag = (props.RolleTag as "Team" | "Partner") ?? "Team";
+  const rolleName = String(props.RolleName ?? "").trim();
+  const subject = String(props.Subject ?? "").trim();
+  const hauptTitel = projekt || subject.split(" · ")[0] || subject;
+  const title = [hauptTitel, rolleName, ort, String(props.ZeitLabel ?? "")]
+    .filter(Boolean)
+    .join(" · ");
+  const partnerBadge =
+    rolleTag === "Partner"
+      ? "border-violet-500/40 bg-violet-500/15 text-violet-200"
+      : "border-blue-500/40 bg-blue-500/15 text-blue-200";
   return (
     <div
       className="planung-sf-event-inner flex h-full min-h-[52px] w-full flex-col justify-center gap-0.5 overflow-hidden rounded-md border border-white/10 px-1.5 py-1 shadow-sm"
@@ -159,7 +175,7 @@ function EinsatzTemplate(props: Record<string, unknown>) {
       }}
       title={title}
     >
-      <div className="flex min-w-0 items-center gap-1">
+      <div className="flex min-w-0 items-start gap-1">
         {kritisch ? (
           <span className="shrink-0 text-[10px] leading-none" aria-hidden>
             ⚡
@@ -174,14 +190,24 @@ function EinsatzTemplate(props: Record<string, unknown>) {
             ⚠
           </span>
         ) : null}
-        <span className="min-w-0 truncate text-[11px] font-semibold leading-tight tracking-tight text-zinc-50">
-          {String(props.Subject ?? "")}
+        <span className="min-w-0 flex-1 truncate text-[11px] font-semibold leading-tight tracking-tight text-zinc-50">
+          {hauptTitel}
         </span>
       </div>
-      {projekt ? (
-        <p className="truncate pl-0.5 text-[9px] font-medium uppercase tracking-wide text-zinc-500">
-          {projekt}
-        </p>
+      {rolleName ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-1 pl-0.5">
+          <span
+            className={cn(
+              "shrink-0 rounded border px-1 py-px text-[8px] font-semibold uppercase tracking-wide",
+              partnerBadge
+            )}
+          >
+            {rolleTag}
+          </span>
+          <span className="min-w-0 truncate text-[10px] font-medium text-zinc-300">
+            {rolleName}
+          </span>
+        </div>
       ) : null}
       <div className="flex items-center gap-1 text-[10px] tabular-nums text-zinc-400">
         <Clock className="size-2.5 shrink-0 opacity-80" aria-hidden />
@@ -1128,9 +1154,12 @@ export function PlanungsKalender() {
           {platzhalter ? (
             <p className="text-[10px] text-zinc-600">Legen Sie unter Teams → Projekte an.</p>
           ) : kunde ? (
-            <p className="truncate text-[10px] text-zinc-500">{kunde}</p>
+            <p className="truncate text-[10px] text-zinc-500">Kunde: {kunde}</p>
           ) : (
-            <p className="text-[10px] text-zinc-600">Klick oder Zelle für neuen Einsatz</p>
+            <p className="text-[10px] leading-snug text-zinc-600">
+              Tag in der Zeile anklicken oder Projekt von links auf den Tag ziehen — pro Einsatz eine
+              Karte; mehrere Teams/Partner am selben Tag möglich.
+            </p>
           )}
         </button>
       );
@@ -1318,38 +1347,54 @@ export function PlanungsKalender() {
 
   return (
     <div className="flex h-[calc(100vh-120px)] min-h-0 flex-col gap-0">
-      <div className="flex shrink-0 flex-col gap-2 px-1 pb-3 sm:flex-row sm:items-stretch sm:justify-between sm:gap-4">
-        <div className="flex flex-1 flex-col gap-2 rounded-xl border border-zinc-800/90 bg-gradient-to-br from-zinc-900/90 to-zinc-950 px-4 py-3 shadow-sm">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-            So planen Sie
-          </p>
-          <ol className="list-inside list-decimal space-y-1.5 text-xs leading-relaxed text-zinc-300">
-            <li>
-              <span className="font-medium text-zinc-200">Mitte</span> = Kalender:{" "}
-              jede Zeile ist eine <span className="text-zinc-200">Baustelle</span>, jede
-              Spalte ein <span className="text-zinc-200">Tag</span> — mehrere Einsätze
-              pro Tag/Zelle möglich (z. B. verschiedene Kunden-Projekte in eigenen Zeilen
-              oder mehrere Gewerke am selben Tag).
-            </li>
-            <li>
-              <span className="font-medium text-zinc-200">Links</span> Projekt-Karte
-              auf einen <span className="text-zinc-200">Tag</span> ziehen (offen oder
-              unter „Alle“) — dann öffnet sich
-              das Formular für Uhrzeit.
-            </li>
-            <li>
-              <span className="font-medium text-zinc-200">Rechts</span>{" "}
-              <span className="text-zinc-200">Team</span> oder{" "}
-              <span className="text-zinc-200">Partner</span> auf dieselbe Zelle ziehen —
-              Einsätze erscheinen als Karten mit Zeit.
-            </li>
-            <li>
-              Karte anklicken für Details;{" "}
-              <span className="text-orange-400/90">orangener Rand</span> = Abwesenheit im
-              Team.
-            </li>
-          </ol>
-        </div>
+      <div className="flex shrink-0 flex-col gap-2 px-1 pb-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <TooltipProvider>
+          <div className="flex flex-1 items-center gap-2 rounded-xl border border-zinc-800/90 bg-gradient-to-br from-zinc-900/90 to-zinc-950 px-3 py-2 shadow-sm">
+            <span className="text-sm font-medium text-zinc-200">Kalenderplanung</span>
+            <Tooltip>
+              <TooltipTrigger className="inline-flex shrink-0">
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center rounded-full p-1 text-zinc-400 ring-offset-zinc-950 transition hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  aria-label="So funktioniert die Planung"
+                >
+                  <CircleHelp className="size-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent
+                sideOffset={8}
+                className="max-w-md border-zinc-600 bg-zinc-950 p-3 text-left text-xs leading-relaxed text-zinc-300"
+              >
+                <p className="mb-2 font-semibold text-zinc-100">So planen Sie</p>
+                <ol className="list-inside list-decimal space-y-2 pl-0.5">
+                  <li>
+                    <span className="font-medium text-zinc-200">Mitte</span> = Kalender: jede
+                    Zeile ist eine <span className="text-zinc-200">Baustelle</span>, jede Spalte
+                    ein <span className="text-zinc-200">Tag</span>. Pro Einsatz entsteht eine
+                    Karte; mehrere Teams oder Partner am selben Tag = mehrere Karten in der
+                    Zelle (überlappend).
+                  </li>
+                  <li>
+                    <span className="font-medium text-zinc-200">Links</span> Projekt-Karte auf
+                    einen <span className="text-zinc-200">Tag</span> ziehen („Offen“ oder
+                    „Alle“) — Formular für Uhrzeit.
+                  </li>
+                  <li>
+                    <span className="font-medium text-zinc-200">Rechts</span>{" "}
+                    <span className="text-zinc-200">Team</span> oder{" "}
+                    <span className="text-zinc-200">Partner</span> auf dieselbe Zelle ziehen —
+                    Karte zeigt Projekt, Team/Partner als Tag, Zeit und Ort.
+                  </li>
+                  <li>
+                    Karte anklicken für Details;{" "}
+                    <span className="text-orange-400/90">orangener Rand</span> = Abwesenheit im
+                    Team.
+                  </li>
+                </ol>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        </TooltipProvider>
         <div className="flex shrink-0 flex-col justify-center gap-1.5 text-right text-xs text-zinc-500 sm:min-w-[9rem]">
           <Link
             href="/teams?tab=projekte"

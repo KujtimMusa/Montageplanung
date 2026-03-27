@@ -105,6 +105,23 @@ export type {
   DienstleisterOption,
 };
 
+/** Einheitlicher Look für Planungs-Eingaben (Sheet) */
+const fieldClass =
+  "h-10 rounded-lg border border-zinc-600/90 bg-zinc-900/85 px-3 text-sm text-zinc-100 shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)] transition-colors placeholder:text-zinc-500 focus-visible:border-zinc-500 focus-visible:bg-zinc-900 focus-visible:ring-2 focus-visible:ring-blue-500/30 focus-visible:outline-none";
+
+const triggerClass =
+  "h-10 w-full rounded-lg border border-zinc-600/90 bg-zinc-900/85 px-3 text-sm text-zinc-100 shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)] transition-colors hover:border-zinc-500 hover:bg-zinc-900 focus-visible:ring-2 focus-visible:ring-blue-500/30 focus-visible:outline-none";
+
+const textareaClass =
+  "rounded-lg border border-zinc-600/90 bg-zinc-900/85 px-3 py-2 text-sm text-zinc-100 shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)] transition-colors placeholder:text-zinc-500 focus-visible:border-zinc-500 focus-visible:ring-2 focus-visible:ring-blue-500/30 focus-visible:outline-none";
+
+const SCHICHT_PRESETS = [
+  { id: "ganz", label: "Ganztag", start: "07:00", end: "16:00" },
+  { id: "vm", label: "Vormittag", start: "07:00", end: "12:00" },
+  { id: "nm", label: "Nachmittag", start: "12:00", end: "16:00" },
+  { id: "kurz", label: "Kurz", start: "08:00", end: "12:00" },
+] as const;
+
 function normalisiereUhrzeit(eingabe: string | undefined, fallback: string): string {
   const e = (eingabe ?? "").trim();
   if (!e) return fallback;
@@ -511,7 +528,7 @@ export function EinsatzNeuDialog({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="flex w-full flex-col border-zinc-800 bg-zinc-950 sm:max-w-[500px]"
+        className="flex w-full flex-col border-zinc-700/80 bg-zinc-950 sm:max-w-[520px]"
       >
         <SheetHeader>
           <SheetTitle className="text-zinc-50">{titel}</SheetTitle>
@@ -608,7 +625,7 @@ export function EinsatzNeuDialog({
 
         <form
           onSubmit={form.handleSubmit(onSubmit)}
-          className="flex flex-1 flex-col gap-3 overflow-y-auto py-2"
+          className="flex flex-1 flex-col gap-4 overflow-y-auto py-2"
         >
           <div className="space-y-2">
             <Label className="text-zinc-300">Projekt</Label>
@@ -619,7 +636,8 @@ export function EinsatzNeuDialog({
                 <Popover open={comboOffen} onOpenChange={setComboOffen}>
                   <PopoverTrigger
                     className={cn(
-                      "inline-flex h-9 w-full items-center justify-between rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm font-normal text-zinc-100 shadow-sm outline-none hover:bg-zinc-900 focus-visible:ring-2 focus-visible:ring-zinc-600"
+                      triggerClass,
+                      "inline-flex items-center justify-between font-normal"
                     )}
                     nativeButton
                   >
@@ -732,32 +750,50 @@ export function EinsatzNeuDialog({
             <Controller
               control={form.control}
               name="team_id"
-              render={({ field }) => (
-                <Select
-                  value={field.value?.trim() ? field.value : "__none__"}
-                  onValueChange={(v) =>
-                    field.onChange(v === "__none__" ? "" : v)
-                  }
-                >
-                  <SelectTrigger className="border-zinc-700 bg-zinc-950">
-                    <SelectValue placeholder="Team wählen" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">—</SelectItem>
-                    {teams.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>
-                        <span className="flex items-center gap-2">
+              render={({ field }) => {
+                const tid = field.value?.trim();
+                const teamEntry = tid ? teams.find((t) => t.id === tid) : null;
+                return (
+                  <Select
+                    value={tid ? tid : "__none__"}
+                    onValueChange={(v) =>
+                      field.onChange(v === "__none__" ? "" : v)
+                    }
+                  >
+                    <SelectTrigger className={cn(triggerClass, "gap-2")}>
+                      {teamEntry ? (
+                        <>
                           <span
-                            className="inline-block size-2 rounded-full"
-                            style={{ backgroundColor: t.farbe }}
+                            className="inline-block size-2 shrink-0 rounded-full"
+                            style={{ backgroundColor: teamEntry.farbe }}
                           />
-                          {t.name}
+                          <SelectValue>{teamEntry.name}</SelectValue>
+                        </>
+                      ) : tid ? (
+                        <span className="truncate text-amber-200/90">
+                          Team wird geladen…
                         </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+                      ) : (
+                        <SelectValue placeholder="Kein Team" />
+                      )}
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">— kein Team</SelectItem>
+                      {teams.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          <span className="flex items-center gap-2">
+                            <span
+                              className="inline-block size-2 rounded-full"
+                              style={{ backgroundColor: t.farbe }}
+                            />
+                            {t.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                );
+              }}
             />
           </div>
 
@@ -766,26 +802,40 @@ export function EinsatzNeuDialog({
             <Controller
               control={form.control}
               name="dienstleister_id"
-              render={({ field }) => (
-                <Select
-                  value={field.value?.trim() ? field.value : "__none__"}
-                  onValueChange={(v) =>
-                    field.onChange(v === "__none__" ? "" : v)
-                  }
-                >
-                  <SelectTrigger className="border-zinc-700 bg-zinc-950">
-                    <SelectValue placeholder="Partner wählen" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">—</SelectItem>
-                    {dienstleister.map((d) => (
-                      <SelectItem key={d.id} value={d.id}>
-                        {d.firma}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+              render={({ field }) => {
+                const did = field.value?.trim();
+                const dlEntry = did
+                  ? dienstleister.find((d) => d.id === did)
+                  : null;
+                return (
+                  <Select
+                    value={did ? did : "__none__"}
+                    onValueChange={(v) =>
+                      field.onChange(v === "__none__" ? "" : v)
+                    }
+                  >
+                    <SelectTrigger className={triggerClass}>
+                      {dlEntry ? (
+                        <SelectValue>{dlEntry.firma}</SelectValue>
+                      ) : did ? (
+                        <span className="truncate text-amber-200/90">
+                          Partner wird geladen…
+                        </span>
+                      ) : (
+                        <SelectValue placeholder="Kein Partner" />
+                      )}
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">— kein Partner</SelectItem>
+                      {dienstleister.map((d) => (
+                        <SelectItem key={d.id} value={d.id}>
+                          {d.firma}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                );
+              }}
             />
           </div>
 
@@ -794,7 +844,8 @@ export function EinsatzNeuDialog({
             <Popover open={rangeOpen} onOpenChange={setRangeOpen}>
               <PopoverTrigger
                 className={cn(
-                  "inline-flex h-9 w-full items-center justify-start gap-2 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100"
+                  triggerClass,
+                  "inline-flex items-center justify-start gap-2 font-normal"
                 )}
                 nativeButton
               >
@@ -838,7 +889,37 @@ export function EinsatzNeuDialog({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Label className="text-zinc-300">Arbeitszeit / Schicht</Label>
+              <span className="text-[10px] text-zinc-600">
+                Halbtag oder mehrere Baustellen: Zeiten anpassen, Details in
+                Notizen
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {SCHICHT_PRESETS.map((s) => (
+                <Button
+                  key={s.id}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 rounded-md border-zinc-600/80 bg-zinc-900/60 text-xs text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800 hover:text-zinc-50"
+                  onClick={() => {
+                    form.setValue("start_time", s.start);
+                    form.setValue("end_time", s.end);
+                  }}
+                >
+                  {s.label}{" "}
+                  <span className="tabular-nums text-zinc-500">
+                    ({s.start}–{s.end})
+                  </span>
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label htmlFor="einsatz-start" className="text-zinc-300">
                 Start
@@ -846,7 +927,7 @@ export function EinsatzNeuDialog({
               <Input
                 id="einsatz-start"
                 type="time"
-                className="border-zinc-700 bg-zinc-950"
+                className={fieldClass}
                 {...form.register("start_time")}
               />
             </div>
@@ -857,7 +938,7 @@ export function EinsatzNeuDialog({
               <Input
                 id="einsatz-ende"
                 type="time"
-                className="border-zinc-700 bg-zinc-950"
+                className={fieldClass}
                 {...form.register("end_time")}
               />
             </div>
@@ -870,7 +951,7 @@ export function EinsatzNeuDialog({
               name="prioritaet"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger className="border-zinc-700 bg-zinc-950">
+                  <SelectTrigger className={triggerClass}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -906,9 +987,9 @@ export function EinsatzNeuDialog({
             </Label>
             <Textarea
               id="einsatz-notiz"
-              rows={2}
-              className="border-zinc-700 bg-zinc-950 text-zinc-100"
-              placeholder="Optional"
+              rows={3}
+              className={textareaClass}
+              placeholder="z. B. 2 Baustellen, Wechsel nachmittags, Anfahrt …"
               {...form.register("notes")}
             />
           </div>

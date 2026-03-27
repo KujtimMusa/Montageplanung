@@ -12,7 +12,7 @@ export function Footer() {
           <span className="flex size-8 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05]">
             <LayoutDashboard className="size-4 text-blue-400" aria-hidden />
           </span>
-          © 2026 Montageplanung
+          © {new Date().getFullYear()} Montageplanung
         </Link>
         <p className="text-center text-xs font-medium text-zinc-500">
           DSGVO · Frankfurt EU

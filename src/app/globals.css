@@ -254,7 +254,7 @@
 /* Raster & Zeilen: bessere Lesbarkeit */
 .planung-sf .e-schedule .e-timeline-view .e-work-cells,
 .planung-sf .e-schedule .e-timeline-month-view .e-work-cells {
-  min-height: 4.25rem !important;
+  min-height: 5rem !important;
 }
 
 .planung-sf .e-schedule .e-timeline-view tbody tr:nth-child(even) .e-work-cells,
