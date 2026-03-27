@@ -37,6 +37,7 @@ import {
   parseISO,
 } from "date-fns";
 import { de } from "date-fns/locale";
+import { Clock, MapPin } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { ortLabelFromProjektJoin } from "@/lib/planung/ort-label";
@@ -144,56 +145,54 @@ function EinsatzTemplate(props: Record<string, unknown>) {
   const farbe = (props.TeamFarbe as string) ?? "#3b82f6";
   const kritisch = Boolean(props.Kritisch);
   const konflikt = Boolean(props.HatKonflikt);
+  const projekt = String(props.ProjektTitel ?? "").trim();
+  const ort = String(props.OrtLabel ?? "").trim();
+  const title = [String(props.Subject ?? ""), projekt, ort].filter(Boolean).join(" · ");
   return (
     <div
+      className="planung-sf-event-inner flex h-full min-h-[52px] w-full flex-col justify-center gap-0.5 overflow-hidden rounded-md border border-white/10 px-1.5 py-1 shadow-sm"
       style={{
-        background: `${farbe}18`,
-        borderLeft: `3px solid ${farbe}`,
-        borderRadius: "5px",
-        height: "100%",
-        padding: "2px 6px",
-        display: "flex",
-        alignItems: "center",
-        gap: "4px",
-        overflow: "hidden",
-        outline: konflikt ? "2px solid #f97316" : "none",
-        outlineOffset: "-1px",
+        background: `linear-gradient(135deg, ${farbe}22 0%, rgba(9,9,11,0.92) 55%)`,
+        borderLeftWidth: 3,
+        borderLeftColor: farbe,
+        boxShadow: konflikt ? `inset 0 0 0 1px rgba(249,115,22,0.55)` : undefined,
       }}
+      title={title}
     >
-      {kritisch ? (
-        <span style={{ color: "#ef4444", fontSize: "10px", flexShrink: 0 }}>
-          ⚡
+      <div className="flex min-w-0 items-center gap-1">
+        {kritisch ? (
+          <span className="shrink-0 text-[10px] leading-none" aria-hidden>
+            ⚡
+          </span>
+        ) : null}
+        {konflikt ? (
+          <span
+            className="shrink-0 text-[10px] leading-none text-orange-400"
+            title="Konflikt mit Abwesenheit"
+            aria-hidden
+          >
+            ⚠
+          </span>
+        ) : null}
+        <span className="min-w-0 truncate text-[11px] font-semibold leading-tight tracking-tight text-zinc-50">
+          {String(props.Subject ?? "")}
         </span>
+      </div>
+      {projekt ? (
+        <p className="truncate pl-0.5 text-[9px] font-medium uppercase tracking-wide text-zinc-500">
+          {projekt}
+        </p>
       ) : null}
-      {konflikt ? (
-        <span style={{ color: "#f97316", fontSize: "10px", flexShrink: 0 }}>
-          ⚠
-        </span>
+      <div className="flex items-center gap-1 text-[10px] tabular-nums text-zinc-400">
+        <Clock className="size-2.5 shrink-0 opacity-80" aria-hidden />
+        <span className="text-zinc-300">{String(props.ZeitLabel ?? "")}</span>
+      </div>
+      {ort ? (
+        <div className="flex min-w-0 items-start gap-0.5 pl-0.5 text-[9px] leading-snug text-zinc-500">
+          <MapPin className="mt-0.5 size-2.5 shrink-0 opacity-75" aria-hidden />
+          <span className="line-clamp-2">{ort}</span>
+        </div>
       ) : null}
-      <span
-        style={{
-          fontSize: "11px",
-          fontWeight: 600,
-          color: "#e4e4e7",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          flex: 1,
-        }}
-      >
-        {String(props.Subject ?? "")}
-      </span>
-      <span
-        style={{
-          fontSize: "10px",
-          color: farbe,
-          opacity: 0.85,
-          flexShrink: 0,
-          fontVariantNumeric: "tabular-nums",
-        }}
-      >
-        {String(props.ZeitLabel ?? "")}
-      </span>
     </div>
   );
 }
@@ -980,6 +979,15 @@ export function PlanungsKalender() {
     args.cancel = true;
   }, []);
 
+  /** Syncfusion öffnet bei Doppelklick auf Zelle den Standard-Editor — wir nutzen nur EinsatzNeuDialog. */
+  const onCellDoubleClick = useCallback((args: CellClickEventArgs) => {
+    args.cancel = true;
+  }, []);
+
+  const onEventDoubleClick = useCallback((args: EventClickArgs) => {
+    args.cancel = true;
+  }, []);
+
   const onEventRendered = useCallback(
     (args: { data?: Record<string, unknown>; element: HTMLElement }) => {
       if (args.data?.HatKonflikt) {
@@ -1087,8 +1095,8 @@ export function PlanungsKalender() {
       return (
         <button
           type="button"
-          className="group flex w-full min-w-0 items-start gap-2 rounded-r-md py-2 pl-2 pr-1 text-left transition-colors hover:bg-zinc-800/50"
-          style={{ borderLeft: `3px solid ${akzent}` }}
+          className="group flex w-full min-w-0 flex-col gap-0.5 rounded-lg border border-zinc-800/80 bg-zinc-950/40 py-2 pl-2.5 pr-2 text-left shadow-sm transition-all hover:border-zinc-600/80 hover:bg-zinc-900/60"
+          style={{ borderLeftWidth: 3, borderLeftColor: akzent }}
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -1104,18 +1112,16 @@ export function PlanungsKalender() {
             });
           }}
         >
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[11px] font-semibold leading-tight text-zinc-100 group-hover:text-white">
-              {String(props.Subject ?? "")}
-            </p>
-            {platzhalter ? (
-              <p className="mt-0.5 text-[10px] text-zinc-600">Projekt anlegen</p>
-            ) : kunde ? (
-              <p className="mt-0.5 truncate text-[10px] text-zinc-500">{kunde}</p>
-            ) : (
-              <p className="mt-0.5 text-[10px] text-zinc-600">Einsatz planen</p>
-            )}
-          </div>
+          <p className="truncate text-[12px] font-semibold leading-snug text-zinc-100 group-hover:text-white">
+            {String(props.Subject ?? "")}
+          </p>
+          {platzhalter ? (
+            <p className="text-[10px] text-zinc-600">Legen Sie unter Teams → Projekte an.</p>
+          ) : kunde ? (
+            <p className="truncate text-[10px] text-zinc-500">{kunde}</p>
+          ) : (
+            <p className="text-[10px] text-zinc-600">Klick oder Zelle für neuen Einsatz</p>
+          )}
         </button>
       );
     },
@@ -1242,17 +1248,19 @@ export function PlanungsKalender() {
       <Skeleton className="h-64 w-full bg-zinc-800" />
     </div>
   ) : (
-    <div className="planung-sf flex min-h-[420px] min-w-0 flex-1 flex-col">
+    <div className="planung-sf flex min-h-[min(520px,50vh)] min-w-0 flex-1 flex-col">
       <ScheduleComponent
         ref={scheduleRef}
         cssClass="planung-sf-inner"
         width="100%"
         height="100%"
+        firstDayOfWeek={1}
         currentView={kalenderAnsicht === "week" ? "TimelineWeek" : "TimelineMonth"}
         rowAutoHeight={false}
         showHeaderBar={false}
         showTimeIndicator
         showQuickInfo={false}
+        prerenderDialogs={false}
         allowDragAndDrop
         allowResizing
         popupOpen={onPopupOpen}
@@ -1261,6 +1269,8 @@ export function PlanungsKalender() {
         eventSettings={eventSettings}
         eventClick={onEventClick}
         cellClick={onCellClick}
+        cellDoubleClick={onCellDoubleClick}
+        eventDoubleClick={onEventDoubleClick}
         dragStop={onDragStop}
         resizeStop={onResizeStop}
         eventRendered={onEventRendered}
@@ -1297,27 +1307,46 @@ export function PlanungsKalender() {
 
   return (
     <div className="flex h-[calc(100vh-120px)] min-h-0 flex-col gap-0">
-      <div className="flex shrink-0 flex-col gap-2 px-1 pb-2 sm:flex-row sm:items-start sm:justify-between">
-        <p className="text-xs text-zinc-500">
-          Zeilen = Projekte (Fundament): Projekt von links auf einen Tag ziehen,
-          Team aus der rechten Leiste auf den Tag ziehen. Uhrzeit &amp; Ort auf
-          den Karten. Orange Rand = Konflikt mit Abwesenheit.
-        </p>
-        <p className="text-xs text-zinc-500">
+      <div className="flex shrink-0 flex-col gap-2 px-1 pb-3 sm:flex-row sm:items-stretch sm:justify-between sm:gap-4">
+        <div className="flex flex-1 flex-col gap-2 rounded-xl border border-zinc-800/90 bg-gradient-to-br from-zinc-900/90 to-zinc-950 px-4 py-3 shadow-sm">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+            So planen Sie
+          </p>
+          <ol className="list-inside list-decimal space-y-1.5 text-xs leading-relaxed text-zinc-300">
+            <li>
+              <span className="font-medium text-zinc-200">Projekt-Zeile</span>{" "}
+              links = Baustelle;{" "}
+              <span className="text-zinc-500">Spalten = Tage</span> (Mo–So).
+            </li>
+            <li>
+              <span className="font-medium text-zinc-200">Zelle anklicken</span>{" "}
+              oder{" "}
+              <span className="font-medium text-zinc-200">
+                Projekt / Team aus der Seitenleiste ziehen
+              </span>{" "}
+              auf den Tag.
+            </li>
+            <li>
+              Einsatz wählen für Details;{" "}
+              <span className="text-orange-400/90">orangener Rand</span> = Abwesenheit
+              im Team.
+            </li>
+          </ol>
+        </div>
+        <div className="flex shrink-0 flex-col justify-center gap-1.5 text-right text-xs text-zinc-500 sm:min-w-[9rem]">
           <Link
             href="/teams?tab=projekte"
             className="font-medium text-blue-400 underline-offset-2 hover:underline"
           >
             Projekte anlegen
-          </Link>{" "}
-          ·{" "}
+          </Link>
           <Link
             href="/teams?tab=teams"
             className="font-medium text-blue-400 underline-offset-2 hover:underline"
           >
             Teams verwalten
           </Link>
-        </p>
+        </div>
       </div>
 
       <PlanungsToolbar

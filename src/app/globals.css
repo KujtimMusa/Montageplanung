@@ -239,3 +239,55 @@
 .planung-sf .e-schedule .e-current-timeline {
   border-color: #3b82f6 !important;
 }
+
+/*
+ * Syncfusion-Event-Editor wird an <body> gehängt (nicht unter .planung-sf).
+ * Doppelklick ist zusätzlich in PlanungsKalender abgeschaltet; hier Absicherung.
+ */
+.e-schedule-dialog.e-dialog,
+.e-schedule-dialog-container {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* Raster & Zeilen: bessere Lesbarkeit */
+.planung-sf .e-schedule .e-timeline-view .e-work-cells,
+.planung-sf .e-schedule .e-timeline-month-view .e-work-cells {
+  min-height: 4.25rem !important;
+}
+
+.planung-sf .e-schedule .e-timeline-view tbody tr:nth-child(even) .e-work-cells,
+.planung-sf .e-schedule .e-timeline-month-view tbody tr:nth-child(even) .e-work-cells {
+  background: rgba(255, 255, 255, 0.02) !important;
+}
+
+.planung-sf .e-schedule .e-timeline-view tbody tr:nth-child(even) .e-resource-cells,
+.planung-sf .e-schedule .e-timeline-month-view tbody tr:nth-child(even) .e-resource-cells {
+  background: #141416 !important;
+}
+
+/* Linke Spalte etwas breiter + klarer */
+.planung-sf .e-schedule .e-resource-left-td {
+  width: 260px !important;
+  min-width: 220px !important;
+}
+
+/* Header-Zeile: Datumsspalten klarer getrennt */
+.planung-sf .e-schedule .e-date-header-container table td {
+  border-left: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Event-Höhe: Karten nicht „quetscht“ */
+.planung-sf .e-schedule .e-appointment {
+  min-height: 52px !important;
+}
+
+.planung-sf .e-schedule .e-appointment .e-subject {
+  display: none !important;
+}
+
+/* Template-Inhalt füllt die Zelle */
+.planung-sf-event-inner {
+  min-height: 52px;
+}

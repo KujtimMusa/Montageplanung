@@ -11,6 +11,9 @@ export type SyncfusionEvent = {
   TeamFarbe: string;
   Prioritaet: string;
   ZeitLabel: string;
+  /** Projektname für Unterzeile in der Karte */
+  ProjektTitel: string;
+  OrtLabel: string;
   HatKonflikt: boolean;
   Kritisch: boolean;
   IsBlock: boolean;
@@ -30,6 +33,10 @@ export function transformiereEinsatz(
 
   const dlName = z.dienstleister?.company_name;
   const teamName = dlName ?? z.teams?.name ?? "Einsatz";
+  const projektTitel =
+    z.projects?.title?.trim() ||
+    z.project_title?.trim() ||
+    "";
 
   return {
     Id: z.id,
@@ -41,6 +48,8 @@ export function transformiereEinsatz(
     TeamFarbe: teamFarbe,
     Prioritaet: z.prioritaet ?? "normal",
     ZeitLabel: `${startStr} – ${endStr}`,
+    ProjektTitel: projektTitel,
+    OrtLabel: (z.ortLabel ?? "").trim(),
     HatKonflikt: hatKonflikt,
     Kritisch: istKritischUi(z.prioritaet, z.projects?.priority),
     IsBlock: false,
