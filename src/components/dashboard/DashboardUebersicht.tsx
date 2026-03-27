@@ -16,12 +16,15 @@ import {
 import {
   AlertTriangle,
   ArrowRight,
+  Bot,
   Calendar,
+  MessageSquare,
   Sparkles,
   TrendingDown,
   TrendingUp,
   UserMinus,
   Users,
+  Zap,
 } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -31,6 +34,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { DashboardDaten } from "@/lib/data/dashboard";
@@ -157,6 +161,63 @@ export function DashboardUebersicht({ daten }: { daten: DashboardDaten }) {
         </Card>
       </div>
 
+      <Card
+        className={cn(
+          "overflow-hidden border-violet-500/35 bg-gradient-to-br from-violet-950/50 via-zinc-900 to-indigo-950/40 text-zinc-100 shadow-none"
+        )}
+      >
+        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 flex-1 items-start gap-4">
+            <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-violet-500/20 ring-1 ring-violet-400/30">
+              <Bot className="size-6 text-violet-300" aria-hidden />
+            </div>
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-semibold text-zinc-50">
+                KI-Assistent, Agenten & Bot
+              </p>
+              <p className="text-sm text-zinc-400">
+                Chat mit Zugriff auf Planung, dedizierte Agenten und
+                Automatisierungen — direkt aus der Montageplanung.
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/ki"
+                className={cn(
+                  buttonVariants({ size: "sm" }),
+                  "gap-2 bg-violet-600 text-white hover:bg-violet-500"
+                )}
+              >
+                <MessageSquare className="size-4" aria-hidden />
+                Zum Chat
+              </Link>
+              <Link
+                href="/ki?tab=agenten"
+                className={cn(
+                  buttonVariants({ variant: "outline", size: "sm" }),
+                  "border-violet-500/40 bg-zinc-950/50 text-zinc-100 hover:bg-zinc-900"
+                )}
+              >
+                <Bot className="size-4" aria-hidden />
+                Agenten
+              </Link>
+              <Link
+                href="/ki?tab=automatisierungen"
+                className={cn(
+                  buttonVariants({ variant: "outline", size: "sm" }),
+                  "border-violet-500/40 bg-zinc-950/50 text-zinc-100 hover:bg-zinc-900"
+                )}
+              >
+                <Zap className="size-4 text-amber-300" aria-hidden />
+                Automationen
+              </Link>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Mittlere Reihe */}
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className={cn(cardClass, "lg:col-span-2")}>
@@ -174,6 +235,11 @@ export function DashboardUebersicht({ daten }: { daten: DashboardDaten }) {
                 <Calendar className="size-10 text-zinc-600" />
                 <p className="text-sm text-zinc-500">
                   Noch keine Einsätze in dieser Woche.
+                </p>
+                <p className="max-w-sm text-xs text-zinc-600">
+                  Gezählt werden Einsätze der laufenden Kalenderwoche; die Abteilung
+                  kommt vom zugewiesenen Mitarbeiter. Ohne Zuordnung oder außerhalb
+                  der Woche bleibt das Diagramm leer.
                 </p>
                 <Link
                   href="/planung"
@@ -235,6 +301,9 @@ export function DashboardUebersicht({ daten }: { daten: DashboardDaten }) {
             {daten.naechsteEinsaetze.length === 0 ? (
               <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-zinc-700 py-8 text-center">
                 <p className="text-sm text-zinc-500">Heute keine Einsätze.</p>
+                <p className="max-w-[220px] text-xs text-zinc-600">
+                  Hier erscheinen nur Termine mit Datum <strong className="font-medium text-zinc-500">heute</strong>.
+                </p>
                 <Link
                   href="/planung"
                   className={cn(
@@ -293,8 +362,14 @@ export function DashboardUebersicht({ daten }: { daten: DashboardDaten }) {
           </CardHeader>
           <CardContent className="h-[240px] pt-2">
             {!hatArea ? (
-              <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-zinc-700 text-sm text-zinc-500">
-                Noch keine Einsätze im Zeitraum.
+              <div className="flex h-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-700 p-4 text-center">
+                <p className="text-sm text-zinc-500">
+                  Noch keine Einsätze im Zeitraum.
+                </p>
+                <p className="max-w-md text-xs text-zinc-600">
+                  Die letzten 7 Tage werden aus allen gespeicherten Einsätzen
+                  aggregiert. Liegen keine Buchungen vor, bleibt die Kurve bei null.
+                </p>
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
@@ -361,6 +436,19 @@ export function DashboardUebersicht({ daten }: { daten: DashboardDaten }) {
               <ArrowRight className="size-4 opacity-80" />
             </Link>
             <Link
+              href="/ki"
+              className={cn(
+                buttonVariants({ variant: "secondary", size: "default" }),
+                "h-12 w-full justify-between border border-violet-500/35 bg-gradient-to-r from-violet-600/90 to-indigo-600/90 text-white shadow-sm hover:from-violet-500 hover:to-indigo-500"
+              )}
+            >
+              <span className="flex items-center gap-2">
+                <Bot className="size-4" />
+                KI-Assistent
+              </span>
+              <ArrowRight className="size-4 opacity-80" />
+            </Link>
+            <Link
               href="/notfall"
               className={cn(
                 buttonVariants({ variant: "secondary", size: "default" }),
@@ -397,10 +485,18 @@ export function DashboardUebersicht({ daten }: { daten: DashboardDaten }) {
       </div>
 
       {daten.wetterWarnungen > 0 && (
-        <p className="text-center text-sm text-amber-400">
-          {daten.wetterWarnungen} aktive Wetterwarnung(en) — bitte in der Planung
-          prüfen.
-        </p>
+        <Alert className="border-amber-500/40 bg-amber-950/25 text-amber-50 [&_[svg]]:text-amber-400">
+          <AlertTriangle className="size-4" aria-hidden />
+          <AlertTitle>Wetterwarnungen</AlertTitle>
+          <AlertDescription className="text-amber-100/85">
+            <span className="tabular-nums">{daten.wetterWarnungen}</span>{" "}
+            unbestätigte Meldung(en) — bitte in der{" "}
+            <Link href="/planung" className="font-medium underline underline-offset-2 hover:text-white">
+              Planung
+            </Link>{" "}
+            prüfen und bestätigen.
+          </AlertDescription>
+        </Alert>
       )}
     </div>
   );

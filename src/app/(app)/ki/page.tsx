@@ -4,7 +4,21 @@ import { KiAgenten } from "@/components/ki/KiAgenten";
 import { KiAutomatisierungen } from "@/components/ki/KiAutomatisierungen";
 import { KiChat } from "@/components/ki/KiChat";
 
-export default function KiSeite() {
+const kiTabIds = ["chat", "agenten", "automatisierungen"] as const;
+type KiTabId = (typeof kiTabIds)[number];
+
+function parseKiTab(tab: string | string[] | undefined): KiTabId {
+  const v = Array.isArray(tab) ? tab[0] : tab;
+  return v && kiTabIds.includes(v as KiTabId) ? (v as KiTabId) : "chat";
+}
+
+type KiSeiteProps = {
+  searchParams?: { tab?: string | string[] };
+};
+
+export default function KiSeite({ searchParams }: KiSeiteProps) {
+  const aktivTab = parseKiTab(searchParams?.tab);
+
   return (
     <div className="flex min-h-[calc(100dvh-6rem)] flex-col gap-6">
       <div className="mb-2 flex flex-wrap items-center gap-3">
@@ -25,7 +39,10 @@ export default function KiSeite() {
         </div>
       </div>
 
-      <Tabs defaultValue="chat" className="flex w-full flex-1 flex-col gap-4">
+      <Tabs
+        defaultValue={aktivTab}
+        className="flex w-full flex-1 flex-col gap-4"
+      >
         <TabsList className="h-auto w-full flex-wrap justify-start gap-1 rounded-xl border border-zinc-800 bg-zinc-900/50 p-1 sm:w-auto">
           <TabsTrigger
             value="chat"
