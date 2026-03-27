@@ -80,15 +80,6 @@ export function DashboardUebersicht({ daten }: { daten: DashboardDaten }) {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-zinc-50">
-          Dashboard
-        </h1>
-        <p className="text-sm text-zinc-400">
-          Kennzahlen und Übersicht — live aus deinen Daten.
-        </p>
-      </div>
-
       {/* Obere Reihe: 4 Stat Cards */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card className={cardClass}>

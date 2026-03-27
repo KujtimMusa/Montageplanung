@@ -1,6 +1,4 @@
 import { AppShell } from "@/components/layout/AppShell";
-import { createClient } from "@/lib/supabase/server";
-import type { AbteilungZeile } from "@/components/layout/AppShell";
 import {
   darfLeitungPersonal,
   ladeAngestelltenProfil,
@@ -13,13 +11,7 @@ export default async function AppBereichLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  let abteilungen: AbteilungZeile[] = [];
   let darfMitarbeiterSeite = false;
-  let profilKurz: {
-    id: string;
-    name: string;
-    role: string;
-  } | null = null;
 
   if (
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -28,32 +20,14 @@ export default async function AppBereichLayout({
     try {
       const profil = await ladeAngestelltenProfil();
       darfMitarbeiterSeite = darfLeitungPersonal(profil?.role);
-      if (profil) {
-        profilKurz = {
-          id: profil.id,
-          name: profil.name,
-          role: profil.role,
-        };
-      }
-
-      const supabase = await createClient();
-      const { data } = await supabase
-        .from("departments")
-        .select("id,name,color,icon")
-        .order("name");
-      abteilungen = (data as AbteilungZeile[]) ?? [];
     } catch {
-      abteilungen = [];
+      darfMitarbeiterSeite = false;
     }
   }
 
   return (
     <div className="dark min-h-dvh bg-zinc-950 text-zinc-100">
-      <AppShell
-        abteilungen={abteilungen}
-        darfMitarbeiterSeite={darfMitarbeiterSeite}
-        profilKurz={profilKurz}
-      >
+      <AppShell darfMitarbeiterSeite={darfMitarbeiterSeite}>
         {children}
       </AppShell>
     </div>

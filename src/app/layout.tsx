@@ -4,14 +4,19 @@ import "./globals.css";
 import { cn } from "@/lib/utils";
 import { Anbieter } from "@/components/providers";
 
-const schrift = Inter({ subsets: ["latin"], variable: "--font-sans" });
+const schrift = Inter({
+  subsets: ["latin"],
+  variable: "--font-sans",
+  weight: ["400", "500", "600", "700", "800", "900"],
+});
 
 export const metadata: Metadata = {
   title: {
-    default: "Monteurplanung",
-    template: "%s | Monteurplanung",
+    default: "Montageplanung",
+    template: "%s | Montageplanung",
   },
-  description: "Montageplanung für Teams — Mobile-First",
+  description:
+    "Die smarte Einsatzplanung für Handwerksbetriebe — Kalender, Konflikte, KI.",
   manifest: "/manifest.json",
   icons: {
     icon: "/icon.svg",
@@ -19,7 +24,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#1e40af",
+  themeColor: "#0a0a0a",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,

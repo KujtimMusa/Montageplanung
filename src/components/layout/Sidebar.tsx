@@ -9,17 +9,14 @@ import {
 } from "@/lib/constants/navigation";
 import { Separator } from "@/components/ui/separator";
 import { LogoutButton } from "@/components/auth/LogoutButton";
-import type { AbteilungZeile } from "@/components/layout/AppShell";
-
 type SidebarProps = {
-  abteilungen: AbteilungZeile[];
   darfMitarbeiterSeite: boolean;
 };
 
 /**
- * Desktop-Navigation mit Abteilungs-Farben als linker Rand.
+ * Desktop-Navigation.
  */
-export function Sidebar({ abteilungen, darfMitarbeiterSeite }: SidebarProps) {
+export function Sidebar({ darfMitarbeiterSeite }: SidebarProps) {
   const pathname = usePathname();
   const einträge = sidebarEinträgeFiltern(
     sidebarNavigation,
@@ -55,29 +52,6 @@ export function Sidebar({ abteilungen, darfMitarbeiterSeite }: SidebarProps) {
           );
         })}
       </nav>
-      <Separator />
-      <div className="p-3">
-        <p className="mb-2 px-1 text-xs font-medium uppercase tracking-wide text-zinc-500">
-          Abteilungen
-        </p>
-        <ul className="space-y-1" aria-label="Abteilungen">
-          {abteilungen.length === 0 ? (
-            <li className="px-2 py-1 text-xs text-zinc-500">
-              Keine Abteilungen geladen
-            </li>
-          ) : (
-            abteilungen.map((a) => (
-              <li
-                key={a.id}
-                className="rounded-md border-l-4 bg-zinc-900/80 py-2 pl-3 text-sm text-zinc-300"
-                style={{ borderLeftColor: a.color }}
-              >
-                {a.name}
-              </li>
-            ))
-          )}
-        </ul>
-      </div>
       <Separator />
       <div className="p-3">
         <LogoutButton className="w-full text-zinc-400 hover:bg-zinc-800/80 hover:text-zinc-100" />

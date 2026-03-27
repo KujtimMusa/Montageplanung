@@ -52,6 +52,15 @@ const config: Config = {
       fontFamily: {
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],
       },
+      keyframes: {
+        "landing-marquee": {
+          "0%": { transform: "translateX(0)" },
+          "100%": { transform: "translateX(-50%)" },
+        },
+      },
+      animation: {
+        "landing-marquee": "landing-marquee 32s linear infinite",
+      },
     },
   },
   plugins: [require("tailwindcss-animate")],
