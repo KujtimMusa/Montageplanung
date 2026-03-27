@@ -1,5 +1,15 @@
 import { NextResponse } from "next/server";
 
 export async function POST() {
-  return NextResponse.json({ nachricht: "WhatsApp Notify — Phase 6." }, { status: 501 });
+  if (!process.env.TWILIO_ACCOUNT_SID?.trim()) {
+    return NextResponse.json({
+      uebersprungen: true,
+      nachricht:
+        "WhatsApp/Twilio nicht konfiguriert (TWILIO_ACCOUNT_SID fehlt).",
+    });
+  }
+
+  return NextResponse.json({
+    nachricht: "Benachrichtigung: Platzhalter — Twilio-Integration folgt.",
+  });
 }

@@ -8,6 +8,7 @@ import {
   sidebarNavigation,
 } from "@/lib/constants/navigation";
 import { Separator } from "@/components/ui/separator";
+import { LogoutButton } from "@/components/auth/LogoutButton";
 import type { AbteilungZeile } from "@/components/layout/AppShell";
 
 type SidebarProps = {
@@ -76,6 +77,10 @@ export function Sidebar({ abteilungen, darfMitarbeiterSeite }: SidebarProps) {
             ))
           )}
         </ul>
+      </div>
+      <Separator />
+      <div className="p-3">
+        <LogoutButton className="w-full text-muted-foreground hover:text-foreground" />
       </div>
     </aside>
   );

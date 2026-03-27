@@ -1,5 +1,6 @@
 "use client";
 
+import { FloatingChat } from "@/components/agenten/FloatingChat";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Sidebar } from "@/components/layout/Sidebar";
 
@@ -37,6 +38,7 @@ export function AppShell({
         </main>
       </div>
       <BottomNav darfMitarbeiterSeite={darfMitarbeiterSeite} />
+      <FloatingChat />
     </div>
   );
 }

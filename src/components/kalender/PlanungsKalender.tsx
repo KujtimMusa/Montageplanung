@@ -8,7 +8,7 @@ import type { DateSelectArg, EventClickArg, EventDropArg } from "@fullcalendar/c
 import type { EventInput } from "@fullcalendar/core";
 import type { EventResizeDoneArg } from "@fullcalendar/interaction";
 import deLocale from "@fullcalendar/core/locales/de";
-import { format } from "date-fns";
+import { addDays, eachDayOfInterval, format, parseISO } from "date-fns";
 import { createClient } from "@/lib/supabase/client";
 import { pruefeEinsatzKonflikt } from "@/lib/utils/conflicts";
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,20 @@ type ZuweisungRow = {
   projects: { title: string } | null;
 };
 
+type AbwesenheitRow = {
+  employee_id: string;
+  type: string;
+  start_date: string;
+  end_date: string;
+};
+
+function abwesenheitFarbe(typ: string): string {
+  const t = typ.toLowerCase();
+  if (t.includes("krank")) return "rgba(220, 38, 38, 0.35)";
+  if (t.includes("fort") || t.includes("bildung")) return "rgba(37, 99, 235, 0.3)";
+  return "rgba(113, 113, 122, 0.45)";
+}
+
 function datumUndZeitZuIso(datum: string, zeit: string): string {
   const z = zeit.length === 5 ? `${zeit}:00` : zeit;
   return `${datum}T${z}`;
@@ -78,6 +92,7 @@ export function PlanungsKalender() {
   const [mitarbeiter, setMitarbeiter] = useState<MitarbeiterZeile[]>([]);
   const [projekte, setProjekte] = useState<ProjektOpt[]>([]);
   const [zuweisungen, setZuweisungen] = useState<ZuweisungRow[]>([]);
+  const [abwesenheiten, setAbwesenheiten] = useState<AbwesenheitRow[]>([]);
   const [eigeneMitarbeiterId, setEigeneMitarbeiterId] = useState<string | null>(
     null
   );
@@ -96,67 +111,95 @@ export function PlanungsKalender() {
   const [speichernLaedt, setSpeichernLaedt] = useState(false);
 
   const laden = useCallback(async () => {
-    const { data: auth } = await supabase.auth.getUser();
-    if (!auth.user) return;
+    try {
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth.user) return;
 
-    const { data: ich } = await supabase
-      .from("employees")
-      .select("id")
-      .eq("auth_user_id", auth.user.id)
-      .maybeSingle();
-    if (ich?.id) setEigeneMitarbeiterId(ich.id);
-
-    const [{ data: ma }, { data: deps }] = await Promise.all([
-      supabase
+      const { data: ich } = await supabase
         .from("employees")
-        .select("id,name,department_id")
-        .eq("active", true)
-        .order("name"),
-      supabase.from("departments").select("id,color"),
-    ]);
+        .select("id")
+        .eq("auth_user_id", auth.user.id)
+        .maybeSingle();
+      if (ich?.id) setEigeneMitarbeiterId(ich.id);
 
-    const depMap = Object.fromEntries(
-      (deps ?? []).map((d) => [d.id, d.color as string])
-    );
+      const [{ data: ma }, { data: deps }] = await Promise.all([
+        supabase
+          .from("employees")
+          .select("id,name,department_id")
+          .eq("active", true)
+          .order("name"),
+        supabase.from("departments").select("id,color"),
+      ]);
 
-    setMitarbeiter(
-      (ma ?? []).map((m) => ({
-        id: m.id,
-        name: m.name,
-        abteilungsFarbe: m.department_id
-          ? depMap[m.department_id] ?? "#64748b"
-          : "#64748b",
-      }))
-    );
-
-    const { data: pr } = await supabase
-      .from("projects")
-      .select("id,title")
-      .order("title");
-    setProjekte(pr ?? []);
-
-    const { data: zu } = await supabase
-      .from("assignments")
-      .select(
-        "id,employee_id,project_id,date,start_time,end_time,role,notes, projects(title)"
+      const depMap = Object.fromEntries(
+        (deps ?? []).map((d) => [d.id, d.color as string])
       );
 
-    const normalisiert: ZuweisungRow[] = (zu ?? []).map((row) => {
-      const p = row.projects as { title?: string } | { title?: string }[] | null;
-      const projekt = Array.isArray(p) ? p[0] : p;
-      return {
-        id: row.id as string,
-        employee_id: row.employee_id as string,
-        project_id: row.project_id as string,
-        date: row.date as string,
-        start_time: row.start_time as string,
-        end_time: row.end_time as string,
-        role: row.role as string | null,
-        notes: row.notes as string | null,
-        projects: projekt?.title ? { title: projekt.title as string } : null,
-      };
-    });
-    setZuweisungen(normalisiert);
+      setMitarbeiter(
+        (ma ?? []).map((m) => ({
+          id: m.id,
+          name: m.name,
+          abteilungsFarbe: m.department_id
+            ? depMap[m.department_id] ?? "#64748b"
+            : "#64748b",
+        }))
+      );
+
+      const { data: pr, error: prErr } = await supabase
+        .from("projects")
+        .select("id,title")
+        .order("title");
+      if (prErr) {
+        toast.error(`Projekte konnten nicht geladen werden: ${prErr.message}`);
+        setProjekte([]);
+      } else {
+        setProjekte(pr ?? []);
+      }
+
+      const { data: zu, error: zuErr } = await supabase
+        .from("assignments")
+        .select(
+          "id,employee_id,project_id,date,start_time,end_time,role,notes, projects(title)"
+        );
+
+      if (zuErr) {
+        toast.error(`Einsätze konnten nicht geladen werden: ${zuErr.message}`);
+        setZuweisungen([]);
+      } else {
+        const normalisiert: ZuweisungRow[] = (zu ?? []).map((row) => {
+          const p = row.projects as
+            | { title?: string }
+            | { title?: string }[]
+            | null;
+          const projekt = Array.isArray(p) ? p[0] : p;
+          return {
+            id: row.id as string,
+            employee_id: row.employee_id as string,
+            project_id: row.project_id as string,
+            date: row.date as string,
+            start_time: row.start_time as string,
+            end_time: row.end_time as string,
+            role: row.role as string | null,
+            notes: row.notes as string | null,
+            projects: projekt?.title ? { title: projekt.title as string } : null,
+          };
+        });
+        setZuweisungen(normalisiert);
+      }
+
+      const { data: abw, error: abwErr } = await supabase
+        .from("absences")
+        .select("employee_id,type,start_date,end_date");
+
+      if (abwErr) {
+        setAbwesenheiten([]);
+      } else {
+        setAbwesenheiten((abw ?? []) as AbwesenheitRow[]);
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Unbekannter Fehler";
+      toast.error(`Kalenderdaten konnten nicht geladen werden: ${msg}`);
+    }
   }, [supabase]);
 
   useEffect(() => {
@@ -165,10 +208,17 @@ export function PlanungsKalender() {
 
   useEffect(() => {
     const kanal = supabase
-      .channel("zuweisungen-realtime")
+      .channel("kalender-realtime")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "assignments" },
+        () => {
+          void laden();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "absences" },
         () => {
           void laden();
         }
@@ -180,18 +230,53 @@ export function PlanungsKalender() {
     };
   }, [supabase, laden]);
 
-  const ressourcen = useMemo(
-    () =>
-      mitarbeiter.map((m) => ({
-        id: m.id,
-        title: m.name,
-        extendedProps: { abteilungsFarbe: m.abteilungsFarbe },
-      })),
-    [mitarbeiter]
-  );
+  const ressourcen = useMemo(() => {
+    if (mitarbeiter.length === 0) {
+      return [
+        {
+          id: "_leer",
+          title: "Noch keine Mitarbeiter",
+          extendedProps: { abteilungsFarbe: "#64748b", platzhalter: true },
+        },
+      ];
+    }
+    return mitarbeiter.map((m) => ({
+      id: m.id,
+      title: m.name,
+      extendedProps: { abteilungsFarbe: m.abteilungsFarbe },
+    }));
+  }, [mitarbeiter]);
+
+  const abwesenheitEvents: EventInput[] = useMemo(() => {
+    const list: EventInput[] = [];
+    for (const a of abwesenheiten) {
+      let tage: Date[];
+      try {
+        tage = eachDayOfInterval({
+          start: parseISO(a.start_date),
+          end: parseISO(a.end_date),
+        });
+      } catch {
+        continue;
+      }
+      for (const tag of tage) {
+        const d = format(tag, "yyyy-MM-dd");
+        list.push({
+          id: `abw-${a.employee_id}-${d}-${a.type}`,
+          resourceId: a.employee_id,
+          display: "background",
+          start: `${d}T00:00:00`,
+          end: `${format(addDays(tag, 1), "yyyy-MM-dd")}T00:00:00`,
+          color: abwesenheitFarbe(a.type),
+          title: a.type,
+        });
+      }
+    }
+    return list;
+  }, [abwesenheiten]);
 
   const events: EventInput[] = useMemo(() => {
-    return zuweisungen.map((z) => {
+    const eins = zuweisungen.map((z) => {
       const farbe =
         mitarbeiter.find((m) => m.id === z.employee_id)?.abteilungsFarbe ??
         "#3b82f6";
@@ -207,7 +292,8 @@ export function PlanungsKalender() {
         extendedProps: { zuweisung: z },
       };
     });
-  }, [zuweisungen, mitarbeiter]);
+    return [...abwesenheitEvents, ...eins];
+  }, [zuweisungen, mitarbeiter, abwesenheitEvents]);
 
   function dialogZuruecksetzen() {
     setBearbeitenId(null);
@@ -384,11 +470,18 @@ export function PlanungsKalender() {
       toast.info("Bitte einen Bereich in der Zeile eines Mitarbeiters wählen.");
       return;
     }
+    if (String(res.id) === "_leer") {
+      toast.info(
+        "Lege unter „Mitarbeiter“ oder per Admin neue Profile an, damit der Kalender Zeilen hat."
+      );
+      return;
+    }
     if (!info.start || !info.end) return;
     dialogOeffnenFuerNeu(res.id, info.start, info.end);
   }
 
   function onEventClick(info: EventClickArg) {
+    if (info.event.display === "background") return;
     const z = info.event.extendedProps.zuweisung as ZuweisungRow | undefined;
     if (z) dialogOeffnenBearbeiten(z);
   }

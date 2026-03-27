@@ -30,8 +30,8 @@ export async function pruefeEinsatzKonflikt(
 
   if (error) {
     return {
-      hatKonflikt: false,
-      nachricht: error.message,
+      hatKonflikt: true,
+      nachricht: `Einsätze konnten nicht geprüft werden: ${error.message}`,
       kollidierendeEinsatzIds: [],
     };
   }
