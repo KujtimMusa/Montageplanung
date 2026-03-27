@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import resourceTimelinePlugin from "@fullcalendar/resource-timeline";
@@ -7,6 +8,7 @@ import interactionPlugin from "@fullcalendar/interaction";
 import type { DateSelectArg, EventClickArg, EventDropArg } from "@fullcalendar/core";
 import type { EventInput } from "@fullcalendar/core";
 import type { EventResizeDoneArg } from "@fullcalendar/interaction";
+import type { EventContentArg } from "@fullcalendar/core";
 import deLocale from "@fullcalendar/core/locales/de";
 import { addDays, eachDayOfInterval, format, parseISO } from "date-fns";
 import { createClient } from "@/lib/supabase/client";
@@ -45,17 +47,21 @@ type AbteilungOpt = { id: string; name: string; color: string };
 
 type ProjektOpt = { id: string; title: string };
 
+type TeamOpt = { id: string; name: string };
+
 type ZuweisungRow = {
   id: string;
   employee_id: string;
   project_id: string | null;
   project_title: string | null;
+  team_id: string | null;
   date: string;
   start_time: string;
   end_time: string;
   role: string | null;
   notes: string | null;
   projects: { title: string } | null;
+  teams: { name: string } | null;
 };
 
 type AbwesenheitRow = {
@@ -117,6 +123,7 @@ export function PlanungsKalender() {
   const [abteilungen, setAbteilungen] = useState<AbteilungOpt[]>([]);
   const [filterAbteilung, setFilterAbteilung] = useState<string>("alle");
   const [projekte, setProjekte] = useState<ProjektOpt[]>([]);
+  const [teamsListe, setTeamsListe] = useState<TeamOpt[]>([]);
   const [zuweisungen, setZuweisungen] = useState<ZuweisungRow[]>([]);
   const [abwesenheiten, setAbwesenheiten] = useState<AbwesenheitRow[]>([]);
   const [eigeneMitarbeiterId, setEigeneMitarbeiterId] = useState<string | null>(
@@ -139,6 +146,7 @@ export function PlanungsKalender() {
   const [formEnde, setFormEnde] = useState("16:00");
   const [formRolle, setFormRolle] = useState("Teamleiter");
   const [formNotiz, setFormNotiz] = useState("");
+  const [formTeamId, setFormTeamId] = useState("");
   const [speichernLaedt, setSpeichernLaedt] = useState(false);
 
   const laden = useCallback(async () => {
@@ -185,21 +193,27 @@ export function PlanungsKalender() {
         }))
       );
 
-      const { data: pr, error: prErr } = await supabase
-        .from("projects")
-        .select("id,title")
-        .order("title");
+      const [{ data: pr, error: prErr }, { data: teamRows, error: teamErr }] =
+        await Promise.all([
+          supabase.from("projects").select("id,title").order("title"),
+          supabase.from("teams").select("id,name").order("name"),
+        ]);
       if (prErr) {
         toast.error(`Projekte konnten nicht geladen werden: ${prErr.message}`);
         setProjekte([]);
       } else {
         setProjekte(pr ?? []);
       }
+      if (teamErr) {
+        setTeamsListe([]);
+      } else {
+        setTeamsListe((teamRows as TeamOpt[]) ?? []);
+      }
 
       const { data: zu, error: zuErr } = await supabase
         .from("assignments")
         .select(
-          "id,employee_id,project_id,project_title,date,start_time,end_time,role,notes, projects(title)"
+          "id,employee_id,project_id,project_title,team_id,date,start_time,end_time,role,notes, projects(title), teams(name)"
         );
 
       if (zuErr) {
@@ -212,17 +226,24 @@ export function PlanungsKalender() {
             | { title?: string }[]
             | null;
           const projekt = Array.isArray(p) ? p[0] : p;
+          const t = row.teams as
+            | { name?: string }
+            | { name?: string }[]
+            | null;
+          const team = Array.isArray(t) ? t[0] : t;
           return {
             id: row.id as string,
             employee_id: row.employee_id as string,
             project_id: (row.project_id as string | null) ?? null,
             project_title: (row.project_title as string | null) ?? null,
+            team_id: (row.team_id as string | null) ?? null,
             date: row.date as string,
             start_time: row.start_time as string,
             end_time: row.end_time as string,
             role: row.role as string | null,
             notes: row.notes as string | null,
             projects: projekt?.title ? { title: projekt.title as string } : null,
+            teams: team?.name ? { name: team.name as string } : null,
           };
         });
         setZuweisungen(normalisiert);
@@ -272,6 +293,13 @@ export function PlanungsKalender() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "absences" },
+        () => {
+          void laden();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "teams" },
         () => {
           void laden();
         }
@@ -369,6 +397,7 @@ export function PlanungsKalender() {
     setFormEnde("16:00");
     setFormRolle("Teamleiter");
     setFormNotiz("");
+    setFormTeamId("");
   }
 
   function dialogOeffnenFuerNeu(
@@ -390,6 +419,7 @@ export function PlanungsKalender() {
     setFormMitarbeiterId(z.employee_id);
     setFormProjektId(z.project_id ?? "");
     setFormProjektFreitext(z.project_title ?? "");
+    setFormTeamId(z.team_id ?? "");
     setFormDatum(z.date);
     setFormStart(z.start_time.slice(0, 5));
     setFormEnde(z.end_time.slice(0, 5));
@@ -438,6 +468,8 @@ export function PlanungsKalender() {
     }
 
     const { project_id, project_title } = projektPayload();
+    const team_id =
+      formTeamId && formTeamId !== "__none__" ? formTeamId : null;
 
     if (bearbeitenId) {
       const { error } = await supabase
@@ -446,6 +478,7 @@ export function PlanungsKalender() {
           employee_id: formMitarbeiterId,
           project_id,
           project_title,
+          team_id,
           date: formDatum,
           start_time: normStart,
           end_time: normEnde,
@@ -463,6 +496,7 @@ export function PlanungsKalender() {
         employee_id: formMitarbeiterId,
         project_id,
         project_title,
+        team_id,
         date: formDatum,
         start_time: normStart,
         end_time: normEnde,
@@ -592,12 +626,43 @@ export function PlanungsKalender() {
     if (!ok) info.revert();
   }
 
+  function eventInhalt(arg: EventContentArg) {
+    if (arg.event.display === "background") return true;
+    const z = arg.event.extendedProps.zuweisung as ZuweisungRow | undefined;
+    const teamName = z?.teams?.name;
+    return (
+      <div className="fc-event-main-frame overflow-hidden px-0.5 py-0.5 text-left leading-tight">
+        {teamName ? (
+          <span className="mb-0.5 block truncate rounded bg-black/30 px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-100">
+            {teamName}
+          </span>
+        ) : null}
+        <span className="block truncate text-[11px] font-medium">{arg.event.title}</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <p className="text-xs text-zinc-500">
-          Rote Umrandung: Einsatz liegt während einer Abwesenheit (Urlaub/Krank)
-          — bitte prüfen.
+          Rote Umrandung: Einsatz während Abwesenheit. Mehrere Einsätze pro Tag
+          sind möglich (eigene Blöcke). Team-Label optional.
+        </p>
+        <p className="text-xs text-zinc-500">
+          <Link
+            href="/teams?tab=projekte"
+            className="font-medium text-blue-400 underline-offset-2 hover:underline"
+          >
+            Projekte anlegen
+          </Link>{" "}
+          ·{" "}
+          <Link
+            href="/teams?tab=teams"
+            className="font-medium text-blue-400 underline-offset-2 hover:underline"
+          >
+            Teams verwalten
+          </Link>
         </p>
       </div>
 
@@ -661,6 +726,7 @@ export function PlanungsKalender() {
             eventResize={onEventResize}
             eventStartEditable
             eventDurationEditable
+            eventContent={eventInhalt}
             resourceLabelContent={(arg) => (
               <div className="flex items-center gap-2 py-1">
                 <span
@@ -715,6 +781,25 @@ export function PlanungsKalender() {
                   {mitarbeiter.map((m) => (
                     <SelectItem key={m.id} value={m.id}>
                       {m.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-zinc-300">Team (Label im Kalender, optional)</Label>
+              <Select
+                value={formTeamId && formTeamId !== "" ? formTeamId : "__none__"}
+                onValueChange={(v) => setFormTeamId(v === "__none__" || !v ? "" : v)}
+              >
+                <SelectTrigger className="border-zinc-700 bg-zinc-950">
+                  <SelectValue placeholder="Kein Team" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— kein Team</SelectItem>
+                  {teamsListe.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

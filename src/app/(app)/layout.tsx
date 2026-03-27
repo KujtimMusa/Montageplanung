@@ -2,7 +2,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { createClient } from "@/lib/supabase/server";
 import type { AbteilungZeile } from "@/components/layout/AppShell";
 import {
-  darfMitarbeiterVerwalten,
+  darfLeitungPersonal,
   ladeAngestelltenProfil,
 } from "@/lib/auth/angestellter";
 
@@ -22,7 +22,7 @@ export default async function AppBereichLayout({
   ) {
     try {
       const profil = await ladeAngestelltenProfil();
-      darfMitarbeiterSeite = darfMitarbeiterVerwalten(profil?.role);
+      darfMitarbeiterSeite = darfLeitungPersonal(profil?.role);
 
       const supabase = await createClient();
       const { data } = await supabase

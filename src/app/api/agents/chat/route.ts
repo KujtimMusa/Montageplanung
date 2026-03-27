@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { rufeGeminiOptional, istGeminiKonfiguriert } from "@/lib/agents/gemini";
+import {
+  istGeminiKonfiguriert,
+  rufeGeminiFlashAuf,
+} from "@/lib/agents/gemini";
 
 export async function POST(request: Request) {
   try {
@@ -83,21 +86,26 @@ export async function POST(request: Request) {
     if (!istGeminiKonfiguriert()) {
       return NextResponse.json({
         antwort:
-          "KI ist nicht konfiguriert (GEMINI_API_KEY fehlt). Datenüberblick: " +
+          "KI ist nicht konfiguriert: Bitte GEMINI_API_KEY in den Umgebungsvariablen setzen (z. B. Vercel → Settings → Environment Variables). Datenüberblick ohne KI: " +
           `${(ma ?? []).length} Mitarbeiter, ${(pr ?? []).length} Projekte, ${(zu ?? []).length} Einsätze (Stichprobe), ${(abw ?? []).length} Abwesenheiten.`,
       });
     }
 
-    const antwort = await rufeGeminiOptional(
-      "Du hilfst bei Planung und Steuerung. Nutze nur die mitgelieferten JSON-Daten. Antworte auf Deutsch, sachlich. Wenn eine konkrete Aktion sinnvoll wäre (z. B. Einsatz anlegen), beschreibe sie am Ende in einem Satz mit 'Vorschlag:' und den nötigen Feldern — der Nutzer bestätigt in der App.",
-      kontext
-    );
-
-    return NextResponse.json({
-      antwort:
-        antwort ??
-        "Die KI konnte keine Antwort erzeugen. Bitte später erneut versuchen.",
-    });
+    try {
+      const antwort = await rufeGeminiFlashAuf(
+        "Du hilfst bei Planung und Steuerung. Nutze nur die mitgelieferten JSON-Daten. Antworte auf Deutsch, sachlich. Wenn eine konkrete Aktion sinnvoll wäre (z. B. Einsatz anlegen), beschreibe sie am Ende in einem Satz mit 'Vorschlag:' und den nötigen Feldern — der Nutzer bestätigt in der App.",
+        kontext
+      );
+      return NextResponse.json({ antwort });
+    } catch (err) {
+      const detail =
+        err instanceof Error ? err.message : "Unbekannter API-Fehler.";
+      return NextResponse.json({
+        antwort:
+          `Die KI konnte gerade nicht antworten (${detail}). ` +
+          `Prüfen Sie GEMINI_API_KEY, ggf. GEMINI_MODEL (Standard: gemini-1.5-flash) und Kontingent bei Google AI Studio.`,
+      });
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unbekannter Fehler.";
     return NextResponse.json({ fehler: msg }, { status: 500 });

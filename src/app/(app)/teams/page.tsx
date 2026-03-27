@@ -1,27 +1,35 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import {
-  darfMitarbeiterVerwalten,
+  darfLeitungPersonal,
   ladeAngestelltenProfil,
 } from "@/lib/auth/angestellter";
-import { TeamsVerwaltung } from "@/components/teams/TeamsVerwaltung";
+import { TeamsBereich } from "@/components/teams/TeamsBereich";
 
 export default async function TeamsSeite() {
   const profil = await ladeAngestelltenProfil();
-  if (!darfMitarbeiterVerwalten(profil?.role)) {
-    redirect("/planung");
+  if (!darfLeitungPersonal(profil?.role)) {
+    redirect("/dashboard");
   }
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-zinc-50">
-          Teams &amp; Mitarbeiter
+          Teams &amp; Stammdaten
         </h1>
         <p className="text-sm text-zinc-400">
-          Teams strukturieren, Mitglieder zuordnen und Rollen pflegen.
+          Teams, Mitarbeiter, Abwesenheiten und Projekte — alles für die Planung
+          im Kalender.
         </p>
       </div>
-      <TeamsVerwaltung />
+      <Suspense
+        fallback={
+          <p className="text-sm text-zinc-500">Bereich wird geladen…</p>
+        }
+      >
+        <TeamsBereich />
+      </Suspense>
     </div>
   );
 }

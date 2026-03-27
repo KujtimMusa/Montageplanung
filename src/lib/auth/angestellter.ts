@@ -36,6 +36,15 @@ export async function ladeAngestelltenProfil(): Promise<AngestellterProfil | nul
   return data as AngestellterProfil;
 }
 
+/** Admin / Abteilungsleiter: Einladungen, API-Rollen, sensible Admin-Endpunkte */
 export function darfMitarbeiterVerwalten(rolle: string | undefined): boolean {
   return rolle === "admin" || rolle === "abteilungsleiter";
+}
+
+/**
+ * Leitung: Teams, Kalender-Steuerung, Stammdaten — jede Rolle außer „monteur“.
+ */
+export function darfLeitungPersonal(rolle: string | undefined): boolean {
+  if (!rolle) return false;
+  return rolle !== "monteur";
 }

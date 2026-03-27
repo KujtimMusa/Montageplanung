@@ -1,6 +1,11 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const MODELL_ID = "gemini-2.0-flash";
+/** Standard: 1.5 Flash ist stabil; per GEMINI_MODEL überschreibbar (z. B. gemini-2.0-flash). */
+function modellId(): string {
+  return (
+    process.env.GEMINI_MODEL?.trim() || "gemini-1.5-flash"
+  );
+}
 
 /**
  * Prüft, ob die Gemini-API konfiguriert ist.
@@ -26,7 +31,7 @@ export async function rufeGeminiFlashAuf(
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const modell = genAI.getGenerativeModel({
-    model: MODELL_ID,
+    model: modellId(),
     systemInstruction: systemPrompt,
   });
 
@@ -45,7 +50,9 @@ export async function rufeGeminiOptional(
   if (!istGeminiKonfiguriert()) return null;
   try {
     return await rufeGeminiFlashAuf(systemPrompt, nutzerPrompt);
-  } catch {
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[Gemini]", msg);
     return null;
   }
 }

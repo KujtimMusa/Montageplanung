@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   Bot,
   CalendarDays,
+  LayoutDashboard,
   Settings,
   Truck,
   Users,
@@ -16,6 +17,7 @@ export type NavEintrag = {
 
 /** Desktop-Sidebar — Planung & Steuerung für Führungskräfte */
 export const sidebarNavigation: NavEintrag[] = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/planung", label: "Planung", icon: CalendarDays },
   { href: "/teams", label: "Teams & Mitarbeiter", icon: Users },
   { href: "/notfall", label: "Notfall", icon: AlertTriangle },
@@ -26,6 +28,7 @@ export const sidebarNavigation: NavEintrag[] = [
 
 /** Mobil: gleiche Kernpunkte (scrollbar/kompakt) */
 export const bottomNavigation: NavEintrag[] = [
+  { href: "/dashboard", label: "KPIs", icon: LayoutDashboard },
   { href: "/planung", label: "Planung", icon: CalendarDays },
   { href: "/teams", label: "Teams", icon: Users },
   { href: "/notfall", label: "Notfall", icon: AlertTriangle },
