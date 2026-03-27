@@ -23,10 +23,19 @@ import { toast } from "sonner";
 
 const schema = z
   .object({
-    name: z.string().min(2, "Mindestens 2 Zeichen."),
-    email: z.string().email("Gültige E-Mail eingeben."),
-    passwort: z.string().min(8, "Mindestens 8 Zeichen."),
-    passwortWiederholen: z.string(),
+    name: z
+      .string()
+      .min(1, "Name erforderlich.")
+      .min(2, "Mindestens 2 Zeichen."),
+    email: z
+      .string()
+      .min(1, "E-Mail erforderlich.")
+      .email("Gültige E-Mail eingeben."),
+    passwort: z
+      .string()
+      .min(1, "Passwort erforderlich.")
+      .min(8, "Mindestens 8 Zeichen."),
+    passwortWiederholen: z.string().min(1, "Passwort-Wiederholung erforderlich."),
   })
   .refine((d) => d.passwort === d.passwortWiederholen, {
     message: "Passwörter stimmen nicht überein.",
@@ -55,6 +64,12 @@ export default function RegisterSeite() {
   });
 
   async function onSubmit(werte: FormularWerte) {
+    console.log("[register] onSubmit data:", {
+      name: werte.name,
+      email: werte.email,
+      passwortLen: werte.passwort.length,
+      passwortWiederholenLen: werte.passwortWiederholen.length,
+    });
     const supabase = createClient();
     const { error } = await supabase.auth.signUp({
       email: werte.email.trim().toLowerCase(),
