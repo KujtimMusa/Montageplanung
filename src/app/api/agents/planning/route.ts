@@ -1,46 +1,50 @@
-import { NextResponse } from "next/server";
+import { streamText } from "ai";
 import { createClient } from "@/lib/supabase/server";
-import { rufeGeminiOptional, istGeminiKonfiguriert } from "@/lib/agents/gemini";
+import { istKiKonfiguriert, kiModell } from "@/lib/agents/ki-client";
 
-/** Planungsvorschläge (Teamzusammenstellung) */
+/** Planungsoptimierer — Text-Stream */
 export async function POST(request: Request) {
-  try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ fehler: "Nicht angemeldet." }, { status: 401 });
-    }
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return new Response("Unauthorized", { status: 401 });
+  }
 
-    const body = (await request.json().catch(() => ({}))) as {
-      projektId?: string;
-      datum?: string;
-    };
+  const body = (await request.json().catch(() => ({}))) as {
+    projektId?: string;
+    datum?: string;
+  };
 
-    const [{ data: ma }, { data: zu }] = await Promise.all([
-      supabase.from("employees").select("id,name,department_id,active").eq("active", true),
-      supabase.from("assignments").select("employee_id,date,start_time,end_time").limit(300),
-    ]);
+  const [{ data: ma }, { data: zu }] = await Promise.all([
+    supabase
+      .from("employees")
+      .select("id,name,department_id,active,qualifikationen")
+      .eq("active", true),
+    supabase
+      .from("assignments")
+      .select("employee_id,date,start_time,end_time, projects(title)")
+      .limit(300),
+  ]);
 
-    if (!istGeminiKonfiguriert()) {
-      return NextResponse.json({
+  if (!istKiKonfiguriert()) {
+    return new Response(
+      JSON.stringify({
         nachricht:
           "Gemini nicht konfiguriert — Vorschlag: passende Monteure nach Abteilung filtern, freie Slots in der Planung prüfen.",
         daten: { mitarbeiter: ma ?? [], einsaetze: zu ?? [], hinweis: body },
-      });
-    }
-
-    const text = await rufeGeminiOptional(
-      "Du bist Planungsassistent. Schlage eine sinnvolle Teamzusammenstellung vor. Antworte auf Deutsch, stichpunktartig.",
-      `Mitarbeiter: ${JSON.stringify(ma ?? [])}\nEinsätze(Stichprobe): ${JSON.stringify(zu ?? [])}\nAnfrage-Parameter: ${JSON.stringify(body)}`
+      }),
+      { status: 503, headers: { "Content-Type": "application/json" } }
     );
-
-    return NextResponse.json({
-      vorschlag: text ?? "Keine Auswertung möglich.",
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "Fehler.";
-    return NextResponse.json({ fehler: msg }, { status: 500 });
   }
+
+  const result = streamText({
+    model: kiModell,
+    system:
+      "Du bist Planungsassistent für einen Handwerksbetrieb. Schlage eine sinnvolle Teamzusammenstellung und Reihenfolge vor. Antworte auf Deutsch, stichpunktartig, ohne Markdown-Codeblöcke.",
+    prompt: `Mitarbeiter:\n${JSON.stringify(ma ?? [])}\n\nEinsätze (Stichprobe):\n${JSON.stringify(zu ?? [])}\n\nAnfrage-Parameter:\n${JSON.stringify(body)}`,
+  });
+
+  return result.toTextStreamResponse();
 }

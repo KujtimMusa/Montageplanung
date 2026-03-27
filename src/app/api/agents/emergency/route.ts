@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { streamText } from "ai";
 import { createClient } from "@/lib/supabase/server";
-import { istGeminiKonfiguriert, streamGeminiText } from "@/lib/agents/gemini";
+import { istKiKonfiguriert, kiModell } from "@/lib/agents/ki-client";
 
 const SYSTEM_NOTFALL = `Du bist ein Notfall-Planungsassistent für einen Handwerksbetrieb.
 Ein Mitarbeiter ist kurzfristig ausgefallen.
@@ -29,7 +29,7 @@ Priorisiere:
 4. Kurze Begründung in der Sprache des Handwerks
 5. Nutze nur employeeIds aus "verfuegbareKraefte" für Empfehlungen.`;
 
-/** Notfall / KI-Streaming (strukturiertes JSON) */
+/** Notfall — strukturiertes JSON als Text-Stream */
 export async function POST(request: Request) {
   try {
     const supabase = await createClient();
@@ -37,7 +37,10 @@ export async function POST(request: Request) {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) {
-      return NextResponse.json({ fehler: "Nicht angemeldet." }, { status: 401 });
+      return new Response(JSON.stringify({ fehler: "Nicht angemeldet." }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     const body = (await request.json()) as {
@@ -54,31 +57,35 @@ export async function POST(request: Request) {
     };
 
     if (!body?.ausfallMitarbeiter?.id || !body?.datum) {
-      return NextResponse.json(
-        { fehler: "ausfallMitarbeiter.id und datum sind Pflicht." },
-        { status: 400 }
+      return new Response(
+        JSON.stringify({
+          fehler: "ausfallMitarbeiter.id und datum sind Pflicht.",
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    if (!istGeminiKonfiguriert()) {
-      return NextResponse.json(
-        { fehler: "KI nicht konfiguriert (GEMINI_API_KEY)." },
-        { status: 503 }
+    if (!istKiKonfiguriert()) {
+      return new Response(
+        JSON.stringify({ fehler: "KI nicht konfiguriert (GEMINI_API_KEY)." }),
+        { status: 503, headers: { "Content-Type": "application/json" } }
       );
     }
 
     const nutzerPrompt = `Kontext (JSON):\n${JSON.stringify(body, null, 2)}`;
 
-    const stream = await streamGeminiText(SYSTEM_NOTFALL, nutzerPrompt);
-
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Cache-Control": "no-store",
-      },
+    const result = streamText({
+      model: kiModell,
+      system: SYSTEM_NOTFALL,
+      prompt: nutzerPrompt,
     });
+
+    return result.toTextStreamResponse();
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Fehler.";
-    return NextResponse.json({ fehler: msg }, { status: 500 });
+    return new Response(JSON.stringify({ fehler: msg }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }

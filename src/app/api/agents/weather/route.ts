@@ -1,48 +1,45 @@
-import { NextResponse } from "next/server";
+import { streamText } from "ai";
 import { createClient } from "@/lib/supabase/server";
 import { wetterVorhersageLaden } from "@/lib/weather/open-meteo";
-import { rufeGeminiOptional, istGeminiKonfiguriert } from "@/lib/agents/gemini";
+import { istKiKonfiguriert, kiModell } from "@/lib/agents/ki-client";
 
-/** Wetter-Analyse mit Open-Meteo + optional Gemini */
+/** Wetter — Open-Meteo + KI-Text-Stream */
 export async function POST(request: Request) {
-  try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ fehler: "Nicht angemeldet." }, { status: 401 });
-    }
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return new Response("Unauthorized", { status: 401 });
+  }
 
-    const body = (await request.json()) as { lat?: number; lng?: number };
-    const lat = body.lat ?? 50.1;
-    const lng = body.lng ?? 8.68;
-    const heute = new Date().toISOString().slice(0, 10);
-    const end = new Date();
-    end.setDate(end.getDate() + 5);
-    const endStr = end.toISOString().slice(0, 10);
+  const body = (await request.json()) as { lat?: number; lng?: number };
+  const lat = body.lat ?? 50.1;
+  const lng = body.lng ?? 8.68;
+  const heute = new Date().toISOString().slice(0, 10);
+  const end = new Date();
+  end.setDate(end.getDate() + 5);
+  const endStr = end.toISOString().slice(0, 10);
 
-    const roh = await wetterVorhersageLaden(lat, lng, heute, endStr);
+  const roh = await wetterVorhersageLaden(lat, lng, heute, endStr);
 
-    if (!istGeminiKonfiguriert()) {
-      return NextResponse.json({
+  if (!istKiKonfiguriert()) {
+    return new Response(
+      JSON.stringify({
         rohdaten: roh,
         empfehlung:
           "KI nicht konfiguriert — Rohdaten von Open-Meteo siehe rohdaten.",
-      });
-    }
-
-    const text = await rufeGeminiOptional(
-      "Du bist Bau-Wetterberater. Antworte kurz auf Deutsch mit Handlungsempfehlung.",
-      `Vorhersage JSON: ${JSON.stringify(roh)}`
+      }),
+      { status: 503, headers: { "Content-Type": "application/json" } }
     );
-
-    return NextResponse.json({
-      empfehlung: text ?? "",
-      rohdaten: roh,
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "Fehler.";
-    return NextResponse.json({ fehler: msg }, { status: 500 });
   }
+
+  const result = streamText({
+    model: kiModell,
+    system:
+      "Du bist Bau-Wetterberater. Antworte kurz auf Deutsch mit Handlungsempfehlung für Außenarbeiten.",
+    prompt: `Koordinaten: ${lat}, ${lng}\nVorhersage JSON:\n${JSON.stringify(roh)}`,
+  });
+
+  return result.toTextStreamResponse();
 }
