@@ -1,6 +1,8 @@
 "use client";
 
-import { Zap } from "lucide-react";
+import { useEffect } from "react";
+import { Draggable } from "@fullcalendar/interaction";
+import { GripVertical, Zap } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 
@@ -25,6 +27,34 @@ export function TeamsSidebar({
   heuteEinsaetze,
   heuteAbwesenheiten,
 }: Props) {
+  useEffect(() => {
+    const container = document.getElementById("teams-drag-sidebar");
+    if (!container) return;
+
+    const draggable = new Draggable(container, {
+      itemSelector: ".draggable-team",
+      eventData: (el: HTMLElement) => {
+        const raw = el.getAttribute("data-event");
+        let data: { title?: string; extendedProps?: { teamId?: string } } = {};
+        try {
+          data = raw ? JSON.parse(raw) : {};
+        } catch {
+          /* ignore */
+        }
+        return {
+          title: data.title ?? "Team",
+          duration: { hours: 8 },
+          extendedProps: { teamId: data.extendedProps?.teamId ?? "" },
+          color: "transparent",
+        };
+      },
+    });
+
+    return () => {
+      draggable.destroy();
+    };
+  }, [teams]);
+
   return (
     <div className="flex h-full min-h-0 flex-col border-l border-zinc-800 bg-zinc-950">
       <div className="shrink-0 border-b border-zinc-800 p-3">
@@ -34,7 +64,7 @@ export function TeamsSidebar({
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
-        <div className="pb-2 pr-1 pt-1">
+        <div id="teams-drag-sidebar" className="pb-2 pr-1 pt-1">
           {teams.length === 0 ? (
             <p className="px-3 py-6 text-center text-xs text-zinc-500">
               Noch keine Teams angelegt.
@@ -43,7 +73,11 @@ export function TeamsSidebar({
             teams.map((team) => (
               <div
                 key={team.id}
-                className="mx-2 my-1 rounded-lg border border-zinc-800 bg-zinc-900/50 p-2.5"
+                className="draggable-team mx-2 my-1 cursor-grab select-none rounded-lg border border-zinc-800 bg-zinc-900/50 p-2.5 transition-colors hover:border-zinc-600 hover:bg-zinc-800/60 active:cursor-grabbing"
+                data-event={JSON.stringify({
+                  title: team.name,
+                  extendedProps: { teamId: team.id },
+                })}
               >
                 <div className="flex items-center gap-2">
                   <div
@@ -82,6 +116,10 @@ export function TeamsSidebar({
                 <p className="mt-1.5 pl-5 text-[10px] text-zinc-600">
                   {einsaetzeProTeamZeitraum[team.id] ?? 0} Einsätze in diesem
                   Zeitraum
+                </p>
+                <p className="mt-1 flex items-center gap-1 pl-5 text-[9px] text-zinc-700">
+                  <GripVertical size={9} />
+                  Auf Projekt-Tag ziehen
                 </p>
               </div>
             ))

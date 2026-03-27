@@ -19,8 +19,9 @@ export default function PlanungSeite() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-zinc-50">Planung</h1>
         <p className="text-sm text-zinc-400">
-          Team-Zeilen mit Farben, Abwesenheiten im Hintergrund, Drag &amp; Drop,
-          Konflikt-Hinweise und ungeplante Projekte per Ziehen einplanen.
+          Projekte als Zeilen, Tage klar lesbar, Monatsansicht übersichtlich. Projekt
+          zuerst auf den Tag ziehen, Team von rechts zuordnen — Uhrzeit und Ort auf
+          jeder Karte.
         </p>
       </div>
       <PlanungsKalender />

@@ -13,7 +13,18 @@ export type EinsatzEvent = {
   end_time: string;
   notes: string | null;
   prioritaet: string | null;
-  projects: { title: string; priority?: string | null } | null;
+  /** Berechnet für Kalenderkarte & Tooltip */
+  ortLabel: string | null;
+  projects: {
+    title: string;
+    priority?: string | null;
+    notes?: string | null;
+    customers?: {
+      address?: string | null;
+      city?: string | null;
+      company_name?: string | null;
+    } | null;
+  } | null;
   teams: { name: string; farbe?: string | null } | null;
 };
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Zap } from "lucide-react";
+import { MapPin, Zap } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
@@ -110,6 +110,16 @@ export function EinsatzEventDetailFloating({
         <p className="mt-1 text-xs text-zinc-400">
           {format(parseISO(zuweisung.date), "EEEE, dd. MMMM yyyy", { locale: de })}
         </p>
+        <p className="mt-1 text-sm tabular-nums text-zinc-200">
+          {zuweisung.start_time.slice(0, 5)} – {zuweisung.end_time.slice(0, 5)}{" "}
+          Uhr
+        </p>
+        {zuweisung.ortLabel?.trim() ? (
+          <p className="mt-2 flex gap-2 text-xs leading-snug text-zinc-400">
+            <MapPin className="mt-0.5 size-3.5 shrink-0 text-zinc-500" />
+            <span>{zuweisung.ortLabel.trim()}</span>
+          </p>
+        ) : null}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <Badge
             variant="secondary"

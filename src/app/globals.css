@@ -139,25 +139,43 @@
   }
 }
 
-/* FullCalendar: dunkles Theme in der Planung */
+/* FullCalendar: Planung — „2026“-taugliches dunkles Premium-Theme */
 .planung-fc .fc {
-  --fc-border-color: rgba(255, 255, 255, 0.06);
+  --fc-border-color: rgba(255, 255, 255, 0.08);
   --fc-page-bg-color: transparent;
-  --fc-neutral-bg-color: rgba(255, 255, 255, 0.02);
+  --fc-neutral-bg-color: rgba(255, 255, 255, 0.03);
   --fc-list-event-hover-bg-color: #3f3f46;
-  --fc-today-bg-color: rgba(59, 130, 246, 0.06);
+  --fc-today-bg-color: rgba(59, 130, 246, 0.07);
   --fc-event-bg-color: transparent;
   --fc-event-border-color: transparent;
-  --fc-resource-label-text-color: #a1a1aa;
-  --fc-now-indicator-color: #ef4444;
+  --fc-resource-label-text-color: #d4d4d8;
+  --fc-now-indicator-color: #f87171;
+  --fc-timeline-slot-minor-border-color: transparent;
 }
 .planung-fc .fc-theme-standard td,
 .planung-fc .fc-theme-standard th {
-  border-color: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.07);
+}
+.planung-fc .fc-timeline-lane-frame {
+  background: linear-gradient(
+    180deg,
+    rgba(24, 24, 27, 0.5) 0%,
+    rgba(9, 9, 11, 0.85) 100%
+  );
+}
+.planung-fc .fc-timeline-body tr:nth-child(even) .fc-timeline-lane-frame {
+  background: rgba(255, 255, 255, 0.02);
+}
+.planung-fc .fc-datagrid-cell-frame {
+  background: rgba(9, 9, 11, 0.6);
+  border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
 }
 .planung-fc .fc-col-header-cell,
 .planung-fc .fc-timeline-slot-label {
   color: #a1a1aa;
+}
+.planung-fc .fc-timeline-slot-label {
+  border-color: rgba(255, 255, 255, 0.06);
 }
 .planung-fc .fc-toolbar-title {
   color: #fafafa;
@@ -165,6 +183,13 @@
 .planung-fc .fc-planung-heute-kopf {
   font-weight: 700;
   color: rgb(96 165 250) !important;
+}
+.planung-fc .fc-timeline-event {
+  border-radius: 0.5rem;
+}
+.planung-fc .fc-timeline-event-harness {
+  margin-top: 2px;
+  margin-bottom: 2px;
 }
 .fc-event-konflikt .fc-event-main-frame {
   box-shadow: inset 0 0 0 2px rgb(239 68 68);
