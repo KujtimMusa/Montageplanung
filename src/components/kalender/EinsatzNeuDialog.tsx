@@ -56,6 +56,11 @@ import { Calendar } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import {
+  PRIORITAET_FARBEN,
+  STATUS_FARBEN,
+  planungStatusLabel,
+} from "@/lib/constants/planung-farben";
 import type {
   BearbeitenZuweisung,
   EinsatzPrioritaetUi,
@@ -208,15 +213,18 @@ export function EinsatzNeuDialog({
         prioritaet: pri,
       });
     } else if (vorgaben) {
+      const p = vorgaben.projekt_id
+        ? projekte.find((x) => x.id === vorgaben.projekt_id)
+        : undefined;
       form.reset({
         projekt_id: vorgaben.projekt_id ?? "",
         team_id: vorgaben.team_id,
         date_von: vorgaben.date,
         date_bis: vorgaben.date,
-        start_time: vorgaben.start_time ?? "08:00",
+        start_time: vorgaben.start_time ?? "07:00",
         end_time: vorgaben.end_time ?? "16:00",
         notes: "",
-        prioritaet: "mittel",
+        prioritaet: p ? dbPrioritaetZuUi(p.priority) : "mittel",
       });
     } else {
       form.reset({
@@ -441,6 +449,50 @@ export function EinsatzNeuDialog({
         <SheetHeader>
           <SheetTitle className="text-zinc-50">{titel}</SheetTitle>
         </SheetHeader>
+
+        {!bearbeiten && vorgaben?.projekt_id ? (() => {
+          const p = projekte.find((x) => x.id === vorgaben.projekt_id);
+          const team = teams.find((t) => t.id === vorgaben.team_id);
+          if (!p) return null;
+          const st = (p.status ?? "neu").toLowerCase();
+          const prio = (p.priority ?? "normal").toLowerCase();
+          const prioHex =
+            PRIORITAET_FARBEN[prio] ?? PRIORITAET_FARBEN.normal ?? "#3b82f6";
+          return (
+            <div className="mb-4 space-y-2">
+              <div className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900 p-3">
+                <div
+                  className="h-3 w-3 shrink-0 rounded-full"
+                  style={{ background: prioHex }}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-zinc-100">{p.title}</p>
+                  {p.customerLabel ? (
+                    <p className="text-xs text-zinc-500">{p.customerLabel}</p>
+                  ) : null}
+                </div>
+                <Badge
+                  className={cn(
+                    "ml-auto shrink-0",
+                    STATUS_FARBEN[st] ?? "bg-zinc-800 text-zinc-300"
+                  )}
+                >
+                  {planungStatusLabel(st)}
+                </Badge>
+              </div>
+              <p className="text-xs text-zinc-500">
+                Einsatz für{" "}
+                <span className="font-medium text-zinc-300">{p.title}</span> am{" "}
+                {format(parseISO(vorgaben.date), "dd.MM.yyyy", { locale: de })}{" "}
+                mit{" "}
+                <span className="font-medium text-zinc-300">
+                  {team?.name ?? "Team"}
+                </span>{" "}
+                planen
+              </p>
+            </div>
+          );
+        })() : null}
 
         {(konfliktText || abwesenheitWarnung) && (
           <Alert variant="destructive" className="border-red-900/80 bg-red-950/35">

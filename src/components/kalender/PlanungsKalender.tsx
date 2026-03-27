@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import resourceTimelinePlugin from "@fullcalendar/resource-timeline";
 import interactionPlugin, {
-  Draggable,
   type DateClickArg,
   type EventReceiveArg,
   type EventResizeDoneArg,
@@ -20,34 +19,23 @@ import type {
 import deLocale from "@fullcalendar/core/locales/de";
 import {
   addDays,
-  addHours,
   eachDayOfInterval,
   format,
   isSameDay,
   parseISO,
 } from "date-fns";
 import { de } from "date-fns/locale";
-import {
-  CheckCircle,
-  FolderOpen,
-  GripVertical,
-  Zap,
-} from "lucide-react";
+import { Zap } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { pruefeEinsatzKonflikt } from "@/lib/utils/conflicts";
 import { getRepresentativeEmployeeId } from "@/lib/planung/team-representative";
 import { istKritischUi } from "@/lib/utils/priority";
-import { Button } from "@/components/ui/button";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
 import { toast } from "sonner";
 import {
   EinsatzNeuDialog,
@@ -55,12 +43,16 @@ import {
   type ProjektOption,
   type TeamOption,
 } from "@/components/kalender/EinsatzNeuDialog";
+import { PlanungsToolbar } from "@/components/kalender/PlanungsToolbar";
+import { ProjekteSidebar } from "@/components/kalender/ProjekteSidebar";
+import { TeamsSidebar } from "@/components/kalender/TeamsSidebar";
 import { EinsatzEventDetailFloating } from "@/components/kalender/EinsatzEventDetail";
 import type {
   AbwesenheitRow,
   EinsatzEvent,
   UngeplantesProjekt,
 } from "@/types/planung";
+import { useDefaultLayout } from "react-resizable-panels";
 
 function datumUndZeitZuIso(datum: string, zeit: string): string {
   const z = zeit.length === 5 ? `${zeit}:00` : zeit;
@@ -121,21 +113,20 @@ function mapUngeplantRow(p: Record<string, unknown>): UngeplantesProjekt {
   };
 }
 
-const STATUS_BADGE: Record<string, string> = {
-  neu: "bg-zinc-700 text-zinc-200",
-  geplant: "bg-blue-900/50 text-blue-200",
-  aktiv: "bg-emerald-900/40 text-emerald-200",
-  abgeschlossen: "bg-zinc-800 text-zinc-400",
-};
-
-function statusLabel(s: string) {
-  const m: Record<string, string> = {
-    neu: "Neu",
-    geplant: "Geplant",
-    aktiv: "Aktiv",
-    abgeschlossen: "Abgeschlossen",
-  };
-  return m[s] ?? s;
+function prioRangUngeplant(prio: string): number {
+  switch (prio) {
+    case "kritisch":
+      return 1;
+    case "hoch":
+      return 2;
+    case "normal":
+    case "mittel":
+      return 3;
+    case "niedrig":
+      return 4;
+    default:
+      return 5;
+  }
 }
 
 export function PlanungsKalender() {
@@ -155,6 +146,13 @@ export function PlanungsKalender() {
     null
   );
   const [kalenderBereit, setKalenderBereit] = useState(false);
+  const [mitgliederByTeam, setMitgliederByTeam] = useState<
+    Map<string, { id: string; name: string }[]>
+  >(() => new Map());
+  const [sichtbarerZeitraum, setSichtbarerZeitraum] = useState<{
+    start: Date;
+    end: Date;
+  } | null>(null);
 
   const [dialogOffen, setDialogOffen] = useState(false);
   const [bearbeiten, setBearbeiten] = useState<BearbeitenZuweisung | null>(null);
@@ -167,7 +165,6 @@ export function PlanungsKalender() {
   } | null>(null);
   const [formularSchluessel, setFormularSchluessel] = useState(0);
 
-  const [sheetOffen, setSheetOffen] = useState(false);
   const [kalenderAnsicht, setKalenderAnsicht] = useState<"week" | "month">(
     "week"
   );
@@ -184,6 +181,14 @@ export function PlanungsKalender() {
 
   const [zeitraumLabel, setZeitraumLabel] = useState("");
 
+  const { defaultLayout: planungLayout, onLayoutChanged: planungLayoutChanged } =
+    useDefaultLayout({
+      id: "planung-layout",
+      panelIds: ["projekte-sidebar", "kalender-mitte", "teams-sidebar"],
+      storage:
+        typeof window !== "undefined" ? window.localStorage : undefined,
+    });
+
   const laden = useCallback(async () => {
     try {
       const { data: auth } = await supabase.auth.getUser();
@@ -198,7 +203,7 @@ export function PlanungsKalender() {
 
       const { data: teamRows, error: teamErr } = await supabase
         .from("teams")
-        .select("id,name,farbe")
+        .select("id,name,farbe,departments(name)")
         .order("name");
 
       if (teamErr) {
@@ -206,11 +211,19 @@ export function PlanungsKalender() {
         setTeamsListe([]);
       } else {
         setTeamsListe(
-          (teamRows ?? []).map((t) => ({
-            id: t.id as string,
-            name: t.name as string,
-            farbe: (t.farbe as string) ?? "#3b82f6",
-          }))
+          (teamRows ?? []).map((t) => {
+            const dep = t.departments as
+              | { name?: string | null }
+              | { name?: string | null }[]
+              | null;
+            const d = Array.isArray(dep) ? dep[0] : dep;
+            return {
+              id: t.id as string,
+              name: t.name as string,
+              farbe: (t.farbe as string) ?? "#3b82f6",
+              abteilung: (d?.name as string | undefined) ?? null,
+            };
+          })
         );
       }
 
@@ -220,18 +233,36 @@ export function PlanungsKalender() {
         teamIds.length > 0
           ? await supabase
               .from("team_members")
-              .select("team_id,employee_id")
+              .select("team_id,employee_id,employees(id,name)")
               .in("team_id", teamIds)
-          : { data: [] as { team_id: string; employee_id: string }[] };
+          : {
+              data: [] as {
+                team_id: string;
+                employee_id: string;
+                employees: unknown;
+              }[],
+            };
 
       const map = new Map<string, Set<string>>();
+      const mitgliederMap = new Map<string, { id: string; name: string }[]>();
       for (const row of tmRows ?? []) {
         const tid = row.team_id as string;
         const eid = row.employee_id as string;
         if (!map.has(tid)) map.set(tid, new Set());
         map.get(tid)!.add(eid);
+
+        const e = row.employees as
+          | { id?: string; name?: string }
+          | { id?: string; name?: string }[]
+          | null;
+        const emp = Array.isArray(e) ? e[0] : e;
+        if (emp?.id && emp?.name) {
+          if (!mitgliederMap.has(tid)) mitgliederMap.set(tid, []);
+          mitgliederMap.get(tid)!.push({ id: emp.id, name: emp.name });
+        }
       }
       setMembersByTeam(map);
+      setMitgliederByTeam(mitgliederMap);
 
       const memberIds = Array.from(
         new Set((tmRows ?? []).map((r) => r.employee_id as string))
@@ -289,25 +320,9 @@ export function PlanungsKalender() {
           (p) => !busyIds.has(p.id as string)
         );
 
-        function prioRang(prio: string): number {
-          switch (prio) {
-            case "kritisch":
-              return 1;
-            case "hoch":
-              return 2;
-            case "normal":
-            case "mittel":
-              return 3;
-            case "niedrig":
-              return 4;
-            default:
-              return 5;
-          }
-        }
-
         ungeplant.sort((a, b) => {
-          const pa = prioRang((a.priority as string) ?? "normal");
-          const pb = prioRang((b.priority as string) ?? "normal");
+          const pa = prioRangUngeplant((a.priority as string) ?? "normal");
+          const pb = prioRangUngeplant((b.priority as string) ?? "normal");
           if (pa !== pb) return pa - pb;
           const as = (a.planned_start as string | null) ?? null;
           const bs = (b.planned_start as string | null) ?? null;
@@ -460,33 +475,17 @@ export function PlanungsKalender() {
     };
   }, [supabase, laden]);
 
-  useEffect(() => {
-    const el = document.getElementById("ungeplante-projekte-drag");
-    if (!el || !sheetOffen) return;
-
-    const d = new Draggable(el, {
-      itemSelector: ".draggable-projekt",
-      eventData: (dragEl: HTMLElement) => ({
-        title: dragEl.getAttribute("data-title") ?? "Projekt",
-        duration: "08:00",
-        extendedProps: {
-          projectId: dragEl.getAttribute("data-project-id") ?? "",
-        },
-      }),
-    });
-
-    return () => {
-      d.destroy();
-    };
-  }, [sheetOffen, ungeplanteProjekte]);
-
   const ressourcen = useMemo(() => {
     if (teamsListe.length === 0) {
       return [
         {
           id: "_leer",
           title: "Noch keine Teams",
-          extendedProps: { farbe: "#64748b", platzhalter: true },
+          extendedProps: {
+            farbe: "#64748b",
+            platzhalter: true,
+            abteilung: "—",
+          },
         },
       ];
     }
@@ -496,9 +495,49 @@ export function PlanungsKalender() {
       extendedProps: {
         farbe: t.farbe,
         mitglieder: membersByTeam.get(t.id)?.size ?? 0,
+        abteilung: t.abteilung?.trim() || "—",
       },
     }));
   }, [teamsListe, membersByTeam]);
+
+  const teamSidebarEintraege = useMemo(() => {
+    return teamsListe.map((t) => ({
+      id: t.id,
+      name: t.name,
+      farbe: t.farbe,
+      abteilung: t.abteilung ?? null,
+      mitglieder: mitgliederByTeam.get(t.id) ?? [],
+    }));
+  }, [teamsListe, mitgliederByTeam]);
+
+  const einsaetzeProTeamZeitraum = useMemo(() => {
+    if (!sichtbarerZeitraum) return {};
+    const von = format(sichtbarerZeitraum.start, "yyyy-MM-dd");
+    const bis = format(addDays(sichtbarerZeitraum.end, -1), "yyyy-MM-dd");
+    const acc: Record<string, number> = {};
+    for (const z of zuweisungen) {
+      if (!z.team_id) continue;
+      if (z.date < von || z.date > bis) continue;
+      acc[z.team_id] = (acc[z.team_id] ?? 0) + 1;
+    }
+    return acc;
+  }, [zuweisungen, sichtbarerZeitraum]);
+
+  const heuteEinsaetzeAnzahl = useMemo(() => {
+    const heuteStr = format(new Date(), "yyyy-MM-dd");
+    return zuweisungen.filter((z) => z.date === heuteStr).length;
+  }, [zuweisungen]);
+
+  const heuteAbwesenheitenAnzahl = useMemo(() => {
+    const heuteStr = format(new Date(), "yyyy-MM-dd");
+    const ids = new Set<string>();
+    for (const a of abwesenheiten) {
+      if (heuteStr >= a.start_date && heuteStr <= a.end_date) {
+        ids.add(a.employee_id);
+      }
+    }
+    return ids.size;
+  }, [abwesenheiten]);
 
   const abwesenheitEvents: EventInput[] = useMemo(() => {
     const list: EventInput[] = [];
@@ -667,7 +706,11 @@ export function PlanungsKalender() {
 
   function onEventReceive(info: EventReceiveArg) {
     info.revert();
-    const projectId = info.event.extendedProps?.projectId as string | undefined;
+    const ep = info.event.extendedProps as {
+      projektId?: string;
+      projectId?: string;
+    };
+    const projectId = ep?.projektId ?? ep?.projectId;
     const res = info.event.getResources()[0];
     const start = info.event.start;
     if (!projectId || !start) return;
@@ -679,8 +722,8 @@ export function PlanungsKalender() {
     dialogNeuOeffnen({
       team_id: teamId,
       date: format(start, "yyyy-MM-dd"),
-      start_time: format(start, "HH:mm"),
-      end_time: format(addHours(start, 8), "HH:mm"),
+      start_time: "07:00",
+      end_time: "16:00",
       projekt_id: projectId,
     });
   }
@@ -780,6 +823,7 @@ export function PlanungsKalender() {
   }
 
   function onDatesSet(arg: DatesSetArg) {
+    setSichtbarerZeitraum({ start: arg.start, end: arg.end });
     const start = arg.start;
     const end = addDays(arg.end, -1);
     if (kalenderAnsicht === "week") {
@@ -801,190 +845,14 @@ export function PlanungsKalender() {
     return m[t] ?? t;
   };
 
-  return (
-    <div className="space-y-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <p className="text-xs text-zinc-500">
-            Teams als Zeilen: farbige Ränder, Einsätze per Drag zwischen Teams.
-            Orange Umrandung: mögliche Überschneidung mit Team-Abwesenheit.
-          </p>
-          <p className="text-xs text-zinc-500">
-            <Link
-              href="/teams?tab=projekte"
-              className="font-medium text-blue-400 underline-offset-2 hover:underline"
-            >
-              Projekte anlegen
-            </Link>{" "}
-            ·{" "}
-            <Link
-              href="/teams?tab=teams"
-              className="font-medium text-blue-400 underline-offset-2 hover:underline"
-            >
-              Teams verwalten
-            </Link>
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <ToggleGroup
-            value={[kalenderAnsicht]}
-            onValueChange={(v) => {
-              const n = v[0];
-              if (n === "week" || n === "month") setzeAnsicht(n);
-            }}
-            className="flex flex-wrap gap-1 rounded-lg border border-zinc-800 bg-zinc-950 p-1"
-          >
-            <ToggleGroupItem value="week" className="data-[pressed]:bg-zinc-800">
-              Woche
-            </ToggleGroupItem>
-            <ToggleGroupItem value="month" className="data-[pressed]:bg-zinc-800">
-              Monat
-            </ToggleGroupItem>
-          </ToggleGroup>
-
-          <div className="flex gap-1">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 border-zinc-700"
-              title="Vorheriger Zeitraum"
-              onClick={() => kalenderApi()?.prev()}
-            >
-              ← Zurück
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 border-zinc-700"
-              onClick={() => kalenderApi()?.today()}
-            >
-              Heute
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 border-zinc-700"
-              title="Nächster Zeitraum"
-              onClick={() => kalenderApi()?.next()}
-            >
-              Vor →
-            </Button>
-          </div>
-
-          <div className="hidden min-w-0 flex-1 text-center text-sm font-medium text-zinc-300 md:block">
-            {zeitraumLabel || "…"}
-          </div>
-
-          <div className="ml-auto flex items-center gap-2">
-            <div className="flex md:hidden">
-              <span className="truncate text-xs text-zinc-400">{zeitraumLabel}</span>
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 border-zinc-700"
-              onClick={() => setSheetOffen(true)}
-            >
-              <FolderOpen className="mr-1 size-3.5" />
-              Ungeplante Projekte
-              <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px]">
-                {ungeplanteProjekte.length}
-              </Badge>
-            </Button>
-            <Sheet open={sheetOffen} onOpenChange={setSheetOffen}>
-              <SheetContent
-                side="right"
-                className="w-full max-w-md border-zinc-800 bg-zinc-950"
-              >
-                <SheetHeader>
-                  <SheetTitle className="text-zinc-50">
-                    Ungeplante Projekte
-                  </SheetTitle>
-                </SheetHeader>
-                <p className="text-xs text-zinc-500">
-                  Status &quot;geplant&quot;, kein Einsatz ab heute. Auf den Kalender
-                  ziehen, um einen Termin anzulegen.
-                </p>
-                <ScrollArea className="mt-4 max-h-[70vh] pr-2">
-                  <div id="ungeplante-projekte-drag" className="flex flex-col gap-2">
-                    {ungeplanteProjekte.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
-                        <CheckCircle
-                          className="size-8 text-emerald-500"
-                          aria-hidden
-                        />
-                        <p className="text-sm font-medium text-zinc-300">
-                          Alle Projekte sind eingeplant 🎉
-                        </p>
-                      </div>
-                    ) : (
-                      ungeplanteProjekte.map((p) => (
-                        <div
-                          key={p.id}
-                          className="draggable-projekt relative cursor-grab rounded-xl border border-zinc-800 bg-zinc-900 p-3 active:cursor-grabbing"
-                          data-project-id={p.id}
-                          data-title={p.title}
-                        >
-                          <div className="flex justify-between gap-2 pr-6">
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-medium text-zinc-100">
-                                {p.title}
-                              </p>
-                              <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                <Badge
-                                  variant="secondary"
-                                  className={
-                                    STATUS_BADGE[p.status] ?? "bg-zinc-800"
-                                  }
-                                >
-                                  {statusLabel(p.status)}
-                                </Badge>
-                                <span
-                                  className="size-1.5 rounded-full bg-orange-500"
-                                  title={p.priority}
-                                />
-                              </div>
-                              {p.customerLabel ? (
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                  {p.customerLabel}
-                                </p>
-                              ) : null}
-                              {p.plannedStart || p.plannedEnd ? (
-                                <p className="mt-0.5 text-xs text-zinc-500">
-                                  {p.plannedStart && format(parseISO(p.plannedStart), "dd.MM.yy", { locale: de })}
-                                  {p.plannedStart && p.plannedEnd ? " – " : ""}
-                                  {p.plannedEnd && format(parseISO(p.plannedEnd), "dd.MM.yy", { locale: de })}
-                                </p>
-                              ) : null}
-                            </div>
-                            <GripVertical
-                              className="absolute right-2 top-1/2 size-4 shrink-0 -translate-y-1/2 text-zinc-600"
-                              aria-hidden
-                            />
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </ScrollArea>
-              </SheetContent>
-            </Sheet>
-          </div>
-        </div>
-
-        <div className="planung-fc rounded-lg border border-zinc-800 bg-zinc-900 p-2 md:p-4">
-          {!kalenderBereit ? (
-            <div className="space-y-2 py-8">
-              <Skeleton className="h-10 w-full bg-zinc-800" />
-              <Skeleton className="h-64 w-full bg-zinc-800" />
-            </div>
-          ) : (
-            <div className="fc-theme-standard min-h-[480px] w-full overflow-x-auto">
-              <FullCalendar
+  const kalenderInhalt = !kalenderBereit ? (
+    <div className="space-y-2 py-8">
+      <Skeleton className="h-10 w-full bg-zinc-800" />
+      <Skeleton className="h-64 w-full bg-zinc-800" />
+    </div>
+  ) : (
+    <div className="fc-theme-standard h-full min-h-[420px] w-full min-w-0 overflow-x-auto">
+      <FullCalendar
                 ref={calendarRef}
                 schedulerLicenseKey="GPL-My-Project-Is-Open-Source"
                 plugins={[resourceTimelinePlugin, interactionPlugin]}
@@ -1097,12 +965,14 @@ export function PlanungsKalender() {
                     farbe?: string;
                     platzhalter?: boolean;
                     mitglieder?: number;
+                    abteilung?: string;
                   };
                   const n = ep.mitglieder ?? 0;
+                  const abt = ep.abteilung ?? "—";
                   return (
                     <button
                       type="button"
-                      className="flex w-full min-w-0 flex-col items-stretch rounded-sm px-1 py-1 text-left hover:bg-zinc-800/60"
+                      className="flex w-full min-w-0 items-center gap-2 py-1 pl-2 text-left hover:bg-zinc-800/60"
                       style={{
                         borderLeft: `3px solid ${ep.farbe ?? "#64748b"}`,
                       }}
@@ -1119,21 +989,116 @@ export function PlanungsKalender() {
                         });
                       }}
                     >
-                      <span className="truncate text-sm font-medium text-zinc-200">
-                        {arg.resource.title}
-                      </span>
-                      <span className="text-xs text-zinc-500">
-                        {ep.platzhalter ? "—" : `${n} Mitglieder`}
-                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-semibold text-zinc-200">
+                          {arg.resource.title}
+                        </p>
+                        <p className="text-[10px] text-zinc-500">
+                          {ep.platzhalter
+                            ? "—"
+                            : `${n} Mitgl. · ${abt}`}
+                        </p>
+                      </div>
                     </button>
                   );
                 }}
               />
-            </div>
-          )}
-        </div>
+    </div>
+  );
 
-        <EinsatzEventDetailFloating
+  return (
+    <div className="flex h-[calc(100vh-120px)] min-h-0 flex-col gap-0">
+      <div className="flex shrink-0 flex-col gap-2 px-1 pb-2 sm:flex-row sm:items-start sm:justify-between">
+        <p className="text-xs text-zinc-500">
+          Teams als Zeilen: farbige Ränder, Einsätze per Drag zwischen Teams.
+          Orange Umrandung: mögliche Überschneidung mit Team-Abwesenheit.
+        </p>
+        <p className="text-xs text-zinc-500">
+          <Link
+            href="/teams?tab=projekte"
+            className="font-medium text-blue-400 underline-offset-2 hover:underline"
+          >
+            Projekte anlegen
+          </Link>{" "}
+          ·{" "}
+          <Link
+            href="/teams?tab=teams"
+            className="font-medium text-blue-400 underline-offset-2 hover:underline"
+          >
+            Teams verwalten
+          </Link>
+        </p>
+      </div>
+
+      <PlanungsToolbar
+        zeitraumLabel={zeitraumLabel}
+        ansicht={kalenderAnsicht}
+        onAnsicht={setzeAnsicht}
+        onPrev={() => kalenderApi()?.prev()}
+        onNext={() => kalenderApi()?.next()}
+        onHeute={() => kalenderApi()?.today()}
+      />
+
+      <ResizablePanelGroup
+        id="planung-layout"
+        orientation="horizontal"
+        defaultLayout={planungLayout}
+        onLayoutChanged={planungLayoutChanged}
+        className="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950"
+      >
+        <ResizablePanel
+          id="projekte-sidebar"
+          defaultSize="18%"
+          minSize={14}
+          maxSize={28}
+          collapsible
+          className="flex min-h-0 min-w-0 flex-col"
+        >
+          <ProjekteSidebar projekte={ungeplanteProjekte} />
+        </ResizablePanel>
+
+        <ResizableHandle
+          withHandle
+          className="w-px bg-zinc-800 transition-colors hover:bg-zinc-700 data-[resize-handle-active]:bg-blue-500"
+        />
+
+        <ResizablePanel
+          id="kalender-mitte"
+          defaultSize="64%"
+          minSize={50}
+          className="flex min-h-0 min-w-0 flex-1 flex-col"
+        >
+          <div
+            className="planung-fc flex min-h-0 flex-1 flex-col bg-zinc-900 p-2 md:p-4"
+            id="kalender-container"
+          >
+            {kalenderInhalt}
+          </div>
+        </ResizablePanel>
+
+        <ResizableHandle
+          withHandle
+          className="w-px bg-zinc-800 transition-colors hover:bg-zinc-700 data-[resize-handle-active]:bg-blue-500"
+        />
+
+        <ResizablePanel
+          id="teams-sidebar"
+          defaultSize="18%"
+          minSize={14}
+          maxSize={28}
+          collapsible
+          className="flex min-h-0 min-w-0 flex-col"
+        >
+          <TeamsSidebar
+            teams={teamSidebarEintraege}
+            einsaetzeProTeamZeitraum={einsaetzeProTeamZeitraum}
+            heuteEinsaetze={heuteEinsaetzeAnzahl}
+            heuteAbwesenheiten={heuteAbwesenheitenAnzahl}
+          />
+        </ResizablePanel>
+      </ResizablePanelGroup>
+
+      <EinsatzEventDetailFloating
           offen={detailOffen}
           zuweisung={detailZuweisung}
           position={detailPosition}

@@ -33,7 +33,12 @@ export type UngeplantesProjekt = {
   plannedEnd: string | null;
 };
 
-export type TeamOption = { id: string; name: string; farbe: string };
+export type TeamOption = {
+  id: string;
+  name: string;
+  farbe: string;
+  abteilung?: string | null;
+};
 
 export type ProjektOption = {
   id: string;
