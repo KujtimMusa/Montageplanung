@@ -17,9 +17,10 @@ export default function PlanungSeite() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Planung</h1>
-        <p className="text-muted-foreground">
-          Ressourcen-Timeline, Ziehen & Ablegen, Konfliktprüfung vor dem Speichern.
+        <h1 className="text-2xl font-bold tracking-tight text-zinc-50">Planung</h1>
+        <p className="text-sm text-zinc-400">
+          Ressourcen-Timeline: Mitarbeiter als Zeilen, Abteilungsfarben, Drag
+          &amp; Drop und schnelle Einsatz-Erfassung.
         </p>
       </div>
       <PlanungsKalender />

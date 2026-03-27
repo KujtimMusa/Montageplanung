@@ -157,7 +157,7 @@ export function DashboardUebersicht({ daten }: { daten: DashboardDaten }) {
               {daten.abwesendHeute}
             </div>
             <Link
-              href="/abwesenheiten"
+              href="/einstellungen?tab=abwesenheiten"
               className="mt-1 inline-block text-xs font-medium text-indigo-400 hover:underline"
             >
               Abwesenheiten
@@ -384,7 +384,7 @@ export function DashboardUebersicht({ daten }: { daten: DashboardDaten }) {
             </Link>
             {daten.darfMitarbeiterEinladen ? (
               <Link
-                href="/mitarbeiter"
+                href="/teams"
                 className={cn(
                   buttonVariants({ variant: "outline", size: "default" }),
                   "h-12 w-full justify-between border-zinc-600 text-zinc-100"

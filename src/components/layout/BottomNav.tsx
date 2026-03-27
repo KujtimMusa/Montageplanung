@@ -3,10 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import {
-  bottomNavigationAdmin,
-  bottomNavigationMonteur,
-} from "@/lib/constants/navigation";
+import { bottomNavigation } from "@/lib/constants/navigation";
 import { LogoutButton } from "@/components/auth/LogoutButton";
 
 type BottomNavProps = {
@@ -18,16 +15,17 @@ type BottomNavProps = {
  */
 export function BottomNav({ darfMitarbeiterSeite }: BottomNavProps) {
   const pathname = usePathname();
-  const einträge = darfMitarbeiterSeite
-    ? bottomNavigationAdmin
-    : bottomNavigationMonteur;
+  const basis = bottomNavigation.filter(
+    (e) => darfMitarbeiterSeite || e.href !== "/teams"
+  );
+  const einträge = basis;
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 border-t border-zinc-800 bg-zinc-950/95 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur supports-[backdrop-filter]:bg-zinc-950/90 md:hidden"
+      className="fixed bottom-0 left-0 right-0 z-50 border-t border-zinc-800 bg-zinc-950/95 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5 backdrop-blur supports-[backdrop-filter]:bg-zinc-950/90 md:hidden"
       aria-label="Mobile Hauptnavigation"
     >
-      <ul className="mx-auto flex max-w-lg items-center justify-around px-1">
+      <ul className="mx-auto flex max-w-2xl items-center justify-between gap-0.5 overflow-x-auto px-1">
         {einträge.map((eintrag) => {
           const aktiv =
             pathname === eintrag.href || pathname.startsWith(`${eintrag.href}/`);
@@ -42,7 +40,9 @@ export function BottomNav({ darfMitarbeiterSeite }: BottomNavProps) {
                 )}
               >
                 <Icon className={cn("size-5", aktiv && "text-blue-400")} aria-hidden />
-                <span className="line-clamp-1">{eintrag.label}</span>
+                <span className="max-w-[4.5rem] truncate text-center leading-tight">
+                  {eintrag.label}
+                </span>
               </Link>
             </li>
           );

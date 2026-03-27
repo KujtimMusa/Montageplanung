@@ -30,20 +30,26 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 type MitarbeiterZeile = {
   id: string;
   name: string;
   abteilungsFarbe: string;
+  department_id: string | null;
 };
+
+type AbteilungOpt = { id: string; name: string; color: string };
 
 type ProjektOpt = { id: string; title: string };
 
 type ZuweisungRow = {
   id: string;
   employee_id: string;
-  project_id: string;
+  project_id: string | null;
+  project_title: string | null;
   date: string;
   start_time: string;
   end_time: string;
@@ -84,18 +90,42 @@ function normalisiereUhrzeit(eingabe: string): string {
   return "08:00:00";
 }
 
+function einsatzTitel(z: ZuweisungRow): string {
+  if (z.projects?.title) return z.projects.title;
+  if (z.project_title?.trim()) return z.project_title.trim();
+  return "Einsatz";
+}
+
+function liegtAufAbwesenheit(
+  z: ZuweisungRow,
+  abwesenheiten: AbwesenheitRow[]
+): boolean {
+  return abwesenheiten.some(
+    (a) =>
+      a.employee_id === z.employee_id &&
+      z.date >= a.start_date &&
+      z.date <= a.end_date
+  );
+}
+
 /**
- * Planungskalender: Resource Timeline, Drag & Drop, Dialoge, Realtime.
+ * Planungskalender: Resource Timeline, Filter, Drag & Drop, optionales Projekt.
  */
 export function PlanungsKalender() {
   const supabase = useMemo(() => createClient(), []);
   const [mitarbeiter, setMitarbeiter] = useState<MitarbeiterZeile[]>([]);
+  const [abteilungen, setAbteilungen] = useState<AbteilungOpt[]>([]);
+  const [filterAbteilung, setFilterAbteilung] = useState<string>("alle");
   const [projekte, setProjekte] = useState<ProjektOpt[]>([]);
   const [zuweisungen, setZuweisungen] = useState<ZuweisungRow[]>([]);
   const [abwesenheiten, setAbwesenheiten] = useState<AbwesenheitRow[]>([]);
   const [eigeneMitarbeiterId, setEigeneMitarbeiterId] = useState<string | null>(
     null
   );
+  const [integration, setIntegration] = useState<{
+    outlook: boolean;
+    whatsapp: boolean;
+  }>({ outlook: false, whatsapp: false });
 
   const [dialogOffen, setDialogOffen] = useState(false);
   const [bearbeitenId, setBearbeitenId] = useState<string | null>(null);
@@ -103,6 +133,7 @@ export function PlanungsKalender() {
 
   const [formMitarbeiterId, setFormMitarbeiterId] = useState("");
   const [formProjektId, setFormProjektId] = useState("");
+  const [formProjektFreitext, setFormProjektFreitext] = useState("");
   const [formDatum, setFormDatum] = useState("");
   const [formStart, setFormStart] = useState("08:00");
   const [formEnde, setFormEnde] = useState("16:00");
@@ -128,17 +159,26 @@ export function PlanungsKalender() {
           .select("id,name,department_id")
           .eq("active", true)
           .order("name"),
-        supabase.from("departments").select("id,color"),
+        supabase.from("departments").select("id,name,color").order("name"),
       ]);
 
       const depMap = Object.fromEntries(
         (deps ?? []).map((d) => [d.id, d.color as string])
       );
 
+      setAbteilungen(
+        (deps ?? []).map((d) => ({
+          id: d.id as string,
+          name: d.name as string,
+          color: (d.color as string) ?? "#64748b",
+        }))
+      );
+
       setMitarbeiter(
         (ma ?? []).map((m) => ({
           id: m.id,
           name: m.name,
+          department_id: (m.department_id as string | null) ?? null,
           abteilungsFarbe: m.department_id
             ? depMap[m.department_id] ?? "#64748b"
             : "#64748b",
@@ -159,7 +199,7 @@ export function PlanungsKalender() {
       const { data: zu, error: zuErr } = await supabase
         .from("assignments")
         .select(
-          "id,employee_id,project_id,date,start_time,end_time,role,notes, projects(title)"
+          "id,employee_id,project_id,project_title,date,start_time,end_time,role,notes, projects(title)"
         );
 
       if (zuErr) {
@@ -175,7 +215,8 @@ export function PlanungsKalender() {
           return {
             id: row.id as string,
             employee_id: row.employee_id as string,
-            project_id: row.project_id as string,
+            project_id: (row.project_id as string | null) ?? null,
+            project_title: (row.project_title as string | null) ?? null,
             date: row.date as string,
             start_time: row.start_time as string,
             end_time: row.end_time as string,
@@ -201,6 +242,18 @@ export function PlanungsKalender() {
       toast.error(`Kalenderdaten konnten nicht geladen werden: ${msg}`);
     }
   }, [supabase]);
+
+  useEffect(() => {
+    void fetch("/api/integrationen/status")
+      .then((r) => r.json())
+      .then((j: { outlook?: boolean; whatsapp?: boolean }) =>
+        setIntegration({
+          outlook: Boolean(j.outlook),
+          whatsapp: Boolean(j.whatsapp),
+        })
+      )
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     void laden();
@@ -230,22 +283,30 @@ export function PlanungsKalender() {
     };
   }, [supabase, laden]);
 
+  const gefilterteMitarbeiter = useMemo(() => {
+    if (filterAbteilung === "alle") return mitarbeiter;
+    return mitarbeiter.filter((m) => m.department_id === filterAbteilung);
+  }, [mitarbeiter, filterAbteilung]);
+
   const ressourcen = useMemo(() => {
-    if (mitarbeiter.length === 0) {
+    if (gefilterteMitarbeiter.length === 0) {
       return [
         {
           id: "_leer",
-          title: "Noch keine Mitarbeiter",
+          title:
+            mitarbeiter.length === 0
+              ? "Noch keine Mitarbeiter"
+              : "Keine Mitarbeiter in dieser Abteilung",
           extendedProps: { abteilungsFarbe: "#64748b", platzhalter: true },
         },
       ];
     }
-    return mitarbeiter.map((m) => ({
+    return gefilterteMitarbeiter.map((m) => ({
       id: m.id,
       title: m.name,
       extendedProps: { abteilungsFarbe: m.abteilungsFarbe },
     }));
-  }, [mitarbeiter]);
+  }, [gefilterteMitarbeiter, mitarbeiter.length]);
 
   const abwesenheitEvents: EventInput[] = useMemo(() => {
     const list: EventInput[] = [];
@@ -280,7 +341,8 @@ export function PlanungsKalender() {
       const farbe =
         mitarbeiter.find((m) => m.id === z.employee_id)?.abteilungsFarbe ??
         "#3b82f6";
-      const titel = z.projects?.title ?? "Einsatz";
+      const titel = einsatzTitel(z);
+      const konflikt = liegtAufAbwesenheit(z, abwesenheiten);
       return {
         id: z.id,
         resourceId: z.employee_id,
@@ -288,18 +350,20 @@ export function PlanungsKalender() {
         start: datumUndZeitZuIso(z.date, z.start_time),
         end: datumUndZeitZuIso(z.date, z.end_time),
         backgroundColor: farbe,
-        borderColor: farbe,
+        borderColor: konflikt ? "#ef4444" : farbe,
+        classNames: konflikt ? ["fc-event-konflikt"] : undefined,
         extendedProps: { zuweisung: z },
       };
     });
     return [...abwesenheitEvents, ...eins];
-  }, [zuweisungen, mitarbeiter, abwesenheitEvents]);
+  }, [zuweisungen, mitarbeiter, abwesenheitEvents, abwesenheiten]);
 
   function dialogZuruecksetzen() {
     setBearbeitenId(null);
     setKonfliktText(null);
     setFormMitarbeiterId("");
     setFormProjektId("");
+    setFormProjektFreitext("");
     setFormDatum("");
     setFormStart("08:00");
     setFormEnde("16:00");
@@ -318,14 +382,14 @@ export function PlanungsKalender() {
     setFormDatum(format(start, "yyyy-MM-dd"));
     setFormStart(format(start, "HH:mm"));
     setFormEnde(format(ende, "HH:mm"));
-    if (projekte[0]?.id) setFormProjektId(projekte[0].id);
     setDialogOffen(true);
   }
 
   function dialogOeffnenBearbeiten(z: ZuweisungRow) {
     setBearbeitenId(z.id);
     setFormMitarbeiterId(z.employee_id);
-    setFormProjektId(z.project_id);
+    setFormProjektId(z.project_id ?? "");
+    setFormProjektFreitext(z.project_title ?? "");
     setFormDatum(z.date);
     setFormStart(z.start_time.slice(0, 5));
     setFormEnde(z.end_time.slice(0, 5));
@@ -335,9 +399,21 @@ export function PlanungsKalender() {
     setDialogOffen(true);
   }
 
+  function projektPayload(): {
+    project_id: string | null;
+    project_title: string | null;
+  } {
+    const ft = formProjektFreitext.trim();
+    if (formProjektId && formProjektId !== "__frei__") {
+      return { project_id: formProjektId, project_title: null };
+    }
+    if (ft) return { project_id: null, project_title: ft };
+    return { project_id: null, project_title: null };
+  }
+
   async function speichern() {
-    if (!formProjektId || !formMitarbeiterId || !formDatum) {
-      toast.error("Bitte alle Pflichtfelder ausfüllen.");
+    if (!formMitarbeiterId || !formDatum) {
+      toast.error("Mitarbeiter und Datum sind erforderlich.");
       return;
     }
 
@@ -361,12 +437,15 @@ export function PlanungsKalender() {
       return;
     }
 
+    const { project_id, project_title } = projektPayload();
+
     if (bearbeitenId) {
       const { error } = await supabase
         .from("assignments")
         .update({
           employee_id: formMitarbeiterId,
-          project_id: formProjektId,
+          project_id,
+          project_title,
           date: formDatum,
           start_time: normStart,
           end_time: normEnde,
@@ -382,7 +461,8 @@ export function PlanungsKalender() {
     } else {
       const payload: Record<string, unknown> = {
         employee_id: formMitarbeiterId,
-        project_id: formProjektId,
+        project_id,
+        project_title,
         date: formDatum,
         start_time: normStart,
         end_time: normEnde,
@@ -472,7 +552,7 @@ export function PlanungsKalender() {
     }
     if (String(res.id) === "_leer") {
       toast.info(
-        "Lege unter „Mitarbeiter“ oder per Admin neue Profile an, damit der Kalender Zeilen hat."
+        "Lege Mitarbeiter an oder passe den Abteilungsfilter an, damit Zeilen sichtbar sind."
       );
       return;
     }
@@ -514,7 +594,42 @@ export function PlanungsKalender() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border bg-card p-2 md:p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs text-zinc-500">
+          Rote Umrandung: Einsatz liegt während einer Abwesenheit (Urlaub/Krank)
+          — bitte prüfen.
+        </p>
+      </div>
+
+      <Tabs
+        value={filterAbteilung}
+        onValueChange={setFilterAbteilung}
+        className="w-full"
+      >
+        <TabsList className="flex h-auto min-h-10 w-full flex-wrap justify-start gap-1 bg-zinc-900 p-1">
+          <TabsTrigger
+            value="alle"
+            className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100"
+          >
+            Alle Abteilungen
+          </TabsTrigger>
+          {abteilungen.map((a) => (
+            <TabsTrigger
+              key={a.id}
+              value={a.id}
+              className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100"
+            >
+              <span
+                className="mr-2 inline-block size-2 rounded-full"
+                style={{ backgroundColor: a.color }}
+              />
+              {a.name}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+
+      <div className="planung-fc rounded-lg border border-zinc-800 bg-zinc-900 p-2 md:p-4">
         <div className="fc-theme-standard min-h-[480px] w-full overflow-x-auto">
           <FullCalendar
             schedulerLicenseKey="GPL-My-Project-Is-Open-Source"
@@ -556,7 +671,7 @@ export function PlanungsKalender() {
                         ?.abteilungsFarbe ?? "#64748b",
                   }}
                 />
-                <span className="truncate text-sm font-medium">
+                <span className="truncate text-sm font-medium text-zinc-100">
                   {arg.resource.title}
                 </span>
               </div>
@@ -565,12 +680,6 @@ export function PlanungsKalender() {
         </div>
       </div>
 
-      {projekte.length === 0 && (
-        <p className="text-sm text-amber-700 dark:text-amber-400">
-          Lege zuerst ein Projekt unter „Projekte“ an, um Einsätze zu buchen.
-        </p>
-      )}
-
       <Dialog
         open={dialogOffen}
         onOpenChange={(o) => {
@@ -578,15 +687,15 @@ export function PlanungsKalender() {
           if (!o) dialogZuruecksetzen();
         }}
       >
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
+        <DialogContent className="max-h-[90vh] overflow-y-auto border-zinc-700 bg-zinc-900 sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className="text-zinc-50">
               {bearbeitenId ? "Einsatz bearbeiten" : "Neuer Einsatz"}
             </DialogTitle>
           </DialogHeader>
 
           {konfliktText && (
-            <Alert variant="destructive">
+            <Alert variant="destructive" className="border-red-900 bg-red-950/40">
               <AlertTitle>Konflikt</AlertTitle>
               <AlertDescription>{konfliktText}</AlertDescription>
             </Alert>
@@ -594,12 +703,12 @@ export function PlanungsKalender() {
 
           <div className="grid gap-3 py-2">
             <div className="space-y-2">
-              <Label>Mitarbeiter</Label>
+              <Label className="text-zinc-300">Mitarbeiter</Label>
               <Select
                 value={formMitarbeiterId}
                 onValueChange={(v) => setFormMitarbeiterId(v ?? "")}
               >
-                <SelectTrigger>
+                <SelectTrigger className="border-zinc-700 bg-zinc-950">
                   <SelectValue placeholder="Wählen" />
                 </SelectTrigger>
                 <SelectContent>
@@ -612,15 +721,27 @@ export function PlanungsKalender() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Projekt</Label>
+              <Label className="text-zinc-300">Projekt (optional)</Label>
               <Select
-                value={formProjektId}
-                onValueChange={(v) => setFormProjektId(v ?? "")}
+                value={
+                  formProjektId && formProjektId !== "__frei__"
+                    ? formProjektId
+                    : "__frei__"
+                }
+                onValueChange={(v) => {
+                  if (v === "__frei__") {
+                    setFormProjektId("");
+                  } else {
+                    setFormProjektId(v ?? "");
+                    setFormProjektFreitext("");
+                  }
+                }}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Projekt wählen" />
+                <SelectTrigger className="border-zinc-700 bg-zinc-950">
+                  <SelectValue placeholder="Aus Liste oder Freitext unten" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="__frei__">— Freitext / kein Projekt</SelectItem>
                   {projekte.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
                       {p.title}
@@ -628,43 +749,61 @@ export function PlanungsKalender() {
                   ))}
                 </SelectContent>
               </Select>
+              <Input
+                placeholder="Oder Projektbezeichnung frei eingeben"
+                value={formProjektFreitext}
+                onChange={(e) => {
+                  setFormProjektFreitext(e.target.value);
+                  if (e.target.value.trim()) setFormProjektId("");
+                }}
+                className="border-zinc-700 bg-zinc-950 text-zinc-100"
+              />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="einsatz-datum">Datum</Label>
+              <Label htmlFor="einsatz-datum" className="text-zinc-300">
+                Datum
+              </Label>
               <Input
                 id="einsatz-datum"
                 type="date"
                 value={formDatum}
                 onChange={(e) => setFormDatum(e.target.value)}
+                className="border-zinc-700 bg-zinc-950"
               />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-2">
-                <Label htmlFor="einsatz-start">Start</Label>
+                <Label htmlFor="einsatz-start" className="text-zinc-300">
+                  Start
+                </Label>
                 <Input
                   id="einsatz-start"
                   type="time"
                   value={formStart}
                   onChange={(e) => setFormStart(e.target.value)}
+                  className="border-zinc-700 bg-zinc-950"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="einsatz-ende">Ende</Label>
+                <Label htmlFor="einsatz-ende" className="text-zinc-300">
+                  Ende
+                </Label>
                 <Input
                   id="einsatz-ende"
                   type="time"
                   value={formEnde}
                   onChange={(e) => setFormEnde(e.target.value)}
+                  className="border-zinc-700 bg-zinc-950"
                 />
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Rolle vor Ort</Label>
+              <Label className="text-zinc-300">Rolle vor Ort (optional)</Label>
               <Select
                 value={formRolle}
                 onValueChange={(v) => setFormRolle(v ?? "Teamleiter")}
               >
-                <SelectTrigger>
+                <SelectTrigger className="border-zinc-700 bg-zinc-950">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -674,14 +813,59 @@ export function PlanungsKalender() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="einsatz-notiz">Notiz</Label>
+              <Label htmlFor="einsatz-notiz" className="text-zinc-300">
+                Notiz
+              </Label>
               <Textarea
                 id="einsatz-notiz"
                 value={formNotiz}
                 onChange={(e) => setFormNotiz(e.target.value)}
-                rows={3}
+                rows={2}
                 placeholder="Optional"
+                className="border-zinc-700 bg-zinc-950 text-zinc-100"
               />
+            </div>
+
+            <div className="flex flex-wrap gap-2 border-t border-zinc-800 pt-3">
+              <span className="w-full text-xs font-medium text-zinc-500">
+                Benachrichtigungen (nach dem Speichern manuell)
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={!integration.outlook}
+                title={
+                  integration.outlook
+                    ? "Outlook-Termin anlegen"
+                    : "Outlook nicht konfiguriert (AZURE_CLIENT_ID)"
+                }
+                className={cn(!integration.outlook && "opacity-50")}
+                onClick={() =>
+                  integration.outlook &&
+                  toast.info("Outlook-Sync ist noch ein Platzhalter.")
+                }
+              >
+                Outlook
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={!integration.whatsapp}
+                title={
+                  integration.whatsapp
+                    ? "WhatsApp an Mitarbeiter"
+                    : "WhatsApp nicht konfiguriert (Twilio)"
+                }
+                className={cn(!integration.whatsapp && "opacity-50")}
+                onClick={() =>
+                  integration.whatsapp &&
+                  toast.info("WhatsApp-Versand folgt bei Twilio-Konfiguration.")
+                }
+              >
+                WhatsApp
+              </Button>
             </div>
           </div>
 

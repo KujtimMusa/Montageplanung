@@ -24,24 +24,58 @@ export async function POST(request: Request) {
       );
     }
 
-    const [{ data: ma }, { data: pr }, { data: zu }] = await Promise.all([
-      supabase.from("employees").select("id,name,role,active,department_id").limit(200),
-      supabase.from("projects").select("id,title,status,priority,planned_start,planned_end").limit(100),
+    const heute = new Date().toISOString().slice(0, 10);
+
+    const [
+      { data: ma },
+      { data: pr },
+      { data: zu },
+      { data: abw },
+      { data: heuteZu },
+    ] = await Promise.all([
+      supabase
+        .from("employees")
+        .select("id,name,role,active,department_id")
+        .limit(300),
+      supabase
+        .from("projects")
+        .select("id,title,status,priority,planned_start,planned_end")
+        .limit(150),
       supabase
         .from("assignments")
-        .select("id,employee_id,project_id,date,start_time,end_time")
+        .select(
+          "id,employee_id,project_id,project_title,date,start_time,end_time"
+        )
         .order("date", { ascending: false })
-        .limit(150),
+        .limit(200),
+      supabase
+        .from("absences")
+        .select("id,employee_id,type,start_date,end_date,status")
+        .limit(200),
+      supabase
+        .from("assignments")
+        .select(
+          "id,employee_id,project_id,project_title,date,start_time,end_time"
+        )
+        .eq("date", heute)
+        .limit(100),
     ]);
 
     const kontext = [
-      "Du bist ein Assistent für Monteurplanung. Antworte knapp auf Deutsch.",
+      `Heutiges Datum (ISO): ${heute}`,
+      "Du unterstützt Teamleitung, Abteilungs- und Bereichsleiter bei Einsatzplanung und Steuerung. Antworte knapp auf Deutsch.",
       "Mitarbeiter (Auszug):",
       JSON.stringify(ma ?? []),
       "Projekte (Auszug):",
       JSON.stringify(pr ?? []),
-      "Einsätze (Auszug):",
+      "Einsätze (Auszug, inkl. project_title wenn kein Projekt verknüpft):",
       JSON.stringify(zu ?? []),
+      "Abwesenheiten:",
+      JSON.stringify(abw ?? []),
+      "Einsätze nur heute:",
+      JSON.stringify(heuteZu ?? []),
+      "Hinweis: Prüfe bei Bedarf zeitliche Überschneidungen pro Mitarbeiter selbst aus den Einsätzen.",
+      "Wenn du einen neuen Einsatz vorschlägst, formuliere klare Felder (Mitarbeiter-ID oder Name, Datum, Zeit, Projekt/Freitext).",
       "Nutzerfrage:",
       frage,
     ].join("\n");
@@ -49,13 +83,13 @@ export async function POST(request: Request) {
     if (!istGeminiKonfiguriert()) {
       return NextResponse.json({
         antwort:
-          "KI ist nicht konfiguriert (GEMINI_API_KEY fehlt). Hier ein Datenüberblick: " +
-          `${(ma ?? []).length} Mitarbeiter, ${(pr ?? []).length} Projekte, ${(zu ?? []).length} Einsätze in der Stichprobe.`,
+          "KI ist nicht konfiguriert (GEMINI_API_KEY fehlt). Datenüberblick: " +
+          `${(ma ?? []).length} Mitarbeiter, ${(pr ?? []).length} Projekte, ${(zu ?? []).length} Einsätze (Stichprobe), ${(abw ?? []).length} Abwesenheiten.`,
       });
     }
 
     const antwort = await rufeGeminiOptional(
-      "Du hilfst bei Einsatzplanung. Nutze nur die mitgelieferten JSON-Daten. Antworte auf Deutsch, sachlich.",
+      "Du hilfst bei Planung und Steuerung. Nutze nur die mitgelieferten JSON-Daten. Antworte auf Deutsch, sachlich. Wenn eine konkrete Aktion sinnvoll wäre (z. B. Einsatz anlegen), beschreibe sie am Ende in einem Satz mit 'Vorschlag:' und den nötigen Feldern — der Nutzer bestätigt in der App.",
       kontext
     );
 

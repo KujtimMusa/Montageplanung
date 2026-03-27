@@ -1,6 +1,5 @@
 "use client";
 
-import { FloatingChat } from "@/components/agenten/FloatingChat";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Sidebar } from "@/components/layout/Sidebar";
 
@@ -14,7 +13,7 @@ export type AbteilungZeile = {
 type AppShellProps = {
   children: React.ReactNode;
   abteilungen: AbteilungZeile[];
-  /** Admin / Abteilungsleiter sehen /mitarbeiter in der Navigation */
+  /** Admin / Abteilungsleiter sehen /teams in der Navigation */
   darfMitarbeiterSeite: boolean;
 };
 
@@ -38,7 +37,6 @@ export function AppShell({
         </main>
       </div>
       <BottomNav darfMitarbeiterSeite={darfMitarbeiterSeite} />
-      <FloatingChat />
     </div>
   );
 }

@@ -138,3 +138,27 @@
     @apply font-sans;
   }
 }
+
+/* FullCalendar: dunkles Theme in der Planung */
+.planung-fc .fc {
+  --fc-border-color: #3f3f46;
+  --fc-page-bg-color: #18181b;
+  --fc-neutral-bg-color: #27272a;
+  --fc-list-event-hover-bg-color: #3f3f46;
+  --fc-today-bg-color: rgba(59, 130, 246, 0.12);
+  --fc-now-indicator-color: #ef4444;
+}
+.planung-fc .fc-theme-standard td,
+.planung-fc .fc-theme-standard th {
+  border-color: #3f3f46;
+}
+.planung-fc .fc-col-header-cell,
+.planung-fc .fc-timeline-slot-label {
+  color: #a1a1aa;
+}
+.planung-fc .fc-toolbar-title {
+  color: #fafafa;
+}
+.fc-event-konflikt .fc-event-main-frame {
+  box-shadow: inset 0 0 0 2px rgb(239 68 68);
+}

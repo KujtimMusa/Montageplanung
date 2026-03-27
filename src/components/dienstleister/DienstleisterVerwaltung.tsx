@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +30,7 @@ type Zeile = {
   id: string;
   company_name: string;
   contact_name: string | null;
+  phone: string | null;
   whatsapp_number: string | null;
   specialization: string[] | null;
   lead_time_days: number;
@@ -43,6 +45,7 @@ export function DienstleisterVerwaltung() {
   const [bearbeitenId, setBearbeitenId] = useState<string | null>(null);
   const [firma, setFirma] = useState("");
   const [kontakt, setKontakt] = useState("");
+  const [telefon, setTelefon] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [spez, setSpez] = useState("");
   const [vorlauf, setVorlauf] = useState("3");
@@ -58,7 +61,7 @@ export function DienstleisterVerwaltung() {
       const { data, error } = await supabase
         .from("subcontractors")
         .select(
-          "id,company_name,contact_name,whatsapp_number,specialization,lead_time_days,max_concurrent_projects,active"
+          "id,company_name,contact_name,phone,whatsapp_number,specialization,lead_time_days,max_concurrent_projects,active"
         )
         .order("company_name");
       if (error) throw error;
@@ -77,6 +80,7 @@ export function DienstleisterVerwaltung() {
     setBearbeitenId(null);
     setFirma("");
     setKontakt("");
+    setTelefon("");
     setWhatsapp("");
     setSpez("");
     setVorlauf("3");
@@ -93,6 +97,7 @@ export function DienstleisterVerwaltung() {
     setBearbeitenId(z.id);
     setFirma(z.company_name);
     setKontakt(z.contact_name ?? "");
+    setTelefon(z.phone ?? "");
     setWhatsapp(z.whatsapp_number ?? "");
     setSpez((z.specialization ?? []).join(", "));
     setVorlauf(String(z.lead_time_days));
@@ -115,6 +120,7 @@ export function DienstleisterVerwaltung() {
       const payload = {
         company_name: firma.trim(),
         contact_name: kontakt.trim() || null,
+        phone: telefon.trim() || null,
         whatsapp_number: whatsapp.trim() || null,
         specialization: specArr.length > 0 ? specArr : null,
         lead_time_days: Math.max(0, parseInt(vorlauf, 10) || 0),
@@ -175,17 +181,19 @@ export function DienstleisterVerwaltung() {
           <TableHeader>
             <TableRow>
               <TableHead>Firma</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead>Ansprechpartner</TableHead>
+              <TableHead>Telefon</TableHead>
               <TableHead>WhatsApp</TableHead>
               <TableHead>Spezialisierung</TableHead>
               <TableHead>Vorlauf (Tage)</TableHead>
-              <TableHead className="w-[130px] text-right">Aktionen</TableHead>
+              <TableHead className="w-[180px] text-right">Aktionen</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {zeilen.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-muted-foreground">
+                <TableCell colSpan={8} className="text-muted-foreground">
                   Keine Dienstleister.
                 </TableCell>
               </TableRow>
@@ -193,13 +201,47 @@ export function DienstleisterVerwaltung() {
               zeilen.map((z) => (
                 <TableRow key={z.id}>
                   <TableCell className="font-medium">{z.company_name}</TableCell>
+                  <TableCell>
+                    <span
+                      className={
+                        z.active
+                          ? "rounded-md bg-emerald-950/60 px-2 py-0.5 text-xs text-emerald-300"
+                          : "rounded-md bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400"
+                      }
+                    >
+                      {z.active ? "aktiv" : "inaktiv"}
+                    </span>
+                  </TableCell>
                   <TableCell>{z.contact_name ?? "—"}</TableCell>
+                  <TableCell className="text-sm">{z.phone ?? "—"}</TableCell>
                   <TableCell className="text-sm">{z.whatsapp_number ?? "—"}</TableCell>
                   <TableCell className="max-w-[200px] truncate text-sm">
                     {(z.specialization ?? []).join(", ") || "—"}
                   </TableCell>
                   <TableCell>{z.lead_time_days}</TableCell>
                   <TableCell className="text-right">
+                    <a
+                      href={
+                        z.whatsapp_number
+                          ? `https://wa.me/${z.whatsapp_number.replace(/\D/g, "")}`
+                          : z.phone
+                            ? `tel:${z.phone}`
+                            : "#"
+                      }
+                      onClick={(e) => {
+                        if (!z.whatsapp_number && !z.phone) {
+                          e.preventDefault();
+                        }
+                      }}
+                      target={z.whatsapp_number ? "_blank" : undefined}
+                      rel={z.whatsapp_number ? "noreferrer" : undefined}
+                      className={cn(
+                        buttonVariants({ variant: "outline", size: "sm" }),
+                        "mr-1 h-8 border-zinc-600 text-xs"
+                      )}
+                    >
+                      Benachrichtigen
+                    </a>
                     <Button
                       type="button"
                       variant="ghost"
@@ -261,6 +303,14 @@ export function DienstleisterVerwaltung() {
             <div className="space-y-2">
               <Label>Ansprechpartner</Label>
               <Input value={kontakt} onChange={(e) => setKontakt(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Telefon</Label>
+              <Input
+                value={telefon}
+                onChange={(e) => setTelefon(e.target.value)}
+                placeholder="+49…"
+              />
             </div>
             <div className="space-y-2">
               <Label>WhatsApp (E.164 oder mit Ländervorwahl)</Label>

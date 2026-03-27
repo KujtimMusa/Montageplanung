@@ -138,7 +138,7 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
       supabase
         .from("assignments")
         .select(
-          "id,start_time,end_time,status, employees(name), projects(title)"
+          "id,start_time,end_time,status,project_title, employees(name), projects(title)"
         )
         .eq("date", heuteStr)
         .order("start_time")
@@ -223,10 +223,11 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
           | null;
         const emp = Array.isArray(empRaw) ? empRaw[0] : empRaw;
         const pr = Array.isArray(prRaw) ? prRaw[0] : prRaw;
+        const ft = row.project_title as string | null | undefined;
         return {
           id: String(row.id),
           mitarbeiter: String(emp?.name ?? "—"),
-          projekt: String(pr?.title ?? "—"),
+          projekt: String(pr?.title ?? ft?.trim() ?? "Ohne Projekt"),
           start: String(row.start_time ?? "").slice(0, 5),
           ende: String(row.end_time ?? "").slice(0, 5),
           status: String(row.status ?? "geplant"),

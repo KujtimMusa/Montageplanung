@@ -1,15 +1,10 @@
 import {
-  Bell,
-  Building2,
-  Briefcase,
-  CalendarDays,
-  Contact,
-  LayoutDashboard,
-  Settings,
-  Users,
   AlertTriangle,
+  Bot,
+  CalendarDays,
+  Settings,
   Truck,
-  UserMinus,
+  Users,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -19,40 +14,30 @@ export type NavEintrag = {
   icon: LucideIcon;
 };
 
-/** Vollständige Desktop-Sidebar (Bauplan) */
+/** Desktop-Sidebar — Planung & Steuerung für Führungskräfte */
 export const sidebarNavigation: NavEintrag[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/planung", label: "Planung", icon: CalendarDays },
-  { href: "/projekte", label: "Projekte", icon: Briefcase },
-  { href: "/mitarbeiter", label: "Mitarbeiter", icon: Users },
-  { href: "/abteilungen", label: "Abteilungen", icon: Building2 },
-  { href: "/kunden", label: "Kunden", icon: Contact },
-  { href: "/abwesenheiten", label: "Abwesenheiten", icon: UserMinus },
-  { href: "/dienstleister", label: "Dienstleister", icon: Truck },
+  { href: "/teams", label: "Teams & Mitarbeiter", icon: Users },
   { href: "/notfall", label: "Notfall", icon: AlertTriangle },
-  { href: "/benachrichtigungen", label: "Benachrichtigungen", icon: Bell },
+  { href: "/ki-assistent", label: "KI-Assistent", icon: Bot },
+  { href: "/dienstleister", label: "Dienstleister", icon: Truck },
   { href: "/einstellungen", label: "Einstellungen", icon: Settings },
 ];
 
-/** Mobile Bottom Navigation (4 Icons) */
-export const bottomNavigationAdmin: NavEintrag[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/planung", label: "Kalender", icon: CalendarDays },
-  { href: "/mitarbeiter", label: "Team", icon: Users },
-  { href: "/benachrichtigungen", label: "Infos", icon: Bell },
-];
-
-export const bottomNavigationMonteur: NavEintrag[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/planung", label: "Kalender", icon: CalendarDays },
-  { href: "/projekte", label: "Projekte", icon: Briefcase },
-  { href: "/benachrichtigungen", label: "Infos", icon: Bell },
+/** Mobil: gleiche Kernpunkte (scrollbar/kompakt) */
+export const bottomNavigation: NavEintrag[] = [
+  { href: "/planung", label: "Planung", icon: CalendarDays },
+  { href: "/teams", label: "Teams", icon: Users },
+  { href: "/notfall", label: "Notfall", icon: AlertTriangle },
+  { href: "/ki-assistent", label: "KI", icon: Bot },
+  { href: "/dienstleister", label: "DL", icon: Truck },
+  { href: "/einstellungen", label: "Mehr", icon: Settings },
 ];
 
 export function sidebarEinträgeFiltern(
   einträge: NavEintrag[],
-  darfMitarbeiterSeite: boolean
+  darfTeamsSeite: boolean
 ): NavEintrag[] {
-  if (darfMitarbeiterSeite) return einträge;
-  return einträge.filter((e) => e.href !== "/mitarbeiter");
+  if (darfTeamsSeite) return einträge;
+  return einträge.filter((e) => e.href !== "/teams");
 }

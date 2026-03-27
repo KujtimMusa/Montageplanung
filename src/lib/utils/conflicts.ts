@@ -24,7 +24,7 @@ export async function pruefeEinsatzKonflikt(
 
   const { data: bestehend, error } = await supabase
     .from("assignments")
-    .select("id,start_time,end_time,projects(title)")
+    .select("id,start_time,end_time,project_title,projects(title)")
     .eq("employee_id", mitarbeiterId)
     .eq("date", datum);
 
@@ -61,7 +61,8 @@ export async function pruefeEinsatzKonflikt(
         | { title?: string }[]
         | null;
       const projekt = Array.isArray(p) ? p[0] : p;
-      return projekt?.title ?? "Einsatz";
+      const ft = k.project_title as string | null | undefined;
+      return projekt?.title ?? ft?.trim() ?? "Einsatz";
     })
     .join(", ");
 

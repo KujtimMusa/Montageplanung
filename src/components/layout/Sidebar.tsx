@@ -29,8 +29,8 @@ export function Sidebar({ abteilungen, darfMitarbeiterSeite }: SidebarProps) {
   return (
     <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950 md:flex">
       <div className="flex h-14 items-center border-b border-zinc-800 px-4">
-        <Link href="/dashboard" className="font-semibold text-zinc-100">
-          Monteurplanung
+        <Link href="/planung" className="font-semibold text-zinc-100">
+          Einsatzplanung
         </Link>
       </div>
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3" aria-label="Hauptnavigation">
