@@ -1,6 +1,4 @@
 import Link from "next/link";
-import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import {
   Card,
   CardDescription,
@@ -41,43 +39,35 @@ const highlights = [
   },
 ];
 
-type LandingPageProps = {
-  eingeloggt: boolean;
-};
+/** Link-Stile ohne Import aus client-only `button.tsx` (RSC-sicher). */
+const stil = {
+  headerGhost:
+    "inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-[0.8rem] font-medium text-foreground transition-colors hover:bg-muted",
+  headerPrimary:
+    "inline-flex h-7 items-center justify-center rounded-lg bg-primary px-2.5 text-[0.8rem] font-medium text-primary-foreground transition-colors hover:bg-primary/90",
+  heroPrimary:
+    "inline-flex h-9 min-h-9 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 w-full sm:w-auto",
+  heroOutline:
+    "inline-flex h-9 min-h-9 items-center justify-center rounded-lg border border-input bg-background px-4 text-sm font-medium transition-colors hover:bg-muted w-full sm:w-auto",
+} as const;
 
 /**
- * Öffentliche Marketing-Startseite (Mobile-First).
+ * Öffentliche Marketing-Startseite (Mobile-First), reine Server-Komponente.
+ * Eingeloggte Nutzer: Middleware leitet / → /dashboard.
  */
-export function LandingPage({ eingeloggt }: LandingPageProps) {
+export function LandingPage() {
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
           <span className="font-semibold text-primary">Monteurplanung</span>
           <nav className="flex items-center gap-2">
-            {eingeloggt ? (
-              <Link
-                href="/dashboard"
-                className={cn(buttonVariants({ variant: "default", size: "sm" }))}
-              >
-                Zum Dashboard
-              </Link>
-            ) : (
-              <>
-                <Link
-                  href="/login"
-                  className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
-                >
-                  Anmelden
-                </Link>
-                <Link
-                  href="/register"
-                  className={cn(buttonVariants({ variant: "default", size: "sm" }))}
-                >
-                  Registrieren
-                </Link>
-              </>
-            )}
+            <Link href="/login" className={stil.headerGhost}>
+              Anmelden
+            </Link>
+            <Link href="/register" className={stil.headerPrimary}>
+              Registrieren
+            </Link>
           </nav>
         </div>
       </header>
@@ -96,22 +86,10 @@ export function LandingPage({ eingeloggt }: LandingPageProps) {
               die Baustelle, nicht für den Schreibtisch allein.
             </p>
             <div className="mt-8 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
-              <Link
-                href="/login"
-                className={cn(
-                  buttonVariants({ size: "lg" }),
-                  "w-full sm:w-auto"
-                )}
-              >
+              <Link href="/login" className={stil.heroPrimary}>
                 Anmelden
               </Link>
-              <Link
-                href="/register"
-                className={cn(
-                  buttonVariants({ variant: "outline", size: "lg" }),
-                  "w-full sm:w-auto"
-                )}
-              >
+              <Link href="/register" className={stil.heroOutline}>
                 Registrieren
               </Link>
             </div>
