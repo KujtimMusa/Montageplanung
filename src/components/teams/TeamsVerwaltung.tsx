@@ -37,6 +37,14 @@ import {
 import { StammdatenSection } from "@/components/stammdaten/StammdatenSection";
 import { StammdatenFilterBar } from "@/components/stammdaten/StammdatenFilterBar";
 import { StammdatenSheetFooter } from "@/components/stammdaten/StammdatenSheetFooter";
+import {
+  STAMMDATEN_FILTER_INPUT,
+  STAMMDATEN_HEADER_BUTTON,
+  STAMMDATEN_TABLE,
+  STAMMDATEN_TH,
+  STAMMDATEN_TABELLE_HUELLE,
+} from "@/components/stammdaten/stammdatenKlassen";
+import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Popover,
@@ -54,7 +62,6 @@ import {
   Users,
   UserPlus,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 type TeamRow = {
   id: string;
@@ -414,25 +421,23 @@ export function TeamsVerwaltung() {
   return (
     <StammdatenSection
       title="Teams"
-      description="Aktionen → Suche → Tabelle. Mitglieder über „Mitglieder“; Bearbeiten öffnet das Formular mit Speichern."
       actions={
         <Button
           type="button"
-          size="sm"
-          className="gap-1"
+          className={cn(STAMMDATEN_HEADER_BUTTON, "gap-1")}
           onClick={() => teamSheetOeffnen()}
         >
-          <Plus className="size-4" />
+          <Plus className="size-4 shrink-0" />
           Neues Team
         </Button>
       }
     >
       <StammdatenFilterBar>
         <Input
-          placeholder="Team oder Abteilung suchen…"
+          placeholder="Teams / Abteilung suchen…"
           value={sucheTeam}
           onChange={(e) => setSucheTeam(e.target.value)}
-          className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-950/90 sm:col-span-2 lg:col-span-4"
+          className={STAMMDATEN_FILTER_INPUT}
         />
       </StammdatenFilterBar>
 
@@ -450,16 +455,26 @@ export function TeamsVerwaltung() {
           </CardContent>
         </Card>
       ) : (
-        <div className="overflow-x-auto rounded-md border border-zinc-800">
-          <Table>
+        <div className={STAMMDATEN_TABELLE_HUELLE}>
+          <Table className={STAMMDATEN_TABLE}>
             <TableHeader>
               <TableRow className="border-zinc-800 hover:bg-transparent">
-                <TableHead className="w-12">Farbe</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Abteilung</TableHead>
-                <TableHead>Leitung</TableHead>
-                <TableHead className="w-24 text-right">Mitglieder</TableHead>
-                <TableHead className="text-right">Aktionen</TableHead>
+                <TableHead className={cn("w-12", STAMMDATEN_TH)}>Farbe</TableHead>
+                <TableHead className={cn("min-w-[10rem] w-[26%]", STAMMDATEN_TH)}>
+                  Name
+                </TableHead>
+                <TableHead className={cn("w-[20%]", STAMMDATEN_TH)}>
+                  Abteilung
+                </TableHead>
+                <TableHead className={cn("w-[20%]", STAMMDATEN_TH)}>
+                  Leitung
+                </TableHead>
+                <TableHead className={cn("w-24 text-right", STAMMDATEN_TH)}>
+                  Mitglieder
+                </TableHead>
+                <TableHead className={cn("w-[9.5rem] text-right", STAMMDATEN_TH)}>
+                  Aktionen
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -502,7 +517,7 @@ export function TeamsVerwaltung() {
                       <TableCell className="text-right tabular-nums">
                         {mm.length}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right whitespace-nowrap">
                         <Button
                           type="button"
                           variant="ghost"
@@ -510,7 +525,7 @@ export function TeamsVerwaltung() {
                           className="h-8 gap-1"
                           onClick={() => setDrawerTeam(team)}
                         >
-                          <UserPlus className="size-3.5" />
+                          <UserPlus className="size-3.5 shrink-0" />
                           Mitglieder
                         </Button>
                         <Button

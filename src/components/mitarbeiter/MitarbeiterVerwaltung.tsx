@@ -38,9 +38,11 @@ import { toast } from "sonner";
 import { Loader2, Pencil, Plus, Trash2, Users } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { nachrichtAusUnbekannt } from "@/lib/fehler";
+import { cn } from "@/lib/utils";
 import { StammdatenSection } from "@/components/stammdaten/StammdatenSection";
 import { StammdatenFilterBar } from "@/components/stammdaten/StammdatenFilterBar";
 import { StammdatenSheetFooter } from "@/components/stammdaten/StammdatenSheetFooter";
+import { STAMMDATEN_FILTER_INPUT } from "@/components/stammdaten/stammdatenKlassen";
 
 type Zeile = {
   id: string;
@@ -93,6 +95,35 @@ function rollenLabel(rolle: string): string {
     monteur: "Mitarbeiter (Ausführung)",
   };
   return m[rolle] ?? rolle;
+}
+
+function zeileAusSupabase(
+  m: Record<string, unknown>,
+  abMap: Record<string, string>,
+  teamNameNachId: Record<string, string>
+): Zeile {
+  const qual = Array.isArray(m.qualifikationen)
+    ? (m.qualifikationen as string[])
+    : [];
+  return {
+    id: m.id as string,
+    name: m.name as string,
+    email: (m.email as string | null) ?? null,
+    role: m.role as string,
+    active: m.active as boolean,
+    department_id: (m.department_id as string | null) ?? null,
+    auth_user_id: (m.auth_user_id as string | null) ?? null,
+    phone: (m.phone as string | null) ?? null,
+    whatsapp: (m.whatsapp as string | null) ?? null,
+    team_id: (m.team_id as string | null) ?? null,
+    qualifikationen: qual,
+    abteilungsName: m.department_id
+      ? abMap[m.department_id as string] ?? null
+      : null,
+    teamName: m.team_id
+      ? teamNameNachId[m.team_id as string] ?? null
+      : null,
+  };
 }
 
 export function MitarbeiterVerwaltung() {
@@ -149,6 +180,14 @@ export function MitarbeiterVerwaltung() {
         if (sj.erstellt) {
           toast.success("Dein Mitarbeiterprofil wurde angelegt.");
         }
+      } else if (syncRes.status === 503) {
+        const sj = (await syncRes.json().catch(() => ({}))) as {
+          nachricht?: string;
+        };
+        toast.error(
+          sj.nachricht ??
+            "Mitarbeiterprofil konnte nicht automatisch angelegt werden (Konfiguration)."
+        );
       }
 
       const [{ data: mitarbeiter, error: e1 }, { data: ab }, { data: tm }] =
@@ -177,32 +216,33 @@ export function MitarbeiterVerwaltung() {
       setAbteilungen((ab ?? []) as { id: string; name: string }[]);
       setTeams(teamList);
 
-      setZeilen(
-        (mitarbeiter ?? []).map((m) => {
-          const qual = Array.isArray(m.qualifikationen)
-            ? (m.qualifikationen as string[])
-            : [];
-          return {
-            id: m.id as string,
-            name: m.name as string,
-            email: (m.email as string | null) ?? null,
-            role: m.role as string,
-            active: m.active as boolean,
-            department_id: (m.department_id as string | null) ?? null,
-            auth_user_id: (m.auth_user_id as string | null) ?? null,
-            phone: (m.phone as string | null) ?? null,
-            whatsapp: (m.whatsapp as string | null) ?? null,
-            team_id: (m.team_id as string | null) ?? null,
-            qualifikationen: qual,
-            abteilungsName: m.department_id
-              ? abMap[m.department_id as string] ?? null
-              : null,
-            teamName: m.team_id
-              ? teamNameNachId[m.team_id as string] ?? null
-              : null,
-          };
-        })
+      let zeilenNeu = (mitarbeiter ?? []).map((m) =>
+        zeileAusSupabase(m as Record<string, unknown>, abMap, teamNameNachId)
       );
+
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser();
+      const uid = authUser?.id ?? null;
+      if (
+        uid &&
+        !zeilenNeu.some((z) => z.auth_user_id === uid)
+      ) {
+        const selfRes = await fetch("/api/profil/mitarbeiter-self");
+        if (selfRes.ok) {
+          const j = (await selfRes.json()) as {
+            mitarbeiter: Record<string, unknown> | null;
+          };
+          if (j.mitarbeiter) {
+            const erg = zeileAusSupabase(j.mitarbeiter, abMap, teamNameNachId);
+            if (!zeilenNeu.some((z) => z.id === erg.id)) {
+              zeilenNeu = [...zeilenNeu, erg];
+            }
+          }
+        }
+      }
+
+      setZeilen(zeilenNeu);
     } catch (e) {
       toast.error(
         nachrichtAusUnbekannt(e, "Mitarbeiter konnten nicht geladen werden.")
@@ -474,28 +514,25 @@ export function MitarbeiterVerwaltung() {
   return (
     <StammdatenSection
       title="Mitarbeiter"
-      description="Aktionen → Filter → Tabelle. Rolle in der Spalte „Rolle“ (nur bei Eintrag mit App-Konto)."
       actions={
-        <>
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
             variant="outline"
-            size="sm"
-            className="gap-1"
+            className="h-10 min-h-10 gap-1.5 px-4 text-sm font-medium"
             onClick={() => monteurSheetOeffnen()}
           >
-            <Plus className="size-4" />
+            <Plus className="size-4 shrink-0" />
             Mitarbeiter hinzufügen
           </Button>
           <Button
             type="button"
-            size="sm"
-            className="gap-1"
+            className="h-10 min-h-10 gap-1.5 px-4 text-sm font-medium"
             onClick={() => setKoordinatorOffen(true)}
           >
             Koordinator einladen
           </Button>
-        </>
+        </div>
       }
     >
       <StammdatenFilterBar>
@@ -503,7 +540,7 @@ export function MitarbeiterVerwaltung() {
           placeholder="Suche nach Name…"
           value={suche}
           onChange={(e) => setSuche(e.target.value)}
-          className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-950/90 sm:col-span-2 lg:col-span-1"
+          className={cn(STAMMDATEN_FILTER_INPUT)}
         />
         <Select
           value={typFilter}
@@ -511,7 +548,9 @@ export function MitarbeiterVerwaltung() {
             setTypFilter((v ?? "alle") as "alle" | "monteur" | "koordinator")
           }
         >
-          <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-950/90">
+          <SelectTrigger
+            className={cn(STAMMDATEN_FILTER_INPUT, "!h-10 py-0 leading-none")}
+          >
             <SelectValue placeholder="Typ" />
           </SelectTrigger>
           <SelectContent>
@@ -524,7 +563,9 @@ export function MitarbeiterVerwaltung() {
           value={abteilungFilter}
           onValueChange={(v) => setAbteilungFilter(v ?? "alle")}
         >
-          <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-950/90">
+          <SelectTrigger
+            className={cn(STAMMDATEN_FILTER_INPUT, "!h-10 py-0 leading-none")}
+          >
             <SelectValue placeholder="Abteilung" />
           </SelectTrigger>
           <SelectContent>
@@ -540,7 +581,9 @@ export function MitarbeiterVerwaltung() {
           value={teamFilter}
           onValueChange={(v) => setTeamFilter(v ?? "alle")}
         >
-          <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-950/90">
+          <SelectTrigger
+            className={cn(STAMMDATEN_FILTER_INPUT, "!h-10 py-0 leading-none")}
+          >
             <SelectValue placeholder="Team" />
           </SelectTrigger>
           <SelectContent>
@@ -677,7 +720,9 @@ export function MitarbeiterVerwaltung() {
                             );
                           })()
                         ) : (
-                          <span className="text-muted-foreground">—</span>
+                          <span className="text-muted-foreground">
+                            {rollenLabel(z.role)}
+                          </span>
                         )}
                       </TableCell>
                       <TableCell className="text-right">

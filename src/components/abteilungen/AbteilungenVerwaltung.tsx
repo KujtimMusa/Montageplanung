@@ -42,6 +42,13 @@ import * as LucideIcons from "lucide-react";
 import { Building2, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { nachrichtAusUnbekannt } from "@/lib/fehler";
 import { StammdatenSection } from "@/components/stammdaten/StammdatenSection";
+import {
+  STAMMDATEN_HEADER_BUTTON,
+  STAMMDATEN_TABLE,
+  STAMMDATEN_TH,
+  STAMMDATEN_TABELLE_HUELLE,
+} from "@/components/stammdaten/stammdatenKlassen";
+import { cn } from "@/lib/utils";
 
 type Zeile = {
   id: string;
@@ -227,10 +234,7 @@ export function AbteilungenVerwaltung() {
 
   if (listeLaedt) {
     return (
-      <StammdatenSection
-        title="Abteilungen"
-        description="Aktionen → Tabelle. Farbe und Icon im Seitenfeld; unten Abbrechen oder Speichern."
-      >
+      <StammdatenSection title="Abteilungen">
         <div className="flex items-center gap-2 text-muted-foreground">
           <Loader2 className="size-5 animate-spin" />
           Lade Abteilungen…
@@ -242,10 +246,13 @@ export function AbteilungenVerwaltung() {
   return (
     <StammdatenSection
       title="Abteilungen"
-      description="Aktionen → Tabelle. Farbe und Icon im Seitenfeld; unten Abbrechen oder Speichern."
       actions={
-        <Button type="button" size="sm" className="gap-1" onClick={oeffnenNeu}>
-          <Plus className="size-4" />
+        <Button
+          type="button"
+          className={cn(STAMMDATEN_HEADER_BUTTON, "gap-1")}
+          onClick={oeffnenNeu}
+        >
+          <Plus className="size-4 shrink-0" />
           Neue Abteilung
         </Button>
       }
@@ -267,16 +274,24 @@ export function AbteilungenVerwaltung() {
           </CardContent>
         </Card>
       ) : (
-        <div className="overflow-x-auto rounded-md border border-zinc-800">
-          <Table>
+        <div className={STAMMDATEN_TABELLE_HUELLE}>
+          <Table className={STAMMDATEN_TABLE}>
             <TableHeader>
               <TableRow className="border-zinc-800 hover:bg-transparent">
-                <TableHead className="w-12">Farbe</TableHead>
-                <TableHead className="w-14">Icon</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Teams</TableHead>
-                <TableHead>Mitarbeiter</TableHead>
-                <TableHead className="text-right">Aktionen</TableHead>
+                <TableHead className={cn("w-12", STAMMDATEN_TH)}>Farbe</TableHead>
+                <TableHead className={cn("w-14", STAMMDATEN_TH)}>Icon</TableHead>
+                <TableHead className={cn("min-w-[10rem] w-[26%]", STAMMDATEN_TH)}>
+                  Name
+                </TableHead>
+                <TableHead className={cn("w-24 text-right", STAMMDATEN_TH)}>
+                  Teams
+                </TableHead>
+                <TableHead className={cn("w-28 text-right", STAMMDATEN_TH)}>
+                  Mitarbeiter
+                </TableHead>
+                <TableHead className={cn("w-[9.5rem] text-right", STAMMDATEN_TH)}>
+                  Aktionen
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -291,10 +306,14 @@ export function AbteilungenVerwaltung() {
                   <TableCell>
                     <IconVorschau name={z.icon} />
                   </TableCell>
-                  <TableCell className="font-medium">{z.name}</TableCell>
-                  <TableCell>{z.anzahlTeams}</TableCell>
-                  <TableCell>{z.anzahlMitarbeiter}</TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="font-medium text-zinc-50">{z.name}</TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">
+                    {z.anzahlTeams}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">
+                    {z.anzahlMitarbeiter}
+                  </TableCell>
+                  <TableCell className="text-right whitespace-nowrap">
                     <Button
                       type="button"
                       variant="ghost"

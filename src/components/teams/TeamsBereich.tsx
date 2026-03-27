@@ -4,13 +4,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Building2, Users, UsersRound } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { TeamsVerwaltung } from "@/components/teams/TeamsVerwaltung";
 import { MitarbeiterVerwaltung } from "@/components/mitarbeiter/MitarbeiterVerwaltung";
 import { AbteilungenVerwaltung } from "@/components/abteilungen/AbteilungenVerwaltung";
@@ -57,22 +51,13 @@ export function TeamsBereich() {
 
   return (
     <Card className="overflow-hidden border-zinc-800/80 bg-zinc-900/40 shadow-xl ring-1 ring-white/[0.06]">
-      <CardHeader className="space-y-1 border-b border-zinc-800/80 px-5 pb-4 pt-5 sm:px-6">
-        <CardTitle className="text-base font-semibold tracking-tight text-zinc-100">
-          Stammdaten
-        </CardTitle>
-        <CardDescription className="text-sm text-zinc-500">
-          Mitarbeiter, Teams und Abteilungen — der gewählte Bereich bleibt in der
-          Adresszeile erhalten.
-        </CardDescription>
-      </CardHeader>
       <CardContent className="p-0">
         <Tabs
           value={tab}
           onValueChange={onTabChange}
           className="w-full gap-0"
         >
-          <div className="border-b border-zinc-800/80 px-4 py-3 sm:px-5">
+          <div className="border-b border-zinc-800/80 px-4 pb-3 pt-4 sm:px-5 sm:pt-5">
             <TabsList
               variant="default"
               className={cn(
@@ -114,15 +99,15 @@ export function TeamsBereich() {
 
           <div className="px-4 py-5 sm:px-6 sm:py-6">
             <TabsContent value="mitarbeiter" className="mt-0 outline-none">
-              <MitarbeiterVerwaltung />
+              {tab === "mitarbeiter" ? <MitarbeiterVerwaltung /> : null}
             </TabsContent>
 
             <TabsContent value="teams" className="mt-0 outline-none">
-              <TeamsVerwaltung />
+              {tab === "teams" ? <TeamsVerwaltung /> : null}
             </TabsContent>
 
             <TabsContent value="abteilungen" className="mt-0 outline-none">
-              <AbteilungenVerwaltung />
+              {tab === "abteilungen" ? <AbteilungenVerwaltung /> : null}
             </TabsContent>
           </div>
         </Tabs>

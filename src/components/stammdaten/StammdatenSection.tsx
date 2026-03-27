@@ -15,7 +15,7 @@ export function StammdatenSection({
 }: Props) {
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 border-b border-zinc-800/70 pb-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-col gap-3 border-b border-zinc-800/70 pb-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1">
           <h2 className="text-lg font-semibold tracking-tight text-zinc-50">
             {title}
