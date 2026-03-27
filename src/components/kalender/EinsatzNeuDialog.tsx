@@ -63,6 +63,7 @@ import {
 } from "@/lib/constants/planung-farben";
 import type {
   BearbeitenZuweisung,
+  DienstleisterOption,
   EinsatzPrioritaetUi,
   ProjektOption,
   TeamOption,
@@ -73,7 +74,8 @@ const prioritaetEnum = z.enum(["niedrig", "mittel", "hoch", "kritisch"]);
 const schema = z
   .object({
     projekt_id: z.string().uuid("Projekt wählen."),
-    team_id: z.string().uuid("Team wählen."),
+    team_id: z.string().optional(),
+    dienstleister_id: z.string().optional(),
     date_von: z.string().min(1, "Von-Datum erforderlich."),
     date_bis: z.string().min(1, "Bis-Datum erforderlich."),
     start_time: z.string().optional(),
@@ -84,11 +86,24 @@ const schema = z
   .refine((d) => d.date_von <= d.date_bis, {
     message: "Ende muss nach oder gleich Start sein.",
     path: ["date_bis"],
-  });
+  })
+  .refine(
+    (d) => {
+      const t = (d.team_id ?? "").trim();
+      const dl = (d.dienstleister_id ?? "").trim();
+      return t.length > 0 || dl.length > 0;
+    },
+    { message: "Mindestens Team oder Dienstleister wählen.", path: ["team_id"] }
+  );
 
 export type EinsatzFormularWerte = z.infer<typeof schema>;
 
-export type { TeamOption, ProjektOption, BearbeitenZuweisung };
+export type {
+  TeamOption,
+  ProjektOption,
+  BearbeitenZuweisung,
+  DienstleisterOption,
+};
 
 function normalisiereUhrzeit(eingabe: string | undefined, fallback: string): string {
   const e = (eingabe ?? "").trim();
@@ -133,13 +148,16 @@ type Props = {
   onOpenChange: (offen: boolean) => void;
   teams: TeamOption[];
   projekte: ProjektOption[];
+  dienstleister: DienstleisterOption[];
   bearbeiten: BearbeitenZuweisung | null;
   vorgaben: {
-    team_id: string;
+    team_id?: string;
     date: string;
     start_time?: string;
     end_time?: string;
     projekt_id?: string;
+    dienstleister_id?: string;
+    dienstleister_name?: string;
   } | null;
   eigeneMitarbeiterId: string | null;
   formularSchluessel: number;
@@ -151,6 +169,7 @@ export function EinsatzNeuDialog({
   onOpenChange,
   teams,
   projekte,
+  dienstleister,
   bearbeiten,
   vorgaben,
   eigeneMitarbeiterId,
@@ -170,6 +189,7 @@ export function EinsatzNeuDialog({
     defaultValues: {
       projekt_id: "",
       team_id: "",
+      dienstleister_id: "",
       date_von: "",
       date_bis: "",
       start_time: "",
@@ -205,6 +225,7 @@ export function EinsatzNeuDialog({
       form.reset({
         projekt_id: bearbeiten.project_id ?? "",
         team_id: bearbeiten.team_id ?? "",
+        dienstleister_id: bearbeiten.dienstleister_id ?? "",
         date_von: bearbeiten.date,
         date_bis: bearbeiten.date,
         start_time: bearbeiten.start_time.slice(0, 5),
@@ -218,7 +239,8 @@ export function EinsatzNeuDialog({
         : undefined;
       form.reset({
         projekt_id: vorgaben.projekt_id ?? "",
-        team_id: vorgaben.team_id,
+        team_id: vorgaben.team_id ?? "",
+        dienstleister_id: vorgaben.dienstleister_id ?? "",
         date_von: vorgaben.date,
         date_bis: vorgaben.date,
         start_time: vorgaben.start_time ?? "07:00",
@@ -230,6 +252,7 @@ export function EinsatzNeuDialog({
       form.reset({
         projekt_id: "",
         team_id: "",
+        dienstleister_id: "",
         date_von: "",
         date_bis: "",
         start_time: "08:00",
@@ -281,9 +304,26 @@ export function EinsatzNeuDialog({
     const endNorm = normalisiereUhrzeit(werte.end_time, "16:00:00");
     const prioritaetDb = uiPrioritaetZuDb(werte.prioritaet);
 
-    const empId = await getRepresentativeEmployeeId(supabase, werte.team_id);
-    if (!empId) {
-      toast.error("Im Team ist kein Mitarbeiter hinterlegt (Vertreter fehlt).");
+    const teamIdTrim = (werte.team_id ?? "").trim();
+    const dlIdTrim = (werte.dienstleister_id ?? "").trim();
+
+    let empId: string | null = null;
+    if (teamIdTrim) {
+      empId = await getRepresentativeEmployeeId(supabase, teamIdTrim);
+      if (!empId) {
+        toast.error("Im Team ist kein Mitarbeiter hinterlegt (Vertreter fehlt).");
+        return;
+      }
+    } else if (dlIdTrim) {
+      empId = eigeneMitarbeiterId;
+      if (!empId) {
+        toast.error(
+          "Für Einsätze nur mit Dienstleister ist ein verknüpfter Mitarbeiter-Account nötig."
+        );
+        return;
+      }
+    } else {
+      toast.error("Team oder Dienstleister wählen.");
       return;
     }
 
@@ -314,7 +354,8 @@ export function EinsatzNeuDialog({
         employee_id: empId,
         project_id: werte.projekt_id,
         project_title: null,
-        team_id: werte.team_id,
+        team_id: teamIdTrim || null,
+        dienstleister_id: dlIdTrim || null,
         date: werte.date_von,
         start_time: startNorm,
         end_time: endNorm,
@@ -330,6 +371,19 @@ export function EinsatzNeuDialog({
       if (error) {
         if (error.message.includes("prioritaet") || error.code === "42703") {
           delete updatePayload.prioritaet;
+          const { error: e2 } = await supabase
+            .from("assignments")
+            .update(updatePayload)
+            .eq("id", bearbeiten.id);
+          if (e2) {
+            toast.error(e2.message);
+            return;
+          }
+        } else if (
+          error.message.includes("dienstleister_id") ||
+          error.code === "42703"
+        ) {
+          delete updatePayload.dienstleister_id;
           const { error: e2 } = await supabase
             .from("assignments")
             .update(updatePayload)
@@ -378,7 +432,8 @@ export function EinsatzNeuDialog({
       employee_id: empId,
       project_id: werte.projekt_id,
       project_title: null,
-      team_id: werte.team_id,
+      team_id: teamIdTrim || null,
+      dienstleister_id: dlIdTrim || null,
       start_time: startNorm,
       end_time: endNorm,
       notes: werte.notes?.trim() || null,
@@ -393,6 +448,16 @@ export function EinsatzNeuDialog({
       if (error) {
         if (error.message.includes("prioritaet") || error.code === "42703") {
           delete payload.prioritaet;
+          const { error: e2 } = await supabase.from("assignments").insert(payload);
+          if (e2) {
+            toast.error(e2.message);
+            return;
+          }
+        } else if (
+          error.message.includes("dienstleister_id") ||
+          error.code === "42703"
+        ) {
+          delete payload.dienstleister_id;
           const { error: e2 } = await supabase.from("assignments").insert(payload);
           if (e2) {
             toast.error(e2.message);
@@ -413,14 +478,16 @@ export function EinsatzNeuDialog({
     toast.success(
       tage.length > 1 ? `${tage.length} Einsätze gespeichert.` : "Einsatz gespeichert."
     );
-    try {
-      void benachrichtigungFireAndForget(
-        werte.team_id,
-        werte.projekt_id,
-        werte.date_von
-      );
-    } catch {
-      /* nicht blockieren */
+    if (teamIdTrim) {
+      try {
+        void benachrichtigungFireAndForget(
+          teamIdTrim,
+          werte.projekt_id,
+          werte.date_von
+        );
+      } catch {
+        /* nicht blockieren */
+      }
     }
     onOpenChange(false);
     onGespeichert();
@@ -449,6 +516,21 @@ export function EinsatzNeuDialog({
         <SheetHeader>
           <SheetTitle className="text-zinc-50">{titel}</SheetTitle>
         </SheetHeader>
+
+        {!bearbeiten && vorgaben?.dienstleister_id ? (
+          <Alert className="border-cyan-900/40 bg-cyan-950/25">
+            <AlertTitle className="text-cyan-100">Dienstleister</AlertTitle>
+            <AlertDescription className="text-cyan-200/90">
+              Einsatz mit Partner{" "}
+              <span className="font-medium">
+                {vorgaben.dienstleister_name ??
+                  dienstleister.find((x) => x.id === vorgaben.dienstleister_id)
+                    ?.firma ??
+                  "—"}
+              </span>
+            </AlertDescription>
+          </Alert>
+        ) : null}
 
         {!bearbeiten && vorgaben?.projekt_id ? (() => {
           const p = projekte.find((x) => x.id === vorgaben.projekt_id);
@@ -484,10 +566,24 @@ export function EinsatzNeuDialog({
                 Einsatz für{" "}
                 <span className="font-medium text-zinc-300">{p.title}</span> am{" "}
                 {format(parseISO(vorgaben.date), "dd.MM.yyyy", { locale: de })}{" "}
-                mit{" "}
-                <span className="font-medium text-zinc-300">
-                  {team?.name ?? "Team"}
-                </span>{" "}
+                {vorgaben.dienstleister_id ? (
+                  <>
+                    mit Partner{" "}
+                    <span className="font-medium text-zinc-300">
+                      {vorgaben.dienstleister_name ??
+                        dienstleister.find((x) => x.id === vorgaben.dienstleister_id)
+                          ?.firma ??
+                        "Dienstleister"}
+                    </span>{" "}
+                  </>
+                ) : (
+                  <>
+                    mit{" "}
+                    <span className="font-medium text-zinc-300">
+                      {team?.name ?? "Team"}
+                    </span>{" "}
+                  </>
+                )}
                 planen
               </p>
             </div>
@@ -632,16 +728,22 @@ export function EinsatzNeuDialog({
           </div>
 
           <div className="space-y-2">
-            <Label className="text-zinc-300">Team</Label>
+            <Label className="text-zinc-300">Team (optional)</Label>
             <Controller
               control={form.control}
               name="team_id"
               render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
+                <Select
+                  value={field.value?.trim() ? field.value : "__none__"}
+                  onValueChange={(v) =>
+                    field.onChange(v === "__none__" ? "" : v)
+                  }
+                >
                   <SelectTrigger className="border-zinc-700 bg-zinc-950">
                     <SelectValue placeholder="Team wählen" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="__none__">—</SelectItem>
                     {teams.map((t) => (
                       <SelectItem key={t.id} value={t.id}>
                         <span className="flex items-center gap-2">
@@ -651,6 +753,34 @@ export function EinsatzNeuDialog({
                           />
                           {t.name}
                         </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-zinc-300">Dienstleister (optional)</Label>
+            <Controller
+              control={form.control}
+              name="dienstleister_id"
+              render={({ field }) => (
+                <Select
+                  value={field.value?.trim() ? field.value : "__none__"}
+                  onValueChange={(v) =>
+                    field.onChange(v === "__none__" ? "" : v)
+                  }
+                >
+                  <SelectTrigger className="border-zinc-700 bg-zinc-950">
+                    <SelectValue placeholder="Partner wählen" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">—</SelectItem>
+                    {dienstleister.map((d) => (
+                      <SelectItem key={d.id} value={d.id}>
+                        {d.firma}
                       </SelectItem>
                     ))}
                   </SelectContent>

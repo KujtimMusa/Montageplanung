@@ -73,8 +73,11 @@ export function EinsatzEventDetailFloating({
     (zuweisung.project_title?.trim() ? zuweisung.project_title.trim() : null) ??
     "Einsatz";
 
-  const teamName = zuweisung.teams?.name ?? "—";
-  const farbe = zuweisung.teams?.farbe?.trim() || "#3b82f6";
+  const teamName =
+    zuweisung.dienstleister?.company_name ?? zuweisung.teams?.name ?? "—";
+  const farbe =
+    zuweisung.teams?.farbe?.trim() ||
+    (zuweisung.dienstleister?.company_name ? "#a855f7" : "#3b82f6");
   const priUi = dbPrioritaetZuUi(
     zuweisung.prioritaet ?? zuweisung.projects?.priority
   );

@@ -1,4 +1,5 @@
 import dynamic from "next/dynamic";
+import { Suspense } from "react";
 
 const PlanungsKalender = dynamic(
   () =>
@@ -24,7 +25,13 @@ export default function PlanungSeite() {
           jeder Karte.
         </p>
       </div>
-      <PlanungsKalender />
+      <Suspense
+        fallback={
+          <p className="text-sm text-muted-foreground">Kalender wird geladen…</p>
+        }
+      >
+        <PlanungsKalender />
+      </Suspense>
     </div>
   );
 }

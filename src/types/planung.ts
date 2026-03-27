@@ -8,6 +8,7 @@ export type EinsatzEvent = {
   project_id: string | null;
   project_title: string | null;
   team_id: string | null;
+  dienstleister_id: string | null;
   date: string;
   start_time: string;
   end_time: string;
@@ -26,6 +27,7 @@ export type EinsatzEvent = {
     } | null;
   } | null;
   teams: { name: string; farbe?: string | null } | null;
+  dienstleister: { company_name: string } | null;
 };
 
 export type TeamRessource = {
@@ -64,11 +66,17 @@ export type BearbeitenZuweisung = {
   employee_id: string;
   project_id: string | null;
   team_id: string | null;
+  dienstleister_id: string | null;
   date: string;
   start_time: string;
   end_time: string;
   notes: string | null;
   prioritaet: string | null;
+};
+
+export type DienstleisterOption = {
+  id: string;
+  firma: string;
 };
 
 export type AbwesenheitRow = {

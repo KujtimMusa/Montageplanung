@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import resourceTimelinePlugin from "@fullcalendar/resource-timeline";
@@ -55,6 +56,10 @@ import type {
   EinsatzEvent,
   UngeplantesProjekt,
 } from "@/types/planung";
+import {
+  subcontractorRowToDienstleister,
+  type Dienstleister,
+} from "@/types/dienstleister";
 import { useDefaultLayout } from "react-resizable-panels";
 
 function datumUndZeitZuIso(datum: string, zeit: string): string {
@@ -126,6 +131,8 @@ function prioRangUngeplant(prio: string): number {
 
 export function PlanungsKalender() {
   const supabase = useMemo(() => createClient(), []);
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const calendarRef = useRef<FullCalendar>(null);
   const [teamsListe, setTeamsListe] = useState<TeamOption[]>([]);
   const [zuweisungen, setZuweisungen] = useState<EinsatzEvent[]>([]);
@@ -137,6 +144,9 @@ export function PlanungsKalender() {
   const [ungeplanteProjekte, setUngeplanteProjekte] = useState<
     UngeplantesProjekt[]
   >([]);
+  const [dienstleisterListe, setDienstleisterListe] = useState<Dienstleister[]>(
+    []
+  );
   const [eigeneMitarbeiterId, setEigeneMitarbeiterId] = useState<string | null>(
     null
   );
@@ -152,11 +162,13 @@ export function PlanungsKalender() {
   const [dialogOffen, setDialogOffen] = useState(false);
   const [bearbeiten, setBearbeiten] = useState<BearbeitenZuweisung | null>(null);
   const [vorgaben, setVorgaben] = useState<{
-    team_id: string;
+    team_id?: string;
     date: string;
     start_time?: string;
     end_time?: string;
     projekt_id?: string;
+    dienstleister_id?: string;
+    dienstleister_name?: string;
   } | null>(null);
   const [formularSchluessel, setFormularSchluessel] = useState(0);
 
@@ -331,15 +343,31 @@ export function PlanungsKalender() {
         setUngeplanteProjekte(ungeplant.map(mapUngeplantRow));
       }
 
+      const { data: subRows, error: subErr } = await supabase
+        .from("subcontractors")
+        .select(
+          "id,company_name,contact_name,email,phone,whatsapp_number,specialization,lead_time_days,notes,created_at,website,address,status,active"
+        )
+        .order("company_name");
+      if (subErr) {
+        setDienstleisterListe([]);
+      } else {
+        setDienstleisterListe(
+          (subRows ?? []).map((r) =>
+            subcontractorRowToDienstleister(r as Record<string, unknown>)
+          )
+        );
+      }
+
       const selectMitPrioritaet =
-        "id,employee_id,project_id,project_title,team_id,date,start_time,end_time,notes,prioritaet, projects(title,priority,notes, customers(address,city,company_name)), teams(name,farbe)";
+        "id,employee_id,project_id,project_title,team_id,dienstleister_id,date,start_time,end_time,notes,prioritaet, projects(title,priority,notes, customers(address,city,company_name)), teams(name,farbe), subcontractors(company_name)";
       const selectOhnePrioritaet =
-        "id,employee_id,project_id,project_title,team_id,date,start_time,end_time,notes, projects(title,priority,notes, customers(address,city,company_name)), teams(name,farbe)";
+        "id,employee_id,project_id,project_title,team_id,dienstleister_id,date,start_time,end_time,notes, projects(title,priority,notes, customers(address,city,company_name)), teams(name,farbe), subcontractors(company_name)";
 
       const zuQuery = await supabase
         .from("assignments")
         .select(selectMitPrioritaet)
-        .not("team_id", "is", null);
+        .or("team_id.not.is.null,dienstleister_id.not.is.null");
       let zu: Record<string, unknown>[] = (zuQuery.data ??
         []) as Record<string, unknown>[];
       let zuErr = zuQuery.error;
@@ -348,7 +376,7 @@ export function PlanungsKalender() {
         const r2 = await supabase
           .from("assignments")
           .select(selectOhnePrioritaet)
-          .not("team_id", "is", null);
+          .or("team_id.not.is.null,dienstleister_id.not.is.null");
         zu = (r2.data ?? []) as Record<string, unknown>[];
         zuErr = r2.error;
       }
@@ -383,6 +411,11 @@ export function PlanungsKalender() {
             | { name?: string; farbe?: string }[]
             | null;
           const team = Array.isArray(t) ? t[0] : t;
+          const subEmb = row.subcontractors as
+            | { company_name?: string }
+            | { company_name?: string }[]
+            | null;
+          const subcontractor = Array.isArray(subEmb) ? subEmb[0] : subEmb;
           const projectsNested = projekt?.title
             ? {
                 title: projekt.title as string,
@@ -411,6 +444,7 @@ export function PlanungsKalender() {
             project_id: (row.project_id as string | null) ?? null,
             project_title: (row.project_title as string | null) ?? null,
             team_id: (row.team_id as string | null) ?? null,
+            dienstleister_id: (row.dienstleister_id as string | null) ?? null,
             date: row.date as string,
             start_time: row.start_time as string,
             end_time: row.end_time as string,
@@ -420,6 +454,9 @@ export function PlanungsKalender() {
             projects: projectsNested,
             teams: team?.name
               ? { name: team.name as string, farbe: team.farbe as string | undefined }
+              : null,
+            dienstleister: subcontractor?.company_name
+              ? { company_name: subcontractor.company_name as string }
               : null,
           };
         });
@@ -503,6 +540,23 @@ export function PlanungsKalender() {
       void supabase.removeChannel(kanal);
     };
   }, [supabase, laden]);
+
+  const dlQuery = searchParams.get("dienstleister");
+  useEffect(() => {
+    if (!dlQuery || !kalenderBereit) return;
+    router.replace("/planung", { scroll: false });
+    setBearbeiten(null);
+    setVorgaben({
+      team_id: teamsListe[0]?.id ?? "",
+      date: format(new Date(), "yyyy-MM-dd"),
+      start_time: "07:00",
+      end_time: "16:00",
+      dienstleister_id: dlQuery,
+      dienstleister_name: dienstleisterListe.find((x) => x.id === dlQuery)?.firma,
+    });
+    setFormularSchluessel((k) => k + 1);
+    setDialogOffen(true);
+  }, [dlQuery, kalenderBereit, teamsListe, dienstleisterListe, router]);
 
   /** Zeilen = Projekte (Fundament); Einsätze sind Team-Chips im Projekt-Zeitraum. */
   const projektRessourcen = useMemo(() => {
@@ -613,15 +667,20 @@ export function PlanungsKalender() {
       .filter((z) => z.project_id)
       .map((z) => {
         const pid = z.project_id as string;
-        const tid = z.team_id as string;
-        const farbe = z.teams?.farbe?.trim() || teamFarbe(tid);
-        const teamName = z.teams?.name ?? "Team";
-        const hatKonflikt = teamHatKonflikt(
-          tid,
-          z.date,
-          membersByTeam,
-          abwesenheiten
-        );
+        const tid = z.team_id as string | null;
+        const dlName = z.dienstleister?.company_name;
+        const farbe =
+          z.teams?.farbe?.trim() ||
+          (dlName ? "#a855f7" : teamFarbe(tid ?? ""));
+        const teamName = dlName ?? z.teams?.name ?? "Einsatz";
+        const hatKonflikt = tid
+          ? teamHatKonflikt(
+              tid,
+              z.date,
+              membersByTeam,
+              abwesenheiten
+            )
+          : false;
         const start = z.start_time.slice(0, 5);
         const end = z.end_time.slice(0, 5);
         const ort = (z.ortLabel ?? "").trim();
@@ -651,9 +710,26 @@ export function PlanungsKalender() {
     projekt_id?: string;
     start_time?: string;
     end_time?: string;
+    dienstleister_id?: string;
+    dienstleister_name?: string;
   }) {
     if (v.projekt_id === "_leer") {
       toast.info("Legen Sie zuerst Projekte an.");
+      return;
+    }
+    if (v.dienstleister_id) {
+      setBearbeiten(null);
+      setVorgaben({
+        team_id: v.team_id ?? teamsListe[0]?.id ?? "",
+        date: v.date,
+        start_time: v.start_time ?? "07:00",
+        end_time: v.end_time ?? "16:00",
+        projekt_id: v.projekt_id,
+        dienstleister_id: v.dienstleister_id,
+        dienstleister_name: v.dienstleister_name,
+      });
+      setFormularSchluessel((k) => k + 1);
+      setDialogOffen(true);
       return;
     }
     let teamId = v.team_id;
@@ -714,7 +790,7 @@ export function PlanungsKalender() {
   function onEventClick(info: EventClickArg) {
     if (info.event.display === "background") return;
     const z = info.event.extendedProps.zuweisung as EinsatzEvent | undefined;
-    if (!z || !z.team_id) return;
+    if (!z || (!z.team_id && !z.dienstleister_id)) return;
     const rect = info.el.getBoundingClientRect();
     setDetailZuweisung(z);
     setDetailPosition({ top: rect.bottom + 4, left: rect.left });
@@ -730,6 +806,7 @@ export function PlanungsKalender() {
       employee_id: z.employee_id,
       project_id: z.project_id,
       team_id: z.team_id,
+      dienstleister_id: z.dienstleister_id,
       date: z.date,
       start_time: z.start_time,
       end_time: z.end_time,
@@ -760,10 +837,28 @@ export function PlanungsKalender() {
       projektId?: string;
       projectId?: string;
       teamId?: string;
+      typ?: string;
+      dienstleisterId?: string;
     };
     const res = info.event.getResources()[0];
     const start = info.event.start;
     if (!start) return;
+
+    if (ep?.typ === "dienstleister" && ep?.dienstleisterId) {
+      if (!res?.id || res.id === "_leer") {
+        toast.info("Auf eine Projekt-Zeile und Tag ziehen.");
+        return;
+      }
+      dialogNeuOeffnen({
+        projekt_id: res.id,
+        dienstleister_id: ep.dienstleisterId,
+        dienstleister_name: info.event.title,
+        date: format(start, "yyyy-MM-dd"),
+        start_time: "07:00",
+        end_time: "16:00",
+      });
+      return;
+    }
 
     const teamFromDrag = ep?.teamId;
     if (teamFromDrag) {
@@ -800,17 +895,21 @@ export function PlanungsKalender() {
   ) {
     if (newProjectId === "_leer") return false;
     const z = zuweisungen.find((x) => x.id === id);
-    if (!z?.team_id) return false;
-    const teamId = z.team_id as string;
+    if (!z || (!z.team_id && !z.dienstleister_id)) return false;
 
     const datum = format(start, "yyyy-MM-dd");
     const startZeit = format(start, "HH:mm:ss");
     const endZeit = format(ende, "HH:mm:ss");
 
-    const empId = await getRepresentativeEmployeeId(supabase, teamId);
-    if (!empId) {
-      toast.error("Kein Mitarbeiter für dieses Team hinterlegt.");
-      return false;
+    let empId: string | null = null;
+    if (z.team_id) {
+      empId = await getRepresentativeEmployeeId(supabase, z.team_id);
+      if (!empId) {
+        toast.error("Kein Mitarbeiter für dieses Team hinterlegt.");
+        return false;
+      }
+    } else {
+      empId = z.employee_id;
     }
 
     const k = await pruefeEinsatzKonflikt(supabase, {
@@ -829,7 +928,8 @@ export function PlanungsKalender() {
       .from("assignments")
       .update({
         project_id: newProjectId,
-        team_id: teamId,
+        team_id: z.team_id,
+        dienstleister_id: z.dienstleister_id,
         employee_id: empId,
         date: datum,
         start_time: startZeit,
@@ -1186,7 +1286,10 @@ export function PlanungsKalender() {
           collapsible
           className="flex min-h-0 min-w-0 flex-col"
         >
-          <ProjekteSidebar projekte={ungeplanteProjekte} />
+          <ProjekteSidebar
+            projekte={ungeplanteProjekte}
+            dienstleister={dienstleisterListe}
+          />
         </ResizablePanel>
 
         <ResizableHandle
@@ -1246,6 +1349,10 @@ export function PlanungsKalender() {
           onOpenChange={setDialogOffen}
           teams={teamsListe}
           projekte={projekteAktiv}
+          dienstleister={dienstleisterListe.map((d) => ({
+            id: d.id,
+            firma: d.firma,
+          }))}
           bearbeiten={bearbeiten}
           vorgaben={vorgaben}
           eigeneMitarbeiterId={eigeneMitarbeiterId}
