@@ -54,6 +54,7 @@ import {
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -74,8 +75,8 @@ const prioritaetEnum = z.enum(["niedrig", "mittel", "hoch", "kritisch"]);
 const schema = z
   .object({
     projekt_id: z.string().uuid("Projekt wählen."),
-    team_id: z.string().optional(),
-    dienstleister_id: z.string().optional(),
+    team_ids: z.array(z.string()),
+    dienstleister_ids: z.array(z.string()),
     date_von: z.string().min(1, "Von-Datum erforderlich."),
     date_bis: z.string().min(1, "Bis-Datum erforderlich."),
     start_time: z.string().optional(),
@@ -86,15 +87,7 @@ const schema = z
   .refine((d) => d.date_von <= d.date_bis, {
     message: "Ende muss nach oder gleich Start sein.",
     path: ["date_bis"],
-  })
-  .refine(
-    (d) => {
-      const t = (d.team_id ?? "").trim();
-      const dl = (d.dienstleister_id ?? "").trim();
-      return t.length > 0 || dl.length > 0;
-    },
-    { message: "Mindestens Team oder Dienstleister wählen.", path: ["team_id"] }
-  );
+  });
 
 export type EinsatzFormularWerte = z.infer<typeof schema>;
 
@@ -205,8 +198,8 @@ export function EinsatzNeuDialog({
     resolver: zodResolver(schema),
     defaultValues: {
       projekt_id: "",
-      team_id: "",
-      dienstleister_id: "",
+      team_ids: [] as string[],
+      dienstleister_ids: [] as string[],
       date_von: "",
       date_bis: "",
       start_time: "",
@@ -241,8 +234,10 @@ export function EinsatzNeuDialog({
       );
       form.reset({
         projekt_id: bearbeiten.project_id ?? "",
-        team_id: bearbeiten.team_id ?? "",
-        dienstleister_id: bearbeiten.dienstleister_id ?? "",
+        team_ids: bearbeiten.team_id ? [bearbeiten.team_id] : [],
+        dienstleister_ids: bearbeiten.dienstleister_id
+          ? [bearbeiten.dienstleister_id]
+          : [],
         date_von: bearbeiten.date,
         date_bis: bearbeiten.date,
         start_time: bearbeiten.start_time.slice(0, 5),
@@ -256,8 +251,10 @@ export function EinsatzNeuDialog({
         : undefined;
       form.reset({
         projekt_id: vorgaben.projekt_id ?? "",
-        team_id: vorgaben.team_id ?? "",
-        dienstleister_id: vorgaben.dienstleister_id ?? "",
+        team_ids: vorgaben.team_id ? [vorgaben.team_id] : [],
+        dienstleister_ids: vorgaben.dienstleister_id
+          ? [vorgaben.dienstleister_id]
+          : [],
         date_von: vorgaben.date,
         date_bis: vorgaben.date,
         start_time: vorgaben.start_time ?? "07:00",
@@ -268,8 +265,8 @@ export function EinsatzNeuDialog({
     } else {
       form.reset({
         projekt_id: "",
-        team_id: "",
-        dienstleister_id: "",
+        team_ids: [],
+        dienstleister_ids: [],
         date_von: "",
         date_bis: "",
         start_time: "08:00",
@@ -321,40 +318,71 @@ export function EinsatzNeuDialog({
     const endNorm = normalisiereUhrzeit(werte.end_time, "16:00:00");
     const prioritaetDb = uiPrioritaetZuDb(werte.prioritaet);
 
-    const teamIdTrim = (werte.team_id ?? "").trim();
-    const dlIdTrim = (werte.dienstleister_id ?? "").trim();
+    const teamListe = Array.from(
+      new Set(werte.team_ids.map((x) => x.trim()).filter(Boolean))
+    );
+    const dlListe = Array.from(
+      new Set(werte.dienstleister_ids.map((x) => x.trim()).filter(Boolean))
+    );
 
-    let empId: string | null = null;
-    if (teamIdTrim) {
-      empId = await getRepresentativeEmployeeId(supabase, teamIdTrim);
-      if (!empId) {
-        toast.error("Im Team ist kein Mitarbeiter hinterlegt (Vertreter fehlt).");
-        return;
-      }
-    } else if (dlIdTrim) {
-      empId = eigeneMitarbeiterId;
-      if (!empId) {
-        toast.error(
-          "Für Einsätze nur mit Dienstleister ist ein verknüpfter Mitarbeiter-Account nötig."
-        );
-        return;
-      }
-    } else {
-      toast.error("Team oder Dienstleister wählen.");
-      return;
-    }
-
-    const abwText = await pruefeAbwesenheitKonfliktText(supabase, {
-      mitarbeiterId: empId,
-      von: werte.date_von,
-      bis: werte.date_bis,
-    });
-    if (abwText) {
-      setAbwesenheitWarnung(abwText);
+    if (!bearbeiten && teamListe.length + dlListe.length === 0) {
+      toast.error("Mindestens ein Team oder Partner auswählen.");
       return;
     }
 
     if (bearbeiten) {
+      if (teamListe.length > 1 || dlListe.length > 1) {
+        toast.error("Beim Bearbeiten nur ein Team oder ein Partner.");
+        return;
+      }
+      if (teamListe.length === 0 && dlListe.length === 0) {
+        toast.error("Team oder Dienstleister wählen.");
+        return;
+      }
+      if (teamListe.length > 0 && dlListe.length > 0) {
+        toast.error("Bitte entweder Team oder Partner – nicht beides beim Bearbeiten.");
+        return;
+      }
+    }
+
+    const teamIdTrim = bearbeiten ? teamListe[0] ?? "" : "";
+    const dlIdTrim = bearbeiten ? dlListe[0] ?? "" : "";
+
+    async function resolveEmpId(einTeam: string, einDl: string): Promise<string | null> {
+      if (einTeam) {
+        const id = await getRepresentativeEmployeeId(supabase, einTeam);
+        if (!id) {
+          toast.error("Im Team ist kein Mitarbeiter hinterlegt (Vertreter fehlt).");
+          return null;
+        }
+        return id;
+      }
+      if (einDl) {
+        if (!eigeneMitarbeiterId) {
+          toast.error(
+            "Für Einsätze nur mit Dienstleister ist ein verknüpfter Mitarbeiter-Account nötig."
+          );
+          return null;
+        }
+        return eigeneMitarbeiterId;
+      }
+      return null;
+    }
+
+    if (bearbeiten) {
+      const empId = await resolveEmpId(teamIdTrim, dlIdTrim);
+      if (!empId) return;
+
+      const abwText = await pruefeAbwesenheitKonfliktText(supabase, {
+        mitarbeiterId: empId,
+        von: werte.date_von,
+        bis: werte.date_bis,
+      });
+      if (abwText) {
+        setAbwesenheitWarnung(abwText);
+        return;
+      }
+
       const k = await pruefeEinsatzKonflikt(supabase, {
         mitarbeiterId: empId,
         datum: werte.date_von,
@@ -431,58 +459,89 @@ export function EinsatzNeuDialog({
       end: parseISO(werte.date_bis),
     });
 
-    for (const tag of tage) {
-      const d = format(tag, "yyyy-MM-dd");
-      const k = await pruefeEinsatzKonflikt(supabase, {
+    const kombos: { team: string; dl: string }[] = [
+      ...teamListe.map((t) => ({ team: t, dl: "" })),
+      ...dlListe.map((d) => ({ team: "", dl: d })),
+    ];
+
+    for (const { team: einTeam, dl: einDl } of kombos) {
+      const empId = await resolveEmpId(einTeam, einDl);
+      if (!empId) return;
+      const abwText = await pruefeAbwesenheitKonfliktText(supabase, {
         mitarbeiterId: empId,
-        datum: d,
-        startZeit: startNorm,
-        endZeit: endNorm,
+        von: werte.date_von,
+        bis: werte.date_bis,
       });
-      if (k.hatKonflikt) {
-        setKonfliktText(`${k.nachricht} (Datum ${format(tag, "dd.MM.yyyy")})`);
+      if (abwText) {
+        setAbwesenheitWarnung(abwText);
         return;
+      }
+      for (const tag of tage) {
+        const d = format(tag, "yyyy-MM-dd");
+        const k = await pruefeEinsatzKonflikt(supabase, {
+          mitarbeiterId: empId,
+          datum: d,
+          startZeit: startNorm,
+          endZeit: endNorm,
+        });
+        if (k.hatKonflikt) {
+          setKonfliktText(`${k.nachricht} (Datum ${format(tag, "dd.MM.yyyy")})`);
+          return;
+        }
       }
     }
 
-    const insertBase: Record<string, unknown> = {
-      employee_id: empId,
-      project_id: werte.projekt_id,
-      project_title: null,
-      team_id: teamIdTrim || null,
-      dienstleister_id: dlIdTrim || null,
-      start_time: startNorm,
-      end_time: endNorm,
-      notes: werte.notes?.trim() || null,
-      prioritaet: prioritaetDb,
-    };
-    if (eigeneMitarbeiterId) insertBase.created_by = eigeneMitarbeiterId;
+    let insgesamt = 0;
+    for (const { team: einTeam, dl: einDl } of kombos) {
+      const empId = await resolveEmpId(einTeam, einDl);
+      if (!empId) return;
+      const insertBase: Record<string, unknown> = {
+        employee_id: empId,
+        project_id: werte.projekt_id,
+        project_title: null,
+        team_id: einTeam || null,
+        dienstleister_id: einDl || null,
+        start_time: startNorm,
+        end_time: endNorm,
+        notes: werte.notes?.trim() || null,
+        prioritaet: prioritaetDb,
+      };
+      if (eigeneMitarbeiterId) insertBase.created_by = eigeneMitarbeiterId;
 
-    for (const tag of tage) {
-      const d = format(tag, "yyyy-MM-dd");
-      const payload: Record<string, unknown> = { ...insertBase, date: d };
-      const { error } = await supabase.from("assignments").insert(payload);
-      if (error) {
-        if (error.message.includes("prioritaet") || error.code === "42703") {
-          delete payload.prioritaet;
-          const { error: e2 } = await supabase.from("assignments").insert(payload);
-          if (e2) {
-            toast.error(e2.message);
+      for (const tag of tage) {
+        const d = format(tag, "yyyy-MM-dd");
+        const payload: Record<string, unknown> = { ...insertBase, date: d };
+        const { error } = await supabase.from("assignments").insert(payload);
+        if (error) {
+          if (error.message.includes("prioritaet") || error.code === "42703") {
+            delete payload.prioritaet;
+            const { error: e2 } = await supabase.from("assignments").insert(payload);
+            if (e2) {
+              toast.error(e2.message);
+              return;
+            }
+          } else if (
+            error.message.includes("dienstleister_id") ||
+            error.code === "42703"
+          ) {
+            delete payload.dienstleister_id;
+            const { error: e2 } = await supabase.from("assignments").insert(payload);
+            if (e2) {
+              toast.error(e2.message);
+              return;
+            }
+          } else {
+            toast.error(error.message);
             return;
           }
-        } else if (
-          error.message.includes("dienstleister_id") ||
-          error.code === "42703"
-        ) {
-          delete payload.dienstleister_id;
-          const { error: e2 } = await supabase.from("assignments").insert(payload);
-          if (e2) {
-            toast.error(e2.message);
-            return;
-          }
-        } else {
-          toast.error(error.message);
-          return;
+        }
+        insgesamt += 1;
+      }
+      if (einTeam) {
+        try {
+          void benachrichtigungFireAndForget(einTeam, werte.projekt_id, werte.date_von);
+        } catch {
+          /* nicht blockieren */
         }
       }
     }
@@ -493,19 +552,8 @@ export function EinsatzNeuDialog({
       .eq("id", werte.projekt_id);
 
     toast.success(
-      tage.length > 1 ? `${tage.length} Einsätze gespeichert.` : "Einsatz gespeichert."
+      insgesamt > 1 ? `${insgesamt} Einsätze gespeichert.` : "Einsatz gespeichert."
     );
-    if (teamIdTrim) {
-      try {
-        void benachrichtigungFireAndForget(
-          teamIdTrim,
-          werte.projekt_id,
-          werte.date_von
-        );
-      } catch {
-        /* nicht blockieren */
-      }
-    }
     onOpenChange(false);
     onGespeichert();
   }
@@ -745,99 +793,203 @@ export function EinsatzNeuDialog({
             )}
           </div>
 
-          <div className="space-y-2">
-            <Label className="text-zinc-300">Team (optional)</Label>
-            <Controller
-              control={form.control}
-              name="team_id"
-              render={({ field }) => {
-                const tid = field.value?.trim();
-                const teamEntry = tid ? teams.find((t) => t.id === tid) : null;
-                return (
-                  <Select
-                    value={tid ? tid : "__none__"}
-                    onValueChange={(v) =>
-                      field.onChange(v === "__none__" ? "" : v)
-                    }
-                  >
-                    <SelectTrigger className={cn(triggerClass, "gap-2")}>
-                      {teamEntry ? (
-                        <>
-                          <span
-                            className="inline-block size-2 shrink-0 rounded-full"
-                            style={{ backgroundColor: teamEntry.farbe }}
-                          />
-                          <SelectValue>{teamEntry.name}</SelectValue>
-                        </>
-                      ) : tid ? (
-                        <span className="truncate text-amber-200/90">
-                          Team wird geladen…
-                        </span>
-                      ) : (
-                        <SelectValue placeholder="Kein Team" />
-                      )}
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">— kein Team</SelectItem>
-                      {teams.map((t) => (
-                        <SelectItem key={t.id} value={t.id}>
-                          <span className="flex items-center gap-2">
-                            <span
-                              className="inline-block size-2 rounded-full"
-                              style={{ backgroundColor: t.farbe }}
-                            />
-                            {t.name}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                );
-              }}
-            />
-          </div>
+          {bearbeiten ? (
+            <>
+              <div className="space-y-2">
+                <Label className="text-zinc-300">Team</Label>
+                <Controller
+                  control={form.control}
+                  name="team_ids"
+                  render={({ field }) => {
+                    const tid = field.value?.[0]?.trim();
+                    const teamEntry = tid ? teams.find((t) => t.id === tid) : null;
+                    return (
+                      <Select
+                        value={tid ? tid : "__none__"}
+                        onValueChange={(v) => {
+                          if (v === "__none__") {
+                            field.onChange([]);
+                          } else {
+                            field.onChange([v]);
+                            form.setValue("dienstleister_ids", []);
+                          }
+                        }}
+                      >
+                        <SelectTrigger className={cn(triggerClass, "gap-2")}>
+                          {teamEntry ? (
+                            <>
+                              <span
+                                className="inline-block size-2 shrink-0 rounded-full"
+                                style={{ backgroundColor: teamEntry.farbe }}
+                              />
+                              <SelectValue>{teamEntry.name}</SelectValue>
+                            </>
+                          ) : tid ? (
+                            <span className="truncate text-amber-200/90">
+                              Team wird geladen…
+                            </span>
+                          ) : (
+                            <SelectValue placeholder="Kein Team" />
+                          )}
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">— kein Team</SelectItem>
+                          {teams.map((t) => (
+                            <SelectItem key={t.id} value={t.id}>
+                              <span className="flex items-center gap-2">
+                                <span
+                                  className="inline-block size-2 rounded-full"
+                                  style={{ backgroundColor: t.farbe }}
+                                />
+                                {t.name}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    );
+                  }}
+                />
+              </div>
 
-          <div className="space-y-2">
-            <Label className="text-zinc-300">Dienstleister (optional)</Label>
-            <Controller
-              control={form.control}
-              name="dienstleister_id"
-              render={({ field }) => {
-                const did = field.value?.trim();
-                const dlEntry = did
-                  ? dienstleister.find((d) => d.id === did)
-                  : null;
-                return (
-                  <Select
-                    value={did ? did : "__none__"}
-                    onValueChange={(v) =>
-                      field.onChange(v === "__none__" ? "" : v)
-                    }
-                  >
-                    <SelectTrigger className={triggerClass}>
-                      {dlEntry ? (
-                        <SelectValue>{dlEntry.firma}</SelectValue>
-                      ) : did ? (
-                        <span className="truncate text-amber-200/90">
-                          Partner wird geladen…
-                        </span>
+              <div className="space-y-2">
+                <Label className="text-zinc-300">Dienstleister</Label>
+                <Controller
+                  control={form.control}
+                  name="dienstleister_ids"
+                  render={({ field }) => {
+                    const did = field.value?.[0]?.trim();
+                    const dlEntry = did
+                      ? dienstleister.find((d) => d.id === did)
+                      : null;
+                    return (
+                      <Select
+                        value={did ? did : "__none__"}
+                        onValueChange={(v) => {
+                          if (v === "__none__") {
+                            field.onChange([]);
+                          } else {
+                            field.onChange([v]);
+                            form.setValue("team_ids", []);
+                          }
+                        }}
+                      >
+                        <SelectTrigger className={triggerClass}>
+                          {dlEntry ? (
+                            <SelectValue>{dlEntry.firma}</SelectValue>
+                          ) : did ? (
+                            <span className="truncate text-amber-200/90">
+                              Partner wird geladen…
+                            </span>
+                          ) : (
+                            <SelectValue placeholder="Kein Partner" />
+                          )}
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">— kein Partner</SelectItem>
+                          {dienstleister.map((d) => (
+                            <SelectItem key={d.id} value={d.id}>
+                              {d.firma}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    );
+                  }}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label className="text-zinc-300">
+                  Teams <span className="text-zinc-500">(mehrfach)</span>
+                </Label>
+                <Controller
+                  control={form.control}
+                  name="team_ids"
+                  render={({ field }) => (
+                    <div className="max-h-40 space-y-2 overflow-y-auto rounded-lg border border-zinc-700/80 bg-zinc-900/50 p-2">
+                      {teams.length === 0 ? (
+                        <p className="text-xs text-zinc-500">Keine Teams.</p>
                       ) : (
-                        <SelectValue placeholder="Kein Partner" />
+                        teams.map((t) => {
+                          const checked = field.value.includes(t.id);
+                          return (
+                            <label
+                              key={t.id}
+                              className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-1.5 hover:bg-zinc-800/60"
+                            >
+                              <Checkbox
+                                checked={checked}
+                                onCheckedChange={(c) => {
+                                  const on = c === true;
+                                  if (on) {
+                                    field.onChange([...field.value, t.id]);
+                                  } else {
+                                    field.onChange(
+                                      field.value.filter((id) => id !== t.id)
+                                    );
+                                  }
+                                }}
+                              />
+                              <span
+                                className="size-2 shrink-0 rounded-full"
+                                style={{ backgroundColor: t.farbe }}
+                              />
+                              <span className="text-sm text-zinc-200">{t.name}</span>
+                            </label>
+                          );
+                        })
                       )}
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">— kein Partner</SelectItem>
-                      {dienstleister.map((d) => (
-                        <SelectItem key={d.id} value={d.id}>
-                          {d.firma}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                );
-              }}
-            />
-          </div>
+                    </div>
+                  )}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-zinc-300">
+                  Partner <span className="text-zinc-500">(mehrfach)</span>
+                </Label>
+                <Controller
+                  control={form.control}
+                  name="dienstleister_ids"
+                  render={({ field }) => (
+                    <div className="max-h-36 space-y-2 overflow-y-auto rounded-lg border border-zinc-700/80 bg-zinc-900/50 p-2">
+                      {dienstleister.length === 0 ? (
+                        <p className="text-xs text-zinc-500">Keine Partner.</p>
+                      ) : (
+                        dienstleister.map((d) => {
+                          const checked = field.value.includes(d.id);
+                          return (
+                            <label
+                              key={d.id}
+                              className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-1.5 hover:bg-zinc-800/60"
+                            >
+                              <Checkbox
+                                checked={checked}
+                                onCheckedChange={(c) => {
+                                  const on = c === true;
+                                  if (on) {
+                                    field.onChange([...field.value, d.id]);
+                                  } else {
+                                    field.onChange(
+                                      field.value.filter((id) => id !== d.id)
+                                    );
+                                  }
+                                }}
+                              />
+                              <span className="text-sm text-zinc-200">{d.firma}</span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                />
+              </div>
+            </>
+          )}
 
           <div className="space-y-2">
             <Label className="text-zinc-300">Zeitraum</Label>

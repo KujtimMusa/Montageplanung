@@ -76,6 +76,8 @@ export type ProjektOption = {
   status: string;
   priority: string;
   customerLabel: string;
+  /** Projektfarbe (Hex) aus der Datenbank */
+  farbe?: string | null;
 };
 
 export type BearbeitenZuweisung = {

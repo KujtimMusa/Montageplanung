@@ -1,11 +1,33 @@
 "use client";
 
-import { GripVertical, Users, Zap } from "lucide-react";
+import { useMemo } from "react";
+import {
+  addDays,
+  endOfWeek,
+  format,
+  parseISO,
+  startOfWeek,
+} from "date-fns";
+import { de } from "date-fns/locale";
+import { GripVertical, Users } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { SPEZIALISIERUNGEN, type Dienstleister } from "@/types/dienstleister";
+import type { AbwesenheitRow, EinsatzEvent } from "@/types/planung";
+
+const LEGENDE: { farbe: string; label: string }[] = [
+  { farbe: "#3b82f6", label: "Noch einplanen" },
+  { farbe: "#10b981", label: "Geplant / Aktiv" },
+  { farbe: "#22c55e", label: "Abgeschlossen" },
+  { farbe: "#ef4444", label: "Kritischer Einsatz" },
+  { farbe: "#f97316", label: "Konflikt" },
+  { farbe: "#8b5cf6", label: "Abwesenheit" },
+];
+
+const WOCHE_TAGS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"] as const;
+const MAX_TAGE_AUSLASTUNG = 5;
 
 export type TeamSidebarEintrag = {
   id: string;
@@ -15,12 +37,66 @@ export type TeamSidebarEintrag = {
   mitglieder: { id: string; name: string }[];
 };
 
+function teamHatKonflikt(
+  teamId: string,
+  datum: string,
+  membersByTeam: Map<string, Set<string>>,
+  abwesenheiten: AbwesenheitRow[]
+): boolean {
+  const members = membersByTeam.get(teamId);
+  if (!members || members.size === 0) return false;
+  for (const empId of Array.from(members)) {
+    for (const a of abwesenheiten) {
+      if (
+        a.employee_id === empId &&
+        datum >= a.start_date &&
+        datum <= a.end_date
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function istDieseKalenderwoche(dateStr: string): boolean {
+  try {
+    const d = parseISO(dateStr);
+    const start = startOfWeek(new Date(), { weekStartsOn: 1 });
+    const end = endOfWeek(new Date(), { weekStartsOn: 1 });
+    return d >= start && d <= end;
+  } catch {
+    return false;
+  }
+}
+
+function naechsterFreierTagLabel(
+  teamId: string,
+  zuweisungen: EinsatzEvent[]
+): string {
+  const heute = new Date();
+  heute.setHours(0, 0, 0, 0);
+  for (let i = 0; i < 14; i++) {
+    const d = addDays(heute, i);
+    const iso = format(d, "yyyy-MM-dd");
+    const hat = zuweisungen.some(
+      (z) => z.team_id === teamId && z.date === iso
+    );
+    if (!hat) {
+      return format(d, "EEE d. MMMM", { locale: de });
+    }
+  }
+  return "—";
+}
+
 type Props = {
   teams: TeamSidebarEintrag[];
   dienstleister: Dienstleister[];
   einsaetzeProTeamZeitraum: Record<string, number>;
   heuteEinsaetze: number;
   heuteAbwesenheiten: number;
+  zuweisungen: EinsatzEvent[];
+  abwesenheiten: AbwesenheitRow[];
 };
 
 export function TeamsSidebar({
@@ -29,10 +105,22 @@ export function TeamsSidebar({
   einsaetzeProTeamZeitraum,
   heuteEinsaetze,
   heuteAbwesenheiten,
+  zuweisungen,
+  abwesenheiten,
 }: Props) {
   const dienstleisterAktiv = dienstleister.filter(
     (d) => d.status === "aktiv" || d.status === "partner"
   );
+
+  const membersByTeam = useMemo(() => {
+    const m = new Map<string, Set<string>>();
+    for (const t of teams) {
+      m.set(t.id, new Set(t.mitglieder.map((x) => x.id)));
+    }
+    return m;
+  }, [teams]);
+
+  const wocheStart = startOfWeek(new Date(), { weekStartsOn: 1 });
 
   return (
     <div className="flex h-full min-h-0 flex-col border-l border-zinc-800 bg-zinc-950">
@@ -41,10 +129,10 @@ export function TeamsSidebar({
           Rechte Leiste
         </p>
         <p className="mt-0.5 text-[11px] leading-snug text-zinc-400">
-          <span className="text-zinc-200">Team</span> oder{" "}
-          <span className="text-zinc-200">Partner</span> auf den{" "}
-          <span className="text-zinc-200">Tag</span> ziehen — nachdem die Projektzeile
-          im Kalender gewählt ist.
+          <span className="text-zinc-200">Team</span> auf{" "}
+          <span className="text-zinc-200">Projekt-Zelle + Tag</span> ziehen — wird
+          ergänzt oder neu angelegt.{" "}
+          <span className="text-zinc-200">Partner</span> wie bisher per JSON.
         </p>
       </div>
 
@@ -76,68 +164,228 @@ export function TeamsSidebar({
                   Noch keine Teams angelegt.
                 </p>
               ) : (
-                teams.map((team) => (
-                  <div
-                    key={team.id}
-                    draggable
-                    onDragStart={(e) => {
-                      const payload = JSON.stringify({
-                        title: team.name,
-                        extendedProps: { teamId: team.id },
-                      });
-                      e.dataTransfer.setData("application/json", payload);
-                      e.dataTransfer.effectAllowed = "copy";
-                    }}
-                    className="draggable-team mx-2 my-1 cursor-grab select-none rounded-lg border border-zinc-800 bg-zinc-900/50 p-2.5 transition-colors hover:border-zinc-600 hover:bg-zinc-800/60 active:cursor-grabbing"
-                    data-event={JSON.stringify({
-                      title: team.name,
-                      extendedProps: { teamId: team.id },
-                    })}
-                  >
-                    <div className="flex items-center gap-2">
+                teams.map((team) => {
+                  const einsaetzeDieseWoche = zuweisungen.filter(
+                    (z) =>
+                      z.team_id === team.id && istDieseKalenderwoche(z.date)
+                  ).length;
+                  const auslastung = Math.min(
+                    einsaetzeDieseWoche / MAX_TAGE_AUSLASTUNG,
+                    1
+                  );
+                  const balkenFarbe =
+                    auslastung > 0.8
+                      ? "#ef4444"
+                      : auslastung > 0.6
+                        ? "#f59e0b"
+                        : "#10b981";
+                  const freiLabel = naechsterFreierTagLabel(team.id, zuweisungen);
+
+                  return (
+                    <div
+                      key={team.id}
+                      draggable
+                      onDragStart={(e) => {
+                        const payload = JSON.stringify({
+                          type: "team",
+                          teamId: team.id,
+                          teamName: team.name,
+                          teamFarbe: team.farbe,
+                        });
+                        e.dataTransfer.setData("application/team", payload);
+                        e.dataTransfer.effectAllowed = "copy";
+                      }}
+                      style={{
+                        background: "#141414",
+                        border: "1px solid #1e1e1e",
+                        borderRadius: "10px",
+                        padding: "12px",
+                        marginBottom: "8px",
+                        marginLeft: "8px",
+                        marginRight: "8px",
+                        cursor: "grab",
+                      }}
+                      className="select-none transition-colors hover:border-zinc-600 active:cursor-grabbing"
+                    >
                       <div
-                        className="h-3 w-3 shrink-0 rounded-full"
-                        style={{ backgroundColor: team.farbe }}
-                      />
-                      <span className="text-xs font-medium text-zinc-200">
-                        {team.name}
-                      </span>
-                    </div>
-
-                    {team.abteilung ? (
-                      <p className="mt-0.5 pl-5 text-[10px] text-zinc-600">
-                        {team.abteilung}
-                      </p>
-                    ) : null}
-
-                    <div className="mt-2 flex -space-x-1 pl-5">
-                      {team.mitglieder.slice(0, 4).map((m) => (
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "flex-start",
+                          gap: 8,
+                        }}
+                      >
                         <div
-                          key={m.id}
-                          title={m.name}
-                          className="flex h-5 w-5 items-center justify-center rounded-full border border-zinc-950 text-[8px] font-bold text-white"
-                          style={{ backgroundColor: `${team.farbe}80` }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            minWidth: 0,
+                          }}
                         >
-                          {m.name.charAt(0).toUpperCase()}
+                          <div
+                            style={{
+                              width: 8,
+                              height: 8,
+                              borderRadius: "50%",
+                              background: team.farbe,
+                              flexShrink: 0,
+                            }}
+                          />
+                          <span
+                            style={{
+                              fontSize: 13,
+                              fontWeight: 600,
+                              color: "#e4e4e7",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {team.name}
+                          </span>
                         </div>
-                      ))}
-                      {team.mitglieder.length > 4 ? (
-                        <div className="flex h-5 w-5 items-center justify-center rounded-full border border-zinc-950 bg-zinc-700 text-[8px] text-zinc-400">
-                          +{team.mitglieder.length - 4}
-                        </div>
-                      ) : null}
-                    </div>
+                        <span
+                          style={{
+                            fontSize: 10,
+                            color: "#52525b",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {einsaetzeDieseWoche}/{MAX_TAGE_AUSLASTUNG} Tage
+                        </span>
+                      </div>
 
-                    <p className="mt-1.5 pl-5 text-[10px] text-zinc-600">
-                      {einsaetzeProTeamZeitraum[team.id] ?? 0} Einsätze in diesem
-                      Zeitraum
-                    </p>
-                    <p className="mt-1 flex items-center gap-1 pl-5 text-[9px] text-zinc-700">
-                      <GripVertical size={9} />
-                      Auf Projekt-Tag ziehen
-                    </p>
-                  </div>
-                ))
+                      {team.abteilung ? (
+                        <p className="mt-0.5 pl-6 text-[10px] text-zinc-600">
+                          {team.abteilung}
+                        </p>
+                      ) : null}
+
+                      <div
+                        style={{
+                          margin: "8px 0 6px",
+                          height: 3,
+                          background: "#27272a",
+                          borderRadius: 99,
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: `${auslastung * 100}%`,
+                            height: "100%",
+                            background: balkenFarbe,
+                            borderRadius: 99,
+                            transition: "width 0.3s",
+                          }}
+                        />
+                      </div>
+
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 4,
+                          marginBottom: 8,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        {WOCHE_TAGS.map((tag, i) => {
+                          const day = addDays(wocheStart, i);
+                          const iso = format(day, "yyyy-MM-dd");
+                          const dow = day.getDay();
+                          const istWochenende = dow === 0 || dow === 6;
+                          const hatEinsatz = zuweisungen.some(
+                            (z) => z.team_id === team.id && z.date === iso
+                          );
+                          const hatKonflikt = teamHatKonflikt(
+                            team.id,
+                            iso,
+                            membersByTeam,
+                            abwesenheiten
+                          );
+                          const bg = hatKonflikt
+                            ? "#f9731640"
+                            : hatEinsatz
+                              ? `${team.farbe}40`
+                              : istWochenende
+                                ? "#2a2a2a"
+                                : "#1e1e1e";
+                          const border = hatKonflikt
+                            ? "#f97316"
+                            : hatEinsatz
+                              ? team.farbe
+                              : istWochenende
+                                ? "#3f3f46"
+                                : "#2a2a2a";
+                          return (
+                            <div key={tag} style={{ textAlign: "center" }}>
+                              <div
+                                style={{
+                                  width: 14,
+                                  height: 14,
+                                  borderRadius: 3,
+                                  background: bg,
+                                  border: `1px solid ${border}`,
+                                }}
+                              />
+                              <span
+                                style={{
+                                  fontSize: 8,
+                                  color: "#52525b",
+                                  display: "block",
+                                  marginTop: 2,
+                                }}
+                              >
+                                {tag}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="flex -space-x-1 pl-0.5">
+                        {team.mitglieder.slice(0, 4).map((m) => (
+                          <div
+                            key={m.id}
+                            title={m.name}
+                            className="flex h-5 w-5 items-center justify-center rounded-full border border-zinc-950 text-[8px] font-bold text-white"
+                            style={{ backgroundColor: `${team.farbe}80` }}
+                          >
+                            {m.name.charAt(0).toUpperCase()}
+                          </div>
+                        ))}
+                        {team.mitglieder.length > 4 ? (
+                          <div className="flex h-5 w-5 items-center justify-center rounded-full border border-zinc-950 bg-zinc-700 text-[8px] text-zinc-400">
+                            +{team.mitglieder.length - 4}
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <p
+                        style={{
+                          fontSize: 10,
+                          color: "#52525b",
+                          marginTop: 6,
+                        }}
+                      >
+                        Frei ab: {freiLabel}
+                      </p>
+
+                      <p className="mt-2 flex items-center gap-1 text-[9px] text-zinc-700">
+                        <GripVertical size={9} />
+                        Auf Projekt + Tag ziehen
+                      </p>
+
+                      <p className="mt-0.5 text-[9px] text-zinc-600">
+                        Sichtbarer Zeitraum:{" "}
+                        <span className="tabular-nums text-zinc-500">
+                          {einsaetzeProTeamZeitraum[team.id] ?? 0}
+                        </span>{" "}
+                        Einsätze
+                      </p>
+                    </div>
+                  );
+                })
               )}
             </div>
           </ScrollArea>
@@ -213,26 +461,15 @@ export function TeamsSidebar({
           Legende
         </p>
         <div className="space-y-1.5">
-          <div className="flex items-center gap-2">
-            <div className="h-3 w-3 rounded bg-red-500/20 border-l-2 border-red-400" />
-            <span className="text-[10px] text-zinc-500">Abwesenheit</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="h-3 w-3 rounded border border-orange-400 bg-orange-500/20" />
-            <span className="text-[10px] text-zinc-500">Konflikt</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="h-3 w-3 rounded border-l-2 border-blue-500 bg-blue-500/10" />
-            <span className="text-[10px] text-zinc-500">Einsatz (normal)</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex h-3 w-3 items-center justify-center rounded border-l-2 border-red-400 bg-red-500/10">
-              <Zap size={6} className="text-red-400" />
+          {LEGENDE.map((e) => (
+            <div key={e.label} className="flex items-center gap-2">
+              <div
+                className="size-2.5 shrink-0 rounded-full"
+                style={{ background: e.farbe }}
+              />
+              <span className="text-[10px] text-zinc-500">{e.label}</span>
             </div>
-            <span className="text-[10px] text-zinc-500">
-              Kritischer Einsatz
-            </span>
-          </div>
+          ))}
         </div>
       </div>
 

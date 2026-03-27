@@ -163,7 +163,8 @@
 .planung-sf .e-schedule .e-timeline-month-view .e-work-cells {
   background: #0f0f0f !important;
   border-color: #1e1e1e !important;
-  min-height: 5rem !important;
+  height: 64px !important;
+  min-height: 64px !important;
 }
 
 .planung-sf .e-schedule .e-timeline-view .e-work-cells.e-weekend,
@@ -194,6 +195,17 @@
   color: #e4e4e7 !important;
   font-size: 12px !important;
   font-weight: 500 !important;
+  height: 64px !important;
+  min-height: 64px !important;
+  max-height: 64px !important;
+  vertical-align: top !important;
+}
+
+/* Überlappende Einsätze: leicht versetzt / transparenter, keine Zusatzzeile */
+.planung-sf .e-timeline-view .e-appointment.e-draggable:nth-child(n + 2),
+.planung-sf .e-timeline-view .e-appointment:nth-child(n + 2) {
+  opacity: 0.9 !important;
+  filter: saturate(1.05);
 }
 
 /* ── Header (Datum-Zeile) ── */

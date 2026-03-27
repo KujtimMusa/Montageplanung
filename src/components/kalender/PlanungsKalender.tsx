@@ -32,9 +32,11 @@ import {
   addDays,
   addMonths,
   eachDayOfInterval,
+  endOfWeek,
   format,
   isSameDay,
   parseISO,
+  startOfWeek,
 } from "date-fns";
 import { de } from "date-fns/locale";
 import { CircleHelp } from "lucide-react";
@@ -72,11 +74,7 @@ import { PlanungsToolbar } from "@/components/kalender/PlanungsToolbar";
 import { ProjekteSidebar } from "@/components/kalender/ProjekteSidebar";
 import { TeamsSidebar } from "@/components/kalender/TeamsSidebar";
 import { EinsatzEventDetailFloating } from "@/components/kalender/EinsatzEventDetail";
-import type {
-  AbwesenheitRow,
-  EinsatzEvent,
-  UngeplantesProjekt,
-} from "@/types/planung";
+import type { AbwesenheitRow, EinsatzEvent } from "@/types/planung";
 import {
   subcontractorRowToDienstleister,
   type Dienstleister,
@@ -113,21 +111,14 @@ function mapProjektRow(p: Record<string, unknown>): ProjektOption {
     | { company_name?: string | null }[]
     | null;
   const c = Array.isArray(cust) ? cust[0] : cust;
+  const farbeRaw = (p.farbe as string | null | undefined) ?? null;
   return {
     id: p.id as string,
     title: p.title as string,
     status: (p.status as string) ?? "neu",
     priority: (p.priority as string) ?? "normal",
     customerLabel: (c?.company_name as string) ?? "",
-  };
-}
-
-function mapUngeplantRow(p: Record<string, unknown>): UngeplantesProjekt {
-  const o = mapProjektRow(p);
-  return {
-    ...o,
-    plannedStart: (p.planned_start as string | null) ?? null,
-    plannedEnd: (p.planned_end as string | null) ?? null,
+    farbe: farbeRaw?.trim() ? farbeRaw.trim() : null,
   };
 }
 
@@ -174,6 +165,100 @@ function parseTeamMitglieder(team: unknown): { id: string; name: string }[] {
 function hexSuffix(farbe: string, suf: string): string {
   const f = farbe.trim();
   return /^#[0-9A-Fa-f]{6}$/.test(f) ? `${f}${suf}` : "#3b82f682";
+}
+
+function statusFarbeRessource(status: string | undefined): string {
+  const s = (status ?? "").toLowerCase();
+  const map: Record<string, string> = {
+    neu: "#52525b",
+    offen: "#3b82f6",
+    geplant: "#10b981",
+    aktiv: "#10b981",
+    abgeschlossen: "#22c55e",
+    kritisch: "#ef4444",
+  };
+  return map[s] ?? "#52525b";
+}
+
+function RessourceHeaderTemplate(
+  props: Record<string, unknown> & {
+    resourceData?: Record<string, unknown>;
+  }
+) {
+  const projekt = (props.resourceData ?? props) as Record<string, unknown>;
+  const platzhalter = Boolean(projekt.platzhalter);
+  const titel = String(projekt.title ?? projekt.Subject ?? "");
+  const st = String(projekt.status ?? "neu");
+  const punkt =
+    String(projekt.farbe ?? "").trim() ||
+    String(projekt.prioFarbe ?? "").trim() ||
+    "#3b82f6";
+  const statusFarbe = statusFarbeRessource(st);
+  const statusLabel = st || "offen";
+
+  if (platzhalter) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          padding: "0 12px",
+          height: "100%",
+          overflow: "hidden",
+        }}
+      >
+        <span style={{ fontSize: 12, color: "#71717a" }}>{titel}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "0 12px",
+        height: "100%",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          background: punkt,
+          flexShrink: 0,
+        }}
+      />
+      <div style={{ minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 12,
+            fontWeight: 600,
+            color: "#e4e4e7",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {titel}
+        </div>
+        <div
+          style={{
+            fontSize: 10,
+            color: statusFarbe,
+            marginTop: 1,
+            fontWeight: 500,
+            textTransform: "capitalize",
+          }}
+        >
+          {statusLabel}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function EinsatzTemplate(props: Record<string, unknown>) {
@@ -376,9 +461,6 @@ export function PlanungsKalender() {
   const [zuweisungen, setZuweisungen] = useState<EinsatzEvent[]>([]);
   const [abwesenheiten, setAbwesenheiten] = useState<AbwesenheitRow[]>([]);
   const [projekteAktiv, setProjekteAktiv] = useState<ProjektOption[]>([]);
-  const [ungeplanteProjekte, setUngeplanteProjekte] = useState<
-    UngeplantesProjekt[]
-  >([]);
   const [dienstleisterListe, setDienstleisterListe] = useState<Dienstleister[]>(
     []
   );
@@ -534,69 +616,22 @@ export function PlanungsKalender() {
       }
 
       const projektSelect =
-        "id,title,status,priority,planned_start,planned_end,notes,customers(company_name,address,city)";
+        "id,title,status,priority,planned_start,planned_end,notes,farbe,customers(company_name,address,city)";
 
-      const { data: pr, error: prErr } = await supabase
+      const { data: allProjRows, error: prErr } = await supabase
         .from("projects")
         .select(projektSelect)
-        .neq("status", "abgeschlossen")
         .order("title");
+
+      const alleOhneArchiv = ((allProjRows ?? []) as Record<string, unknown>[]).filter(
+        (p) => String(p.status ?? "").toLowerCase() !== "archiviert"
+      );
 
       if (prErr) {
         toast.error(`Projekte konnten nicht geladen werden: ${prErr.message}`);
         setProjekteAktiv([]);
       } else {
-        setProjekteAktiv(
-          (pr ?? []).map((row) => mapProjektRow(row as Record<string, unknown>))
-        );
-      }
-
-      const heute = format(new Date(), "yyyy-MM-dd");
-
-      const { data: busyRows } = await supabase
-        .from("assignments")
-        .select("project_id")
-        .not("project_id", "is", null)
-        .gte("date", heute);
-
-      const busyIds = new Set(
-        (busyRows ?? [])
-          .map((r) => r.project_id as string)
-          .filter(Boolean)
-      );
-
-      const { data: offeneProjektRows, error: offenErr } = await supabase
-        .from("projects")
-        .select(projektSelect)
-        .neq("status", "abgeschlossen");
-
-      if (offenErr) {
-        toast.error(
-          `Offene Projekte konnten nicht geladen werden: ${offenErr.message}`
-        );
-        setUngeplanteProjekte([]);
-      } else {
-        const ohneArchiviert = (offeneProjektRows ?? []).filter(
-          (p) => (p.status as string) !== "archiviert"
-        ) as Record<string, unknown>[];
-
-        const ungeplant = ohneArchiviert.filter(
-          (p) => !busyIds.has(p.id as string)
-        );
-
-        ungeplant.sort((a, b) => {
-          const pa = prioRangUngeplant((a.priority as string) ?? "normal");
-          const pb = prioRangUngeplant((b.priority as string) ?? "normal");
-          if (pa !== pb) return pa - pb;
-          const as = (a.planned_start as string | null) ?? null;
-          const bs = (b.planned_start as string | null) ?? null;
-          if (as == null && bs == null) return 0;
-          if (as == null) return 1;
-          if (bs == null) return -1;
-          return as.localeCompare(bs);
-        });
-
-        setUngeplanteProjekte(ungeplant.map(mapUngeplantRow));
+        setProjekteAktiv(alleOhneArchiv.map((row) => mapProjektRow(row)));
       }
 
       const { data: subRows, error: subErr } = await supabase
@@ -815,7 +850,10 @@ export function PlanungsKalender() {
         {
           Id: "_leer",
           Subject: "Keine Projekte",
+          title: "Keine Projekte",
+          status: "neu",
           farbe: "#64748b",
+          prioFarbe: "#64748b",
           platzhalter: true,
           kunde: "",
         },
@@ -829,12 +867,16 @@ export function PlanungsKalender() {
     });
     return sorted.map((p) => {
       const prio = p.priority ?? "normal";
-      const akzent =
+      const prioFarbe =
         PRIORITAET_FARBEN[prio] ?? PRIORITAET_FARBEN.normal ?? "#3b82f6";
+      const projektHex = p.farbe?.trim();
       return {
         Id: p.id,
         Subject: p.title,
-        farbe: akzent,
+        title: p.title,
+        status: p.status ?? "neu",
+        farbe: projektHex || prioFarbe,
+        prioFarbe,
         platzhalter: false,
         kunde: p.customerLabel?.trim() || "",
       };
@@ -884,11 +926,13 @@ export function PlanungsKalender() {
     return acc;
   }, [zuweisungen, sichtbarerZeitraum]);
 
-  /** Einsätze je Projekt (Sidebar „Alle Baustellen“ + Überlappung im Kalender) */
-  const einsatzCountByProjekt = useMemo(() => {
+  const einsatzCountByProjektWoche = useMemo(() => {
     const acc: Record<string, number> = {};
+    const start = format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
+    const end = format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
     for (const z of zuweisungen) {
       if (!z.project_id) continue;
+      if (z.date < start || z.date > end) continue;
       acc[z.project_id] = (acc[z.project_id] ?? 0) + 1;
     }
     return acc;
@@ -920,6 +964,73 @@ export function PlanungsKalender() {
         return transformiereEinsatz(z, hatKonflikt, barFarbe, kompakt);
       });
   }, [zuweisungen, kalenderAnsicht]);
+
+  const teamAufZelleLegen = useCallback(
+    async (teamId: string, projectId: string, datum: string): Promise<void> => {
+      if (projectId === "_leer") return;
+      const exists = zuweisungen.some(
+        (z) =>
+          z.team_id === teamId &&
+          z.project_id === projectId &&
+          z.date === datum
+      );
+      if (exists) {
+        toast.info(
+          "Team ist an diesem Tag für dieses Projekt bereits eingeplant."
+        );
+        return;
+      }
+      const empId = await getRepresentativeEmployeeId(supabase, teamId);
+      if (!empId) {
+        toast.error("Kein Mitarbeiter für dieses Team hinterlegt.");
+        return;
+      }
+      const startNorm = "07:00:00";
+      const endNorm = "16:00:00";
+      const k = await pruefeEinsatzKonflikt(supabase, {
+        mitarbeiterId: empId,
+        datum,
+        startZeit: startNorm,
+        endZeit: endNorm,
+      });
+      if (k.hatKonflikt) {
+        toast.error(k.nachricht);
+        return;
+      }
+      const insertPayload: Record<string, unknown> = {
+        employee_id: empId,
+        project_id: projectId,
+        project_title: null,
+        team_id: teamId,
+        dienstleister_id: null,
+        date: datum,
+        start_time: startNorm,
+        end_time: endNorm,
+        notes: null,
+      };
+      if (eigeneMitarbeiterId) insertPayload.created_by = eigeneMitarbeiterId;
+
+      const { error } = await supabase.from("assignments").insert(insertPayload);
+      if (error) {
+        if (error.message.includes("prioritaet") || error.code === "42703") {
+          delete insertPayload.prioritaet;
+          const { error: e2 } = await supabase
+            .from("assignments")
+            .insert(insertPayload);
+          if (e2) {
+            toast.error(e2.message);
+            return;
+          }
+        } else {
+          toast.error(error.message);
+          return;
+        }
+      }
+      toast.success("Einsatz mit Team ergänzt.");
+      void laden();
+    },
+    [zuweisungen, supabase, laden, eigeneMitarbeiterId]
+  );
 
   const dialogNeuOeffnen = useCallback(
     (v: {
@@ -1269,56 +1380,11 @@ export function PlanungsKalender() {
     [abwesenheitCountProTag, kalenderAnsicht]
   );
 
-  const resourceHeaderTemplate = useCallback(
-    (props: Record<string, unknown>) => {
-      const id = String(props.Id ?? "");
-      const akzent = (props.farbe as string) ?? "#64748b";
-      const platzhalter = Boolean(props.platzhalter);
-      const kunde = String(props.kunde ?? "");
-      return (
-        <button
-          type="button"
-          className="group flex w-full min-w-0 flex-col gap-0.5 rounded-lg border border-zinc-800/80 bg-zinc-950/40 py-2 pl-2.5 pr-2 text-left shadow-sm transition-all hover:border-zinc-600/80 hover:bg-zinc-900/60"
-          style={{ borderLeftWidth: 3, borderLeftColor: akzent }}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (id === "_leer") return;
-            const sch = scheduleRef.current;
-            const d = sch?.selectedDate ?? new Date();
-            dialogNeuOeffnen({
-              projekt_id: id,
-              team_id: teamsListe[0]?.id,
-              date: format(d, "yyyy-MM-dd"),
-              start_time: "07:00",
-              end_time: "16:00",
-            });
-          }}
-        >
-          <p className="truncate text-[12px] font-semibold leading-snug text-zinc-100 group-hover:text-white">
-            {String(props.Subject ?? "")}
-          </p>
-          {platzhalter ? (
-            <p className="text-[10px] text-zinc-600">Legen Sie unter Teams → Projekte an.</p>
-          ) : kunde ? (
-            <p className="truncate text-[10px] text-zinc-500">Kunde: {kunde}</p>
-          ) : (
-            <p className="text-[10px] leading-snug text-zinc-600">
-              Tag in der Zeile anklicken oder Projekt von links auf den Tag ziehen — pro Einsatz eine
-              Karte; mehrere Teams/Partner am selben Tag möglich.
-            </p>
-          )}
-        </button>
-      );
-    },
-    [teamsListe, dialogNeuOeffnen]
-  );
-
   const eventSettings = useMemo(
     () => ({
       dataSource: syncfusionEvents,
       template: EinsatzTemplate,
-      enableMaxHeight: true,
+      enableMaxHeight: false,
       allowAdding: false,
       allowEditing: false,
       allowDeleting: false,
@@ -1337,34 +1403,16 @@ export function PlanungsKalender() {
     if (!root) return;
 
     const onDragOver = (e: DragEvent) => {
-      if (e.dataTransfer?.types.includes("application/json")) {
+      const types = e.dataTransfer?.types ?? [];
+      if (types.includes("application/json") || types.includes("application/team")) {
         e.preventDefault();
-        e.dataTransfer.dropEffect = "copy";
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
       }
     };
 
     const onDrop = (e: DragEvent) => {
-      const raw = e.dataTransfer?.getData("application/json");
-      if (!raw) return;
-      e.preventDefault();
       const sch = scheduleRef.current;
       if (!sch) return;
-
-      let parsed: {
-        title?: string;
-        extendedProps?: {
-          projektId?: string;
-          projectId?: string;
-          teamId?: string;
-          typ?: string;
-          dienstleisterId?: string;
-        };
-      };
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        return;
-      }
 
       const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
       if (!el) return;
@@ -1383,6 +1431,43 @@ export function PlanungsKalender() {
       }
 
       const start = cellData.startTime;
+      const datum = format(start, "yyyy-MM-dd");
+
+      const rawTeam = e.dataTransfer?.getData("application/team");
+      if (rawTeam) {
+        e.preventDefault();
+        let teamPayload: { teamId?: string };
+        try {
+          teamPayload = JSON.parse(rawTeam) as { teamId?: string };
+        } catch {
+          return;
+        }
+        const teamId = teamPayload.teamId;
+        if (!teamId) return;
+        void teamAufZelleLegen(teamId, resId, datum);
+        return;
+      }
+
+      const raw = e.dataTransfer?.getData("application/json");
+      if (!raw) return;
+      e.preventDefault();
+
+      let parsed: {
+        title?: string;
+        extendedProps?: {
+          projektId?: string;
+          projectId?: string;
+          teamId?: string;
+          typ?: string;
+          dienstleisterId?: string;
+        };
+      };
+      try {
+        parsed = JSON.parse(raw) as typeof parsed;
+      } catch {
+        return;
+      }
+
       const ep = parsed.extendedProps ?? {};
 
       if (ep.typ === "dienstleister" && ep.dienstleisterId) {
@@ -1390,7 +1475,7 @@ export function PlanungsKalender() {
           projekt_id: resId,
           dienstleister_id: ep.dienstleisterId,
           dienstleister_name: parsed.title,
-          date: format(start, "yyyy-MM-dd"),
+          date: datum,
           start_time: "07:00",
           end_time: "16:00",
         });
@@ -1399,13 +1484,7 @@ export function PlanungsKalender() {
 
       const teamFromDrag = ep.teamId;
       if (teamFromDrag) {
-        dialogNeuOeffnen({
-          projekt_id: resId,
-          team_id: teamFromDrag,
-          date: format(start, "yyyy-MM-dd"),
-          start_time: "07:00",
-          end_time: "16:00",
-        });
+        void teamAufZelleLegen(teamFromDrag, resId, datum);
         return;
       }
 
@@ -1414,7 +1493,7 @@ export function PlanungsKalender() {
       dialogNeuOeffnen({
         projekt_id: projectId,
         team_id: teamsListe[0]?.id,
-        date: format(start, "yyyy-MM-dd"),
+        date: datum,
         start_time: "07:00",
         end_time: "16:00",
       });
@@ -1426,7 +1505,7 @@ export function PlanungsKalender() {
       root.removeEventListener("dragover", onDragOver);
       root.removeEventListener("drop", onDrop);
     };
-  }, [projektRessourcenSf, teamsListe, dialogNeuOeffnen]);
+  }, [projektRessourcenSf, teamsListe, dialogNeuOeffnen, teamAufZelleLegen]);
 
   const kalenderInhalt = !kalenderBereit ? (
     <div className="space-y-2 py-8">
@@ -1452,7 +1531,7 @@ export function PlanungsKalender() {
         allowResizing
         popupOpen={onPopupOpen}
         dateHeaderTemplate={dateHeaderTemplate}
-        resourceHeaderTemplate={resourceHeaderTemplate}
+        resourceHeaderTemplate={RessourceHeaderTemplate}
         eventSettings={eventSettings}
         eventClick={onEventClick}
         cellClick={onCellClick}
@@ -1469,6 +1548,7 @@ export function PlanungsKalender() {
             field="ProjectId"
             title="Projekte"
             name="Projekte"
+            allowMultiple={false}
             dataSource={projektRessourcenSf}
             textField="Subject"
             idField="Id"
@@ -1522,9 +1602,9 @@ export function PlanungsKalender() {
                     Zelle (überlappend).
                   </li>
                   <li>
-                    <span className="font-medium text-zinc-200">Links</span> Projekt-Karte auf
-                    einen <span className="text-zinc-200">Tag</span> ziehen („Offen“ oder
-                    „Alle“) — Formular für Uhrzeit.
+                    <span className="font-medium text-zinc-200">Links</span> Projekt-Karte aus
+                    den Gruppen auf einen <span className="text-zinc-200">Tag</span> ziehen —
+                    Formular für Uhrzeit (mehrere Teams/Partner wählbar).
                   </li>
                   <li>
                     <span className="font-medium text-zinc-200">Rechts</span>{" "}
@@ -1583,9 +1663,8 @@ export function PlanungsKalender() {
           className="flex min-h-0 min-w-0 flex-col"
         >
           <ProjekteSidebar
-            projekteOffen={ungeplanteProjekte}
             projekteAlle={projekteAktiv}
-            einsatzCountByProjekt={einsatzCountByProjekt}
+            einsatzCountByProjektWoche={einsatzCountByProjektWoche}
           />
         </ResizablePanel>
 
@@ -1627,6 +1706,8 @@ export function PlanungsKalender() {
             einsaetzeProTeamZeitraum={einsaetzeProTeamZeitraum}
             heuteEinsaetze={heuteEinsaetzeAnzahl}
             heuteAbwesenheiten={heuteAbwesenheitenAnzahl}
+            zuweisungen={zuweisungen}
+            abwesenheiten={abwesenheiten}
           />
         </ResizablePanel>
       </ResizablePanelGroup>
