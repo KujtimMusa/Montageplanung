@@ -699,6 +699,16 @@ export function PlanungsKalender() {
     return acc;
   }, [zuweisungen, sichtbarerZeitraum]);
 
+  /** Einsätze je Projekt (Sidebar „Alle Baustellen“ + Überlappung im Kalender) */
+  const einsatzCountByProjekt = useMemo(() => {
+    const acc: Record<string, number> = {};
+    for (const z of zuweisungen) {
+      if (!z.project_id) continue;
+      acc[z.project_id] = (acc[z.project_id] ?? 0) + 1;
+    }
+    return acc;
+  }, [zuweisungen]);
+
   const heuteEinsaetzeAnzahl = useMemo(() => {
     const heuteStr = format(new Date(), "yyyy-MM-dd");
     return zuweisungen.filter((z) => z.date === heuteStr).length;
@@ -1261,6 +1271,7 @@ export function PlanungsKalender() {
         showTimeIndicator
         showQuickInfo={false}
         prerenderDialogs={false}
+        allowOverlap
         allowDragAndDrop
         allowResizing
         popupOpen={onPopupOpen}
@@ -1314,22 +1325,28 @@ export function PlanungsKalender() {
           </p>
           <ol className="list-inside list-decimal space-y-1.5 text-xs leading-relaxed text-zinc-300">
             <li>
-              <span className="font-medium text-zinc-200">Projekt-Zeile</span>{" "}
-              links = Baustelle;{" "}
-              <span className="text-zinc-500">Spalten = Tage</span> (Mo–So).
+              <span className="font-medium text-zinc-200">Mitte</span> = Kalender:{" "}
+              jede Zeile ist eine <span className="text-zinc-200">Baustelle</span>, jede
+              Spalte ein <span className="text-zinc-200">Tag</span> — mehrere Einsätze
+              pro Tag/Zelle möglich (z. B. verschiedene Kunden-Projekte in eigenen Zeilen
+              oder mehrere Gewerke am selben Tag).
             </li>
             <li>
-              <span className="font-medium text-zinc-200">Zelle anklicken</span>{" "}
-              oder{" "}
-              <span className="font-medium text-zinc-200">
-                Projekt / Team aus der Seitenleiste ziehen
-              </span>{" "}
-              auf den Tag.
+              <span className="font-medium text-zinc-200">Links</span> Projekt-Karte
+              auf einen <span className="text-zinc-200">Tag</span> ziehen (offen oder
+              unter „Alle“) — dann öffnet sich
+              das Formular für Uhrzeit.
             </li>
             <li>
-              Einsatz wählen für Details;{" "}
-              <span className="text-orange-400/90">orangener Rand</span> = Abwesenheit
-              im Team.
+              <span className="font-medium text-zinc-200">Rechts</span>{" "}
+              <span className="text-zinc-200">Team</span> oder{" "}
+              <span className="text-zinc-200">Partner</span> auf dieselbe Zelle ziehen —
+              Einsätze erscheinen als Karten mit Zeit.
+            </li>
+            <li>
+              Karte anklicken für Details;{" "}
+              <span className="text-orange-400/90">orangener Rand</span> = Abwesenheit im
+              Team.
             </li>
           </ol>
         </div>
@@ -1374,8 +1391,9 @@ export function PlanungsKalender() {
           className="flex min-h-0 min-w-0 flex-col"
         >
           <ProjekteSidebar
-            projekte={ungeplanteProjekte}
-            dienstleister={dienstleisterListe}
+            projekteOffen={ungeplanteProjekte}
+            projekteAlle={projekteAktiv}
+            einsatzCountByProjekt={einsatzCountByProjekt}
           />
         </ResizablePanel>
 
@@ -1413,6 +1431,7 @@ export function PlanungsKalender() {
         >
           <TeamsSidebar
             teams={teamSidebarEintraege}
+            dienstleister={dienstleisterListe}
             einsaetzeProTeamZeitraum={einsaetzeProTeamZeitraum}
             heuteEinsaetze={heuteEinsaetzeAnzahl}
             heuteAbwesenheiten={heuteAbwesenheitenAnzahl}
