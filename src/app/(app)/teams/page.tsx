@@ -1,15 +1,38 @@
 import { Suspense } from "react";
-import { redirect } from "next/navigation";
 import {
   darfLeitungPersonal,
   ladeAngestelltenProfil,
 } from "@/lib/auth/angestellter";
 import { TeamsBereich } from "@/components/teams/TeamsBereich";
+import { TeamsZugriffHinweis } from "@/components/teams/TeamsZugriffHinweis";
 
 export default async function TeamsSeite() {
   const profil = await ladeAngestelltenProfil();
-  if (!darfLeitungPersonal(profil?.role)) {
-    redirect("/dashboard");
+
+  if (!profil) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-50">
+            Teams &amp; Stammdaten
+          </h1>
+        </div>
+        <TeamsZugriffHinweis grund="kein_profil" />
+      </div>
+    );
+  }
+
+  if (!darfLeitungPersonal(profil.role)) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-50">
+            Teams &amp; Stammdaten
+          </h1>
+        </div>
+        <TeamsZugriffHinweis grund="monteur" />
+      </div>
+    );
   }
 
   return (

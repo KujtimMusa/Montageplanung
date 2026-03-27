@@ -8,7 +8,6 @@ import interactionPlugin from "@fullcalendar/interaction";
 import type { DateSelectArg, EventClickArg, EventDropArg } from "@fullcalendar/core";
 import type { EventInput } from "@fullcalendar/core";
 import type { EventResizeDoneArg } from "@fullcalendar/interaction";
-import type { EventContentArg } from "@fullcalendar/core";
 import deLocale from "@fullcalendar/core/locales/de";
 import { addDays, eachDayOfInterval, format, parseISO } from "date-fns";
 import { createClient } from "@/lib/supabase/client";
@@ -97,9 +96,13 @@ function normalisiereUhrzeit(eingabe: string): string {
 }
 
 function einsatzTitel(z: ZuweisungRow): string {
-  if (z.projects?.title) return z.projects.title;
-  if (z.project_title?.trim()) return z.project_title.trim();
-  return "Einsatz";
+  const basis =
+    z.projects?.title ??
+    (z.project_title?.trim() ? z.project_title.trim() : null) ??
+    "Einsatz";
+  const team = z.teams?.name?.trim();
+  if (team) return `[${team}] ${basis}`;
+  return basis;
 }
 
 function liegtAufAbwesenheit(
@@ -626,22 +629,6 @@ export function PlanungsKalender() {
     if (!ok) info.revert();
   }
 
-  function eventInhalt(arg: EventContentArg) {
-    if (arg.event.display === "background") return true;
-    const z = arg.event.extendedProps.zuweisung as ZuweisungRow | undefined;
-    const teamName = z?.teams?.name;
-    return (
-      <div className="fc-event-main-frame overflow-hidden px-0.5 py-0.5 text-left leading-tight">
-        {teamName ? (
-          <span className="mb-0.5 block truncate rounded bg-black/30 px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-100">
-            {teamName}
-          </span>
-        ) : null}
-        <span className="block truncate text-[11px] font-medium">{arg.event.title}</span>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -726,7 +713,8 @@ export function PlanungsKalender() {
             eventResize={onEventResize}
             eventStartEditable
             eventDurationEditable
-            eventContent={eventInhalt}
+            eventResourceEditable
+            longPressDelay={200}
             resourceLabelContent={(arg) => (
               <div className="flex items-center gap-2 py-1">
                 <span

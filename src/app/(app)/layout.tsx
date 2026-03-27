@@ -15,6 +15,11 @@ export default async function AppBereichLayout({
 }>) {
   let abteilungen: AbteilungZeile[] = [];
   let darfMitarbeiterSeite = false;
+  let profilKurz: {
+    id: string;
+    name: string;
+    role: string;
+  } | null = null;
 
   if (
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -23,6 +28,13 @@ export default async function AppBereichLayout({
     try {
       const profil = await ladeAngestelltenProfil();
       darfMitarbeiterSeite = darfLeitungPersonal(profil?.role);
+      if (profil) {
+        profilKurz = {
+          id: profil.id,
+          name: profil.name,
+          role: profil.role,
+        };
+      }
 
       const supabase = await createClient();
       const { data } = await supabase
@@ -40,6 +52,7 @@ export default async function AppBereichLayout({
       <AppShell
         abteilungen={abteilungen}
         darfMitarbeiterSeite={darfMitarbeiterSeite}
+        profilKurz={profilKurz}
       >
         {children}
       </AppShell>

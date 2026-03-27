@@ -9,8 +9,7 @@ export default function EinstellungenSeite() {
           Einstellungen
         </h1>
         <p className="text-sm text-zinc-400">
-          Kunden, Abteilungen, Abwesenheiten und Integrationen — alles an einem
-          Ort.
+          Kurzanleitung, Kunden, Abteilungen, Abwesenheiten und Integrationen.
         </p>
       </div>
       <Suspense

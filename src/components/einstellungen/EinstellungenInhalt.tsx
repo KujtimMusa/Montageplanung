@@ -9,6 +9,7 @@ import { AbteilungenVerwaltung } from "@/components/abteilungen/AbteilungenVerwa
 import { AbwesenheitenVerwaltung } from "@/components/abwesenheiten/AbwesenheitenVerwaltung";
 
 const tabIds = [
+  "anleitung",
   "kunden",
   "abteilungen",
   "abwesenheiten",
@@ -21,7 +22,7 @@ export function EinstellungenInhalt() {
   const initial =
     tabParam && tabIds.includes(tabParam as (typeof tabIds)[number])
       ? tabParam
-      : "kunden";
+      : "anleitung";
   const [tab, setTab] = useState(initial);
 
   useEffect(() => {
@@ -36,6 +37,12 @@ export function EinstellungenInhalt() {
   return (
     <Tabs value={tab} onValueChange={setTab} className="w-full space-y-6">
       <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 bg-zinc-900 p-1">
+        <TabsTrigger
+          value="anleitung"
+          className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100"
+        >
+          So geht&apos;s
+        </TabsTrigger>
         <TabsTrigger
           value="kunden"
           className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100"
@@ -61,6 +68,10 @@ export function EinstellungenInhalt() {
           Integrationen
         </TabsTrigger>
       </TabsList>
+
+      <TabsContent value="anleitung" className="mt-0">
+        <ArbeitshilfeKarte />
+      </TabsContent>
 
       <TabsContent value="kunden" className="mt-0">
         <p className="mb-4 text-sm text-zinc-500">
@@ -88,6 +99,54 @@ export function EinstellungenInhalt() {
         <IntegrationenKarte />
       </TabsContent>
     </Tabs>
+  );
+}
+
+function ArbeitshilfeKarte() {
+  return (
+    <Card className="border-zinc-800 bg-zinc-900">
+      <CardHeader>
+        <CardTitle className="text-zinc-50">Reihenfolge für die Planung</CardTitle>
+        <CardDescription className="text-zinc-500">
+          Kurz erklärt für Abteilungsleitung und Büro — damit Stammdaten und
+          Kalender zusammenpassen.
+        </CardDescription>
+      </CardHeader>
+      <div className="space-y-4 px-6 pb-6 text-sm leading-relaxed text-zinc-300">
+        <ol className="list-decimal space-y-3 pl-5">
+          <li>
+            <strong className="text-zinc-100">Abteilungen</strong> anlegen (Farben
+            erscheinen im Kalender).
+          </li>
+          <li>
+            Unter <strong className="text-zinc-100">Teams &amp; Stammdaten</strong>{" "}
+            Mitarbeiter pflegen, optional Teams bilden,{" "}
+            <strong className="text-zinc-100">Projekte</strong> anlegen.
+          </li>
+          <li>
+            <strong className="text-zinc-100">Urlaub &amp; Krankheit</strong>{" "}
+            eintragen — im Kalender als Hintergrund sichtbar.
+          </li>
+          <li>
+            In der <strong className="text-zinc-100">Planung</strong> Einsätze
+            ziehen oder klicken: Mitarbeiter, Zeit, Projekt/Freitext, optional
+            Team-Label. Mehrere Blöcke pro Tag sind möglich.
+          </li>
+        </ol>
+        <p className="rounded-md border border-zinc-700 bg-zinc-950/60 p-3 text-xs text-zinc-400">
+          <strong className="text-zinc-200">Profil fehlt?</strong> Oben erscheint
+          ein gelber Hinweis — Button „Profil jetzt anlegen“ (benötigt{" "}
+          <code className="rounded bg-zinc-800 px-1">SUPABASE_SERVICE_ROLE_KEY</code>{" "}
+          auf dem Server). Ohne Service-Role: Admin legt Sie in Supabase unter{" "}
+          <code className="rounded bg-zinc-800 px-1">employees</code> an.
+        </p>
+        <p className="text-xs text-zinc-500">
+          Rolle <strong className="text-zinc-400">Monteur</strong>: nur Kalender,
+          keine Stammdaten — Admin kann die Rolle unter Teams → Mitarbeiter
+          ändern.
+        </p>
+      </div>
+    </Card>
   );
 }
 

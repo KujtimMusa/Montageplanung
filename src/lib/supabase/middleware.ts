@@ -25,6 +25,9 @@ function istGeschuetzteRoute(pfad: string): boolean {
     "/dienstleister",
     "/notfall",
     "/einstellungen",
+    "/teams",
+    "/ki-assistent",
+    "/benachrichtigungen",
   ];
 
   return prefixe.some(
