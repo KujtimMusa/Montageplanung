@@ -1,8 +1,50 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+/** Routen ohne Login (Whitelist). */
+function istOeffentlicheRoute(pfad: string): boolean {
+  if (pfad === "" || pfad === "/") return true;
+  if (pfad === "/login" || pfad === "/register") return true;
+  if (pfad.startsWith("/auth/")) return true;
+  return false;
+}
+
+/** Routen, die eine Session erzwingen (Prefix-Match inkl. Unterpfade). */
+function istGeschuetzteRoute(pfad: string): boolean {
+  if (pfad.startsWith("/api/")) return true;
+
+  /* Fehlt eine App-Route (z. B. /benachrichtigungen)? → Prefix hier ergänzen. */
+  const prefixe = [
+    "/dashboard",
+    "/planung",
+    "/projekte",
+    "/mitarbeiter",
+    "/kunden",
+    "/abteilungen",
+    "/abwesenheiten",
+    "/dienstleister",
+    "/notfall",
+    "/einstellungen",
+  ];
+
+  return prefixe.some(
+    (p) => pfad === p || pfad.startsWith(`${p}/`)
+  );
+}
+
+/** Next-/PWA-Assets: kein Login, nur Session-Cookies aktualisieren. */
+function istInternesOderStatischesAsset(pfad: string): boolean {
+  return (
+    pfad.startsWith("/_next") ||
+    pfad === "/manifest.json" ||
+    pfad === "/icon.svg" ||
+    pfad === "/sw.js" ||
+    pfad.startsWith("/workbox")
+  );
+}
+
 /**
- * Aktualisiert die Supabase-Session in der Middleware (Cookie-Refresh).
+ * Supabase-Session aktualisieren und Zugriff auf öffentliche vs. geschützte Routen steuern.
  */
 export async function updateSession(request: NextRequest) {
   if (
@@ -45,34 +87,34 @@ export async function updateSession(request: NextRequest) {
 
   const pfad = request.nextUrl.pathname;
 
-  // API: Session aktualisieren, aber kein Login-Zwang (Webhooks / Cron später eigen prüfen)
-  if (pfad.startsWith("/api/")) {
+  if (istInternesOderStatischesAsset(pfad)) {
     return supabaseAntwort;
   }
 
-  const istOeffentlich =
-    pfad === "/login" ||
-    pfad.startsWith("/auth/") ||
-    pfad.startsWith("/_next") ||
-    pfad === "/manifest.json" ||
-    pfad === "/icon.svg" ||
-    pfad === "/sw.js" ||
-    pfad.startsWith("/workbox");
+  if (user) {
+    if (
+      pfad === "/" ||
+      pfad === "/login" ||
+      pfad === "/register" ||
+      pfad === ""
+    ) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/dashboard";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+    return supabaseAntwort;
+  }
 
-  const istGeschuetzt = !istOeffentlich && pfad !== "/";
-
-  if (!user && istGeschuetzt) {
+  if (!user && istGeschuetzteRoute(pfad)) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("weiter", pfad);
     return NextResponse.redirect(url);
   }
 
-  if (user && pfad === "/login") {
-    const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
-    url.search = "";
-    return NextResponse.redirect(url);
+  if (!user && istOeffentlicheRoute(pfad)) {
+    return supabaseAntwort;
   }
 
   return supabaseAntwort;

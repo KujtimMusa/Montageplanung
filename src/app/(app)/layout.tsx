@@ -1,6 +1,10 @@
 import { AppShell } from "@/components/layout/AppShell";
 import { createClient } from "@/lib/supabase/server";
 import type { AbteilungZeile } from "@/components/layout/AppShell";
+import {
+  darfMitarbeiterVerwalten,
+  ladeAngestelltenProfil,
+} from "@/lib/auth/angestellter";
 
 export const dynamic = "force-dynamic";
 
@@ -10,12 +14,16 @@ export default async function AppBereichLayout({
   children: React.ReactNode;
 }>) {
   let abteilungen: AbteilungZeile[] = [];
+  let darfMitarbeiterSeite = false;
 
   if (
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   ) {
     try {
+      const profil = await ladeAngestelltenProfil();
+      darfMitarbeiterSeite = darfMitarbeiterVerwalten(profil?.role);
+
       const supabase = await createClient();
       const { data } = await supabase
         .from("departments")
@@ -27,5 +35,12 @@ export default async function AppBereichLayout({
     }
   }
 
-  return <AppShell abteilungen={abteilungen}>{children}</AppShell>;
+  return (
+    <AppShell
+      abteilungen={abteilungen}
+      darfMitarbeiterSeite={darfMitarbeiterSeite}
+    >
+      {children}
+    </AppShell>
+  );
 }

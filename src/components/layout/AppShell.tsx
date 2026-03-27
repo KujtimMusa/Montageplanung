@@ -13,21 +13,30 @@ export type AbteilungZeile = {
 type AppShellProps = {
   children: React.ReactNode;
   abteilungen: AbteilungZeile[];
+  /** Admin / Abteilungsleiter sehen /mitarbeiter in der Navigation */
+  darfMitarbeiterSeite: boolean;
 };
 
 /**
  * Responsives App-Layout: Sidebar (Desktop), BottomNav (Mobil).
  */
-export function AppShell({ children, abteilungen }: AppShellProps) {
+export function AppShell({
+  children,
+  abteilungen,
+  darfMitarbeiterSeite,
+}: AppShellProps) {
   return (
     <div className="flex min-h-dvh w-full bg-background">
-      <Sidebar abteilungen={abteilungen} />
+      <Sidebar
+        abteilungen={abteilungen}
+        darfMitarbeiterSeite={darfMitarbeiterSeite}
+      />
       <div className="flex min-h-dvh flex-1 flex-col">
         <main className="flex-1 overflow-x-hidden px-4 pb-24 pt-4 md:px-8 md:pb-8 md:pt-8">
           {children}
         </main>
       </div>
-      <BottomNav />
+      <BottomNav darfMitarbeiterSeite={darfMitarbeiterSeite} />
     </div>
   );
 }

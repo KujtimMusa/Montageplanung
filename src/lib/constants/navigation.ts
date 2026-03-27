@@ -1,13 +1,13 @@
 import {
   Bell,
   Building2,
+  Briefcase,
   CalendarDays,
   Contact,
   LayoutDashboard,
   Settings,
   Users,
   AlertTriangle,
-  Briefcase,
   Truck,
   UserMinus,
 } from "lucide-react";
@@ -34,10 +34,25 @@ export const sidebarNavigation: NavEintrag[] = [
   { href: "/einstellungen", label: "Einstellungen", icon: Settings },
 ];
 
-/** Mobile Bottom Navigation (4 Icons, Bauplan) */
-export const bottomNavigation: NavEintrag[] = [
+/** Mobile Bottom Navigation (4 Icons) */
+export const bottomNavigationAdmin: NavEintrag[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/planung", label: "Kalender", icon: CalendarDays },
-  { href: "/mitarbeiter", label: "Mitarbeiter", icon: Users },
-  { href: "/benachrichtigungen", label: "Benachrichtigungen", icon: Bell },
+  { href: "/mitarbeiter", label: "Team", icon: Users },
+  { href: "/benachrichtigungen", label: "Infos", icon: Bell },
 ];
+
+export const bottomNavigationMonteur: NavEintrag[] = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/planung", label: "Kalender", icon: CalendarDays },
+  { href: "/projekte", label: "Projekte", icon: Briefcase },
+  { href: "/benachrichtigungen", label: "Infos", icon: Bell },
+];
+
+export function sidebarEinträgeFiltern(
+  einträge: NavEintrag[],
+  darfMitarbeiterSeite: boolean
+): NavEintrag[] {
+  if (darfMitarbeiterSeite) return einträge;
+  return einträge.filter((e) => e.href !== "/mitarbeiter");
+}

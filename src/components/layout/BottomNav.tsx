@@ -3,13 +3,23 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { bottomNavigation } from "@/lib/constants/navigation";
+import {
+  bottomNavigationAdmin,
+  bottomNavigationMonteur,
+} from "@/lib/constants/navigation";
+
+type BottomNavProps = {
+  darfMitarbeiterSeite: boolean;
+};
 
 /**
  * Mobile Bottom Navigation (4 Haupt-Einträge).
  */
-export function BottomNav() {
+export function BottomNav({ darfMitarbeiterSeite }: BottomNavProps) {
   const pathname = usePathname();
+  const einträge = darfMitarbeiterSeite
+    ? bottomNavigationAdmin
+    : bottomNavigationMonteur;
 
   return (
     <nav
@@ -17,8 +27,9 @@ export function BottomNav() {
       aria-label="Mobile Hauptnavigation"
     >
       <ul className="mx-auto flex max-w-lg items-center justify-around px-2">
-        {bottomNavigation.map((eintrag) => {
-          const aktiv = pathname === eintrag.href || pathname.startsWith(`${eintrag.href}/`);
+        {einträge.map((eintrag) => {
+          const aktiv =
+            pathname === eintrag.href || pathname.startsWith(`${eintrag.href}/`);
           const Icon = eintrag.icon;
           return (
             <li key={eintrag.href} className="flex-1">

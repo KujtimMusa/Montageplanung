@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -84,6 +85,15 @@ function LoginFormular() {
           <Button type="submit" className="w-full" disabled={laedt}>
             {laedt ? "Wird angemeldet…" : "Anmelden"}
           </Button>
+          <p className="text-center text-sm text-muted-foreground">
+            Noch kein Konto?{" "}
+            <Link
+              href="/register"
+              className="font-medium text-primary underline-offset-4 hover:underline"
+            >
+              Registrieren
+            </Link>
+          </p>
           <p className="text-center text-xs text-muted-foreground">
             Microsoft SSO (Entra ID) kann in Phase 4 ergänzt werden.
           </p>
