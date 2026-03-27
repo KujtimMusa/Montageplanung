@@ -95,6 +95,31 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (user) {
+    const { data: mitarbeiterZeile } = await supabase
+      .from("employees")
+      .select("role")
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
+
+    if (mitarbeiterZeile?.role === "monteur") {
+      await supabase.auth.signOut();
+      if (pfad.startsWith("/api/")) {
+        return NextResponse.json(
+          { error: "kein_zugang", message: "Monteure haben keinen App-Zugang." },
+          { status: 403 }
+        );
+      }
+      const url = request.nextUrl.clone();
+      url.pathname = "/login";
+      url.search = "";
+      url.searchParams.set("error", "kein_zugang");
+      const redirectResponse = NextResponse.redirect(url);
+      supabaseAntwort.cookies.getAll().forEach((cookie) => {
+        redirectResponse.cookies.set(cookie.name, cookie.value);
+      });
+      return redirectResponse;
+    }
+
     if (
       pfad === "/" ||
       pfad === "/login" ||

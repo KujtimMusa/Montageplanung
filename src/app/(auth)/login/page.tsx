@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,15 @@ function LoginFormular() {
   const router = useRouter();
   const suchParams = useSearchParams();
   const weiter = suchParams.get("weiter") ?? "/dashboard";
+
+  useEffect(() => {
+    if (suchParams.get("error") === "kein_zugang") {
+      toast.error(
+        "Monteure haben keinen App-Zugang. Bitte einen Administrator kontaktieren."
+      );
+      router.replace("/login", { scroll: false });
+    }
+  }, [suchParams, router]);
 
   const [email, setEmail] = useState("");
   const [passwort, setPasswort] = useState("");
