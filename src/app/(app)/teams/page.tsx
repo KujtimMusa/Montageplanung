@@ -1,8 +1,5 @@
 import { Suspense } from "react";
-import {
-  darfLeitungPersonal,
-  ladeAngestelltenProfil,
-} from "@/lib/auth/angestellter";
+import { ladeAngestelltenProfil } from "@/lib/auth/angestellter";
 import { TeamsBereich } from "@/components/teams/TeamsBereich";
 import { TeamsZugriffHinweis } from "@/components/teams/TeamsZugriffHinweis";
 
@@ -14,7 +11,7 @@ export default async function TeamsSeite() {
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-50">
-            Teams &amp; Stammdaten
+            Teams
           </h1>
         </div>
         <TeamsZugriffHinweis grund="kein_profil" />
@@ -22,28 +19,12 @@ export default async function TeamsSeite() {
     );
   }
 
-  if (!darfLeitungPersonal(profil.role)) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-50">
-            Teams &amp; Stammdaten
-          </h1>
-        </div>
-        <TeamsZugriffHinweis grund="monteur" />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-zinc-50">
-          Teams &amp; Stammdaten
-        </h1>
+        <h1 className="text-2xl font-bold tracking-tight text-zinc-50">Teams</h1>
         <p className="text-sm text-zinc-400">
-          Teams, Mitarbeiter, Abwesenheiten und Projekte — alles für die Planung
-          im Kalender.
+          Mitarbeiter, Teams und Abteilungen — zentrale Stammdaten.
         </p>
       </div>
       <Suspense
