@@ -1,7 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
-import { Draggable } from "@fullcalendar/interaction";
 import { GripVertical, Zap } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -27,34 +25,6 @@ export function TeamsSidebar({
   heuteEinsaetze,
   heuteAbwesenheiten,
 }: Props) {
-  useEffect(() => {
-    const container = document.getElementById("teams-drag-sidebar");
-    if (!container) return;
-
-    const draggable = new Draggable(container, {
-      itemSelector: ".draggable-team",
-      eventData: (el: HTMLElement) => {
-        const raw = el.getAttribute("data-event");
-        let data: { title?: string; extendedProps?: { teamId?: string } } = {};
-        try {
-          data = raw ? JSON.parse(raw) : {};
-        } catch {
-          /* ignore */
-        }
-        return {
-          title: data.title ?? "Team",
-          duration: { hours: 8 },
-          extendedProps: { teamId: data.extendedProps?.teamId ?? "" },
-          color: "transparent",
-        };
-      },
-    });
-
-    return () => {
-      draggable.destroy();
-    };
-  }, [teams]);
-
   return (
     <div className="flex h-full min-h-0 flex-col border-l border-zinc-800 bg-zinc-950">
       <div className="shrink-0 border-b border-zinc-800 p-3">
@@ -73,6 +43,15 @@ export function TeamsSidebar({
             teams.map((team) => (
               <div
                 key={team.id}
+                draggable
+                onDragStart={(e) => {
+                  const payload = JSON.stringify({
+                    title: team.name,
+                    extendedProps: { teamId: team.id },
+                  });
+                  e.dataTransfer.setData("application/json", payload);
+                  e.dataTransfer.effectAllowed = "copy";
+                }}
                 className="draggable-team mx-2 my-1 cursor-grab select-none rounded-lg border border-zinc-800 bg-zinc-900/50 p-2.5 transition-colors hover:border-zinc-600 hover:bg-zinc-800/60 active:cursor-grabbing"
                 data-event={JSON.stringify({
                   title: team.name,

@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Draggable } from "@fullcalendar/interaction";
+import { useMemo, useState } from "react";
 import { CalendarDays, CheckCircle2, GripVertical } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -44,76 +43,6 @@ export function ProjekteSidebar({ projekte, dienstleister }: Props) {
     });
   }, [projekte, suche]);
 
-  useEffect(() => {
-    const container = document.getElementById("projekte-drag-container");
-    if (!container) return;
-
-    const draggable = new Draggable(container, {
-      itemSelector: ".draggable-projekt",
-      eventData: (el: HTMLElement) => {
-        const raw = el.getAttribute("data-event");
-        let data: {
-          title?: string;
-          extendedProps?: {
-            projektId?: string;
-            prioritaet?: string;
-            farbe?: string;
-          };
-        } = {};
-        try {
-          data = raw ? JSON.parse(raw) : {};
-        } catch {
-          /* ignore */
-        }
-        return {
-          title: data.title ?? "Projekt",
-          duration: { hours: 8 },
-          extendedProps: data.extendedProps ?? {},
-          color: "transparent",
-        };
-      },
-    });
-
-    return () => {
-      draggable.destroy();
-    };
-  }, [projekte]);
-
-  useEffect(() => {
-    const container = document.getElementById("dienstleister-drag-container");
-    if (!container) return;
-
-    const draggable = new Draggable(container, {
-      itemSelector: ".draggable-dienstleister",
-      eventData: (el: HTMLElement) => {
-        const raw = el.getAttribute("data-event");
-        let data: {
-          title?: string;
-          extendedProps?: {
-            dienstleisterId?: string;
-            typ?: string;
-            spezialisierung?: string[];
-          };
-        } = {};
-        try {
-          data = raw ? JSON.parse(raw) : {};
-        } catch {
-          /* ignore */
-        }
-        return {
-          title: data.title ?? "Dienstleister",
-          duration: { hours: 8 },
-          extendedProps: data.extendedProps ?? {},
-          color: "transparent",
-        };
-      },
-    });
-
-    return () => {
-      draggable.destroy();
-    };
-  }, [dienstleisterAktiv]);
-
   return (
     <div className="flex h-full min-h-0 flex-col border-r border-zinc-800 bg-zinc-950">
       <Tabs defaultValue="projekte" className="flex min-h-0 flex-1 flex-col">
@@ -137,12 +66,12 @@ export function ProjekteSidebar({ projekte, dienstleister }: Props) {
             <Badge className="bg-zinc-800 text-zinc-400">{projekte.length}</Badge>
           </div>
 
-          <Input
-            placeholder="Suchen…"
-            value={suche}
-            onChange={(e) => setSuche(e.target.value)}
-            className="m-2 h-7 w-[calc(100%-16px)] border-zinc-800 bg-zinc-900 text-xs"
-          />
+      <Input
+        placeholder="Suchen…"
+        value={suche}
+        onChange={(e) => setSuche(e.target.value)}
+        className="m-2 h-9 w-[calc(100%-16px)] rounded-lg border-zinc-600/80 bg-zinc-900/90 text-xs text-zinc-100 shadow-[inset_0_1px_2px_rgba(0,0,0,0.35)] placeholder:text-zinc-500 focus-visible:border-zinc-500 focus-visible:ring-2 focus-visible:ring-blue-500/25"
+      />
 
           <ScrollArea className="min-h-0 flex-1">
             <div id="projekte-drag-container" className="pb-3 pr-1">
@@ -176,6 +105,11 @@ export function ProjekteSidebar({ projekte, dienstleister }: Props) {
                   return (
                     <div
                       key={projekt.id}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("application/json", dataEvent);
+                        e.dataTransfer.effectAllowed = "copy";
+                      }}
                       className="draggable-projekt mx-2 mb-2 cursor-grab select-none rounded-lg border border-zinc-800 bg-zinc-900 p-3 transition-all duration-150 hover:border-zinc-600 hover:bg-zinc-800/80 active:cursor-grabbing"
                       data-event={dataEvent}
                     >
@@ -257,6 +191,11 @@ export function ProjekteSidebar({ projekte, dienstleister }: Props) {
                   return (
                     <div
                       key={d.id}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("application/json", dataEvent);
+                        e.dataTransfer.effectAllowed = "copy";
+                      }}
                       className="draggable-dienstleister mx-2 mb-2 cursor-grab select-none rounded-lg border border-zinc-800 bg-zinc-900 p-3 transition-all hover:border-zinc-600 active:cursor-grabbing"
                       data-event={dataEvent}
                     >

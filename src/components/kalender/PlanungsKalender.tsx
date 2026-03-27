@@ -2,38 +2,52 @@
 
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import FullCalendar from "@fullcalendar/react";
-import resourceTimelinePlugin from "@fullcalendar/resource-timeline";
-import interactionPlugin, {
-  type DateClickArg,
-  type EventReceiveArg,
-  type EventResizeDoneArg,
-} from "@fullcalendar/interaction";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  ScheduleComponent,
+  ViewsDirective,
+  ViewDirective,
+  ResourcesDirective,
+  ResourceDirective,
+  Inject,
+  TimelineViews,
+  TimelineMonth,
+  Resize,
+  DragAndDrop,
+} from "@syncfusion/ej2-react-schedule";
 import type {
-  DateSelectArg,
-  DatesSetArg,
-  EventClickArg,
-  EventDropArg,
-  EventInput,
-} from "@fullcalendar/core";
-import deLocale from "@fullcalendar/core/locales/de";
+  CellClickEventArgs,
+  DragEventArgs,
+  EventClickArgs,
+  PopupOpenEventArgs,
+  ResizeEventArgs,
+} from "@syncfusion/ej2-schedule";
 import {
   addDays,
+  addMonths,
   eachDayOfInterval,
   format,
   isSameDay,
   parseISO,
 } from "date-fns";
 import { de } from "date-fns/locale";
-import { Clock, MapPin, Zap } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { ortLabelFromProjektJoin } from "@/lib/planung/ort-label";
 import { PRIORITAET_FARBEN } from "@/lib/constants/planung-farben";
 import { pruefeEinsatzKonflikt } from "@/lib/utils/conflicts";
 import { getRepresentativeEmployeeId } from "@/lib/planung/team-representative";
-import { istKritischUi } from "@/lib/utils/priority";
+import { registerSyncfusion } from "@/lib/syncfusion/register";
+import {
+  transformiereEinsatz,
+  type SyncfusionEvent,
+} from "@/lib/syncfusion/transform";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   ResizableHandle,
@@ -62,10 +76,7 @@ import {
 } from "@/types/dienstleister";
 import { useDefaultLayout } from "react-resizable-panels";
 
-function datumUndZeitZuIso(datum: string, zeit: string): string {
-  const z = zeit.length === 5 ? `${zeit}:00` : zeit;
-  return `${datum}T${z}`;
-}
+registerSyncfusion();
 
 function teamHatKonflikt(
   teamId: string,
@@ -129,11 +140,69 @@ function prioRangUngeplant(prio: string): number {
   }
 }
 
+function EinsatzTemplate(props: Record<string, unknown>) {
+  const farbe = (props.TeamFarbe as string) ?? "#3b82f6";
+  const kritisch = Boolean(props.Kritisch);
+  const konflikt = Boolean(props.HatKonflikt);
+  return (
+    <div
+      style={{
+        background: `${farbe}18`,
+        borderLeft: `3px solid ${farbe}`,
+        borderRadius: "5px",
+        height: "100%",
+        padding: "2px 6px",
+        display: "flex",
+        alignItems: "center",
+        gap: "4px",
+        overflow: "hidden",
+        outline: konflikt ? "2px solid #f97316" : "none",
+        outlineOffset: "-1px",
+      }}
+    >
+      {kritisch ? (
+        <span style={{ color: "#ef4444", fontSize: "10px", flexShrink: 0 }}>
+          ⚡
+        </span>
+      ) : null}
+      {konflikt ? (
+        <span style={{ color: "#f97316", fontSize: "10px", flexShrink: 0 }}>
+          ⚠
+        </span>
+      ) : null}
+      <span
+        style={{
+          fontSize: "11px",
+          fontWeight: 600,
+          color: "#e4e4e7",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          flex: 1,
+        }}
+      >
+        {String(props.Subject ?? "")}
+      </span>
+      <span
+        style={{
+          fontSize: "10px",
+          color: farbe,
+          opacity: 0.85,
+          flexShrink: 0,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {String(props.ZeitLabel ?? "")}
+      </span>
+    </div>
+  );
+}
+
 export function PlanungsKalender() {
   const supabase = useMemo(() => createClient(), []);
   const searchParams = useSearchParams();
   const router = useRouter();
-  const calendarRef = useRef<FullCalendar>(null);
+  const scheduleRef = useRef<ScheduleComponent>(null);
   const [teamsListe, setTeamsListe] = useState<TeamOption[]>([]);
   const [zuweisungen, setZuweisungen] = useState<EinsatzEvent[]>([]);
   const [abwesenheiten, setAbwesenheiten] = useState<AbwesenheitRow[]>([]);
@@ -188,7 +257,6 @@ export function PlanungsKalender() {
 
   const [zeitraumLabel, setZeitraumLabel] = useState("");
 
-  /** v2: alte Keys wiesen minSize in px aus; Storage-Key bump leert fehlerhafte Layouts. */
   const { defaultLayout: planungLayout, onLayoutChanged: planungLayoutChanged } =
     useDefaultLayout({
       id: "planung-layout-v2",
@@ -296,7 +364,6 @@ export function PlanungsKalender() {
 
       const heute = format(new Date(), "yyyy-MM-dd");
 
-      /** Projekte mit mindestens einem Einsatz ab heute gelten als „eingeplant“. */
       const { data: busyRows } = await supabase
         .from("assignments")
         .select("project_id")
@@ -558,18 +625,15 @@ export function PlanungsKalender() {
     setDialogOffen(true);
   }, [dlQuery, kalenderBereit, teamsListe, dienstleisterListe, router]);
 
-  /** Zeilen = Projekte (Fundament); Einsätze sind Team-Chips im Projekt-Zeitraum. */
-  const projektRessourcen = useMemo(() => {
+  const projektRessourcenSf = useMemo(() => {
     if (projekteAktiv.length === 0) {
       return [
         {
-          id: "_leer",
-          title: "Keine Projekte",
-          extendedProps: {
-            akzent: "#64748b",
-            platzhalter: true,
-            kunde: "",
-          },
+          Id: "_leer",
+          Subject: "Keine Projekte",
+          farbe: "#64748b",
+          platzhalter: true,
+          kunde: "",
         },
       ];
     }
@@ -584,13 +648,11 @@ export function PlanungsKalender() {
       const akzent =
         PRIORITAET_FARBEN[prio] ?? PRIORITAET_FARBEN.normal ?? "#3b82f6";
       return {
-        id: p.id,
-        title: p.title,
-        extendedProps: {
-          akzent,
-          kunde: p.customerLabel?.trim() || "",
-          platzhalter: false,
-        },
+        Id: p.id,
+        Subject: p.title,
+        farbe: akzent,
+        platzhalter: false,
+        kunde: p.customerLabel?.trim() || "",
       };
     });
   }, [projekteAktiv]);
@@ -662,140 +724,270 @@ export function PlanungsKalender() {
     [teamsListe]
   );
 
-  const events: EventInput[] = useMemo(() => {
+  const syncfusionEvents: SyncfusionEvent[] = useMemo(() => {
     return zuweisungen
       .filter((z) => z.project_id)
       .map((z) => {
-        const pid = z.project_id as string;
         const tid = z.team_id as string | null;
         const dlName = z.dienstleister?.company_name;
         const farbe =
           z.teams?.farbe?.trim() ||
           (dlName ? "#a855f7" : teamFarbe(tid ?? ""));
-        const teamName = dlName ?? z.teams?.name ?? "Einsatz";
         const hatKonflikt = tid
-          ? teamHatKonflikt(
-              tid,
-              z.date,
-              membersByTeam,
-              abwesenheiten
-            )
+          ? teamHatKonflikt(tid, z.date, membersByTeam, abwesenheiten)
           : false;
-        const start = z.start_time.slice(0, 5);
-        const end = z.end_time.slice(0, 5);
-        const ort = (z.ortLabel ?? "").trim();
-        return {
-          id: z.id,
-          resourceId: pid,
-          title: teamName,
-          start: datumUndZeitZuIso(z.date, z.start_time),
-          end: datumUndZeitZuIso(z.date, z.end_time),
-          backgroundColor: "transparent",
-          borderColor: "transparent",
-          extendedProps: {
-            zuweisung: z,
-            hatKonflikt,
-            teamFarbe: farbe,
-            zeitLabel: `${start} – ${end}`,
-            ortLabel: ort,
-            teamName,
-          },
-        };
+        return transformiereEinsatz(z, hatKonflikt, farbe);
       });
   }, [zuweisungen, membersByTeam, abwesenheiten, teamFarbe]);
 
-  function dialogNeuOeffnen(v: {
-    date: string;
-    team_id?: string;
-    projekt_id?: string;
-    start_time?: string;
-    end_time?: string;
-    dienstleister_id?: string;
-    dienstleister_name?: string;
-  }) {
-    if (v.projekt_id === "_leer") {
-      toast.info("Legen Sie zuerst Projekte an.");
-      return;
-    }
-    if (v.dienstleister_id) {
+  const dialogNeuOeffnen = useCallback(
+    (v: {
+      date: string;
+      team_id?: string;
+      projekt_id?: string;
+      start_time?: string;
+      end_time?: string;
+      dienstleister_id?: string;
+      dienstleister_name?: string;
+    }) => {
+      if (v.projekt_id === "_leer") {
+        toast.info("Legen Sie zuerst Projekte an.");
+        return;
+      }
+      if (v.dienstleister_id) {
+        setBearbeiten(null);
+        setVorgaben({
+          team_id: v.team_id ?? teamsListe[0]?.id ?? "",
+          date: v.date,
+          start_time: v.start_time ?? "07:00",
+          end_time: v.end_time ?? "16:00",
+          projekt_id: v.projekt_id,
+          dienstleister_id: v.dienstleister_id,
+          dienstleister_name: v.dienstleister_name,
+        });
+        setFormularSchluessel((k) => k + 1);
+        setDialogOffen(true);
+        return;
+      }
+      let teamId = v.team_id;
+      if (!teamId && teamsListe.length > 0) {
+        teamId = teamsListe[0].id;
+      }
+      if (!teamId || teamId === "_leer") {
+        toast.info("Legen Sie zuerst Teams an.");
+        return;
+      }
       setBearbeiten(null);
       setVorgaben({
-        team_id: v.team_id ?? teamsListe[0]?.id ?? "",
+        team_id: teamId,
         date: v.date,
         start_time: v.start_time ?? "07:00",
         end_time: v.end_time ?? "16:00",
         projekt_id: v.projekt_id,
-        dienstleister_id: v.dienstleister_id,
-        dienstleister_name: v.dienstleister_name,
       });
       setFormularSchluessel((k) => k + 1);
       setDialogOffen(true);
-      return;
-    }
-    let teamId = v.team_id;
-    if (!teamId && teamsListe.length > 0) {
-      teamId = teamsListe[0].id;
-    }
-    if (!teamId || teamId === "_leer") {
-      toast.info("Legen Sie zuerst Teams an.");
-      return;
-    }
-    setBearbeiten(null);
-    setVorgaben({
-      team_id: teamId,
-      date: v.date,
-      start_time: v.start_time ?? "07:00",
-      end_time: v.end_time ?? "16:00",
-      projekt_id: v.projekt_id,
-    });
-    setFormularSchluessel((k) => k + 1);
-    setDialogOffen(true);
-  }
+    },
+    [teamsListe]
+  );
 
-  function onDateClick(info: DateClickArg) {
-    const resource = (
-      info as unknown as { resource?: { id: string } }
-    ).resource;
-    if (!resource?.id || resource.id === "_leer") {
-      toast.info("Bitte eine Projekt-Zeile und einen Tag wählen.");
-      return;
+  const syncZeitraumFromSchedule = useCallback(() => {
+    const sch = scheduleRef.current;
+    if (!sch) return;
+    const dates = sch.getCurrentViewDates();
+    if (!dates?.length) return;
+    const start = dates[0];
+    const end = dates[dates.length - 1];
+    setSichtbarerZeitraum({ start, end: addDays(end, 1) });
+    if (kalenderAnsicht === "week") {
+      setZeitraumLabel(
+        `${format(start, "d.", { locale: de })} – ${format(end, "d. MMMM yyyy", { locale: de })}`
+      );
+    } else {
+      setZeitraumLabel(format(start, "MMMM yyyy", { locale: de }));
     }
-    dialogNeuOeffnen({
-      projekt_id: resource.id,
-      team_id: teamsListe[0]?.id,
-      date: format(info.date, "yyyy-MM-dd"),
-      start_time: "07:00",
-      end_time: "16:00",
-    });
-  }
+  }, [kalenderAnsicht]);
 
-  function onSelect(info: DateSelectArg) {
-    const resource = (
-      info as unknown as { resource?: { id: string } }
-    ).resource;
-    if (!resource?.id || resource.id === "_leer") {
-      toast.info("Bitte in einer Projekt-Zeile auswählen.");
-      return;
+  const setzeAnsicht = useCallback(
+    (art: "week" | "month") => {
+      setKalenderAnsicht(art);
+      const sch = scheduleRef.current;
+      if (!sch) return;
+      sch.changeView(art === "week" ? "TimelineWeek" : "TimelineMonth");
+    },
+    []
+  );
+
+  const handlePrev = useCallback(() => {
+    const sch = scheduleRef.current;
+    if (!sch) return;
+    const d = new Date(sch.selectedDate);
+    if (kalenderAnsicht === "week") {
+      sch.changeDate(addDays(d, -7));
+    } else {
+      sch.changeDate(addMonths(d, -1));
     }
-    if (!info.start || !info.end) return;
-    dialogNeuOeffnen({
-      projekt_id: resource.id,
-      team_id: teamsListe[0]?.id,
-      date: format(info.start, "yyyy-MM-dd"),
-      start_time: format(info.start, "HH:mm"),
-      end_time: format(info.end, "HH:mm"),
-    });
-  }
+  }, [kalenderAnsicht]);
 
-  function onEventClick(info: EventClickArg) {
-    if (info.event.display === "background") return;
-    const z = info.event.extendedProps.zuweisung as EinsatzEvent | undefined;
+  const handleNext = useCallback(() => {
+    const sch = scheduleRef.current;
+    if (!sch) return;
+    const d = new Date(sch.selectedDate);
+    if (kalenderAnsicht === "week") {
+      sch.changeDate(addDays(d, 7));
+    } else {
+      sch.changeDate(addMonths(d, 1));
+    }
+  }, [kalenderAnsicht]);
+
+  const handleHeute = useCallback(() => {
+    scheduleRef.current?.changeDate(new Date());
+  }, []);
+
+  const beiDragOderResize = useCallback(
+    async (
+      id: string,
+      newProjectId: string,
+      start: Date,
+      ende: Date
+    ): Promise<boolean> => {
+      if (newProjectId === "_leer") return false;
+      const z = zuweisungen.find((x) => x.id === id);
+      if (!z || (!z.team_id && !z.dienstleister_id)) return false;
+
+      const datum = format(start, "yyyy-MM-dd");
+      const startZeit = format(start, "HH:mm:ss");
+      const endZeit = format(ende, "HH:mm:ss");
+
+      let empId: string | null = null;
+      if (z.team_id) {
+        empId = await getRepresentativeEmployeeId(supabase, z.team_id);
+        if (!empId) {
+          toast.error("Kein Mitarbeiter für dieses Team hinterlegt.");
+          return false;
+        }
+      } else {
+        empId = z.employee_id;
+      }
+
+      const k = await pruefeEinsatzKonflikt(supabase, {
+        mitarbeiterId: empId,
+        datum,
+        startZeit,
+        endZeit,
+        ausserhalbEinsatzId: id,
+      });
+      if (k.hatKonflikt) {
+        toast.error(k.nachricht);
+        return false;
+      }
+
+      const { error } = await supabase
+        .from("assignments")
+        .update({
+          project_id: newProjectId,
+          team_id: z.team_id,
+          dienstleister_id: z.dienstleister_id,
+          employee_id: empId,
+          date: datum,
+          start_time: startZeit,
+          end_time: endZeit,
+        })
+        .eq("id", id);
+
+      if (error) {
+        toast.error("Fehler beim Verschieben");
+        return false;
+      }
+      toast.success("Einsatz verschoben.");
+      void laden();
+      return true;
+    },
+    [zuweisungen, supabase, laden]
+  );
+
+  const projektIdByGroupIndex = useCallback(
+    (groupIndex: number | undefined) => {
+      if (groupIndex === undefined || groupIndex < 0) return null;
+      return projektRessourcenSf[groupIndex]?.Id ?? null;
+    },
+    [projektRessourcenSf]
+  );
+
+  const onDragStop = useCallback(
+    async (args: DragEventArgs) => {
+      args.cancel = true;
+      const raw = args.data as Record<string, unknown>;
+      const id = String(raw.Id ?? "");
+      const gi = args.groupIndex ?? 0;
+      const newProjectId = projektIdByGroupIndex(gi);
+      const start = args.startTime ?? (raw.StartTime as Date);
+      const ende = args.endTime ?? (raw.EndTime as Date);
+      if (!id || !newProjectId || !start || !ende) return;
+      await beiDragOderResize(id, newProjectId, start, ende);
+    },
+    [beiDragOderResize, projektIdByGroupIndex]
+  );
+
+  const onResizeStop = useCallback(
+    async (args: ResizeEventArgs) => {
+      args.cancel = true;
+      const raw = args.data as Record<string, unknown>;
+      const id = String(raw.Id ?? "");
+      const gi = args.groupIndex ?? 0;
+      const newProjectId = projektIdByGroupIndex(gi);
+      const start = args.startTime ?? (raw.StartTime as Date);
+      const ende = args.endTime ?? (raw.EndTime as Date);
+      if (!id || !newProjectId || !start || !ende) return;
+      await beiDragOderResize(id, newProjectId, start, ende);
+    },
+    [beiDragOderResize, projektIdByGroupIndex]
+  );
+
+  const onEventClick = useCallback((args: EventClickArgs) => {
+    args.cancel = true;
+    const raw = args.event;
+    const ev = Array.isArray(raw) ? raw[0] : raw;
+    const z = (ev as SyncfusionEvent | undefined)?.OriginalZuweisung;
     if (!z || (!z.team_id && !z.dienstleister_id)) return;
-    const rect = info.el.getBoundingClientRect();
+    const el = Array.isArray(args.element) ? args.element[0] : args.element;
+    const rect = el.getBoundingClientRect();
     setDetailZuweisung(z);
     setDetailPosition({ top: rect.bottom + 4, left: rect.left });
     setDetailOffen(true);
-  }
+  }, []);
+
+  const onCellClick = useCallback(
+    (args: CellClickEventArgs) => {
+      args.cancel = true;
+      const projId = projektIdByGroupIndex(args.groupIndex);
+      if (!projId || projId === "_leer") {
+        toast.info("Bitte eine Projekt-Zeile und einen Tag wählen.");
+        return;
+      }
+      dialogNeuOeffnen({
+        projekt_id: projId,
+        team_id: teamsListe[0]?.id,
+        date: format(args.startTime, "yyyy-MM-dd"),
+        start_time: format(args.startTime, "HH:mm"),
+        end_time: format(args.endTime, "HH:mm"),
+      });
+    },
+    [projektIdByGroupIndex, teamsListe, dialogNeuOeffnen]
+  );
+
+  const onPopupOpen = useCallback((args: PopupOpenEventArgs) => {
+    args.cancel = true;
+  }, []);
+
+  const onEventRendered = useCallback(
+    (args: { data?: Record<string, unknown>; element: HTMLElement }) => {
+      if (args.data?.HatKonflikt) {
+        args.element.classList.add("e-konflikt");
+      }
+    },
+    []
+  );
 
   function bearbeitenAusDetail() {
     if (!detailZuweisung) return;
@@ -831,189 +1023,218 @@ export function PlanungsKalender() {
     void laden();
   }
 
-  function onEventReceive(info: EventReceiveArg) {
-    info.revert();
-    const ep = info.event.extendedProps as {
-      projektId?: string;
-      projectId?: string;
-      teamId?: string;
-      typ?: string;
-      dienstleisterId?: string;
-    };
-    const res = info.event.getResources()[0];
-    const start = info.event.start;
-    if (!start) return;
-
-    if (ep?.typ === "dienstleister" && ep?.dienstleisterId) {
-      if (!res?.id || res.id === "_leer") {
-        toast.info("Auf eine Projekt-Zeile und Tag ziehen.");
-        return;
-      }
-      dialogNeuOeffnen({
-        projekt_id: res.id,
-        dienstleister_id: ep.dienstleisterId,
-        dienstleister_name: info.event.title,
-        date: format(start, "yyyy-MM-dd"),
-        start_time: "07:00",
-        end_time: "16:00",
-      });
-      return;
-    }
-
-    const teamFromDrag = ep?.teamId;
-    if (teamFromDrag) {
-      if (!res?.id || res.id === "_leer") {
-        toast.info("Auf eine Projekt-Zeile und Tag ziehen.");
-        return;
-      }
-      dialogNeuOeffnen({
-        projekt_id: res.id,
-        team_id: teamFromDrag,
-        date: format(start, "yyyy-MM-dd"),
-        start_time: "07:00",
-        end_time: "16:00",
-      });
-      return;
-    }
-
-    const projectId = ep?.projektId ?? ep?.projectId;
-    if (!projectId) return;
-    dialogNeuOeffnen({
-      projekt_id: projectId,
-      team_id: teamsListe[0]?.id,
-      date: format(start, "yyyy-MM-dd"),
-      start_time: "07:00",
-      end_time: "16:00",
-    });
-  }
-
-  async function beiDragOderResize(
-    id: string,
-    newProjectId: string,
-    start: Date,
-    ende: Date
-  ) {
-    if (newProjectId === "_leer") return false;
-    const z = zuweisungen.find((x) => x.id === id);
-    if (!z || (!z.team_id && !z.dienstleister_id)) return false;
-
-    const datum = format(start, "yyyy-MM-dd");
-    const startZeit = format(start, "HH:mm:ss");
-    const endZeit = format(ende, "HH:mm:ss");
-
-    let empId: string | null = null;
-    if (z.team_id) {
-      empId = await getRepresentativeEmployeeId(supabase, z.team_id);
-      if (!empId) {
-        toast.error("Kein Mitarbeiter für dieses Team hinterlegt.");
-        return false;
-      }
-    } else {
-      empId = z.employee_id;
-    }
-
-    const k = await pruefeEinsatzKonflikt(supabase, {
-      mitarbeiterId: empId,
-      datum,
-      startZeit,
-      endZeit,
-      ausserhalbEinsatzId: id,
-    });
-    if (k.hatKonflikt) {
-      toast.error(k.nachricht);
-      return false;
-    }
-
-    const { error } = await supabase
-      .from("assignments")
-      .update({
-        project_id: newProjectId,
-        team_id: z.team_id,
-        dienstleister_id: z.dienstleister_id,
-        employee_id: empId,
-        date: datum,
-        start_time: startZeit,
-        end_time: endZeit,
-      })
-      .eq("id", id);
-
-    if (error) {
-      toast.error("Fehler beim Verschieben");
-      return false;
-    }
-    toast.success("Einsatz verschoben.");
-    void laden();
-    return true;
-  }
-
-  async function onEventDrop(info: EventDropArg) {
-    if (info.event.display === "background") {
-      info.revert();
-      return;
-    }
-    const id = info.event.id;
-    const res = info.event.getResources()[0];
-    const start = info.event.start;
-    const ende = info.event.end;
-    if (!id || !res?.id || !start || !ende) {
-      info.revert();
-      return;
-    }
-    const ok = await beiDragOderResize(id, res.id as string, start, ende);
-    if (!ok) info.revert();
-  }
-
-  async function onEventResize(info: EventResizeDoneArg) {
-    if (info.event.display === "background") {
-      info.revert();
-      return;
-    }
-    const id = info.event.id;
-    const res = info.event.getResources()[0];
-    const start = info.event.start;
-    const ende = info.event.end;
-    if (!id || !res?.id || !start || !ende) {
-      info.revert();
-      return;
-    }
-    const ok = await beiDragOderResize(id, res.id as string, start, ende);
-    if (!ok) info.revert();
-  }
-
-  function kalenderApi() {
-    return calendarRef.current?.getApi();
-  }
-
-  function setzeAnsicht(art: "week" | "month") {
-    setKalenderAnsicht(art);
-    const api = kalenderApi();
-    if (!api) return;
-    if (art === "week") api.changeView("resourceTimelineWeek");
-    else api.changeView("resourceTimelineMonth");
-  }
-
-  function onDatesSet(arg: DatesSetArg) {
-    setSichtbarerZeitraum({ start: arg.start, end: arg.end });
-    const start = arg.start;
-    const end = addDays(arg.end, -1);
-    if (kalenderAnsicht === "week") {
-      setZeitraumLabel(
-        `${format(start, "d.", { locale: de })} – ${format(end, "d. MMMM yyyy", { locale: de })}`
+  const dateHeaderTemplate = useCallback(
+    (props: { date?: Date }) => {
+      const d = props.date;
+      if (!d) return null;
+      const iso = format(d, "yyyy-MM-dd");
+      const absN = abwesenheitCountProTag[iso] ?? 0;
+      const heute = isSameDay(d, new Date());
+      const isMonth = kalenderAnsicht === "month";
+      return (
+        <div
+          className={cn(
+            "flex min-w-[3rem] flex-col items-center gap-1 py-2.5",
+            isMonth && "min-w-[3.25rem] py-3",
+            heute && "rounded-lg bg-blue-500/20 ring-1 ring-blue-500/40"
+          )}
+        >
+          <span
+            className={cn(
+              "font-semibold uppercase tracking-wider text-zinc-400",
+              isMonth ? "text-[11px]" : "text-[10px] text-zinc-500"
+            )}
+          >
+            {format(d, "EEE", { locale: de })}
+          </span>
+          <span
+            className={cn(
+              "font-bold tabular-nums leading-none",
+              isMonth ? "text-lg" : "text-base",
+              heute ? "text-blue-300" : "text-zinc-50"
+            )}
+          >
+            {format(d, "d.", { locale: de })}
+          </span>
+          <span
+            className={cn(
+              "text-zinc-500",
+              isMonth ? "text-[10px] font-medium" : "text-[9px]"
+            )}
+          >
+            {format(d, "MMM", { locale: de })}
+          </span>
+          {absN > 0 ? (
+            <span
+              className="mt-0.5 rounded-full bg-amber-500/25 px-1.5 py-px text-[9px] font-medium text-amber-300"
+              title="Abwesenheiten (Team-Mitglieder)"
+            >
+              {absN} abw.
+            </span>
+          ) : null}
+        </div>
       );
-    } else {
-      setZeitraumLabel(format(start, "MMMM yyyy", { locale: de }));
-    }
-  }
+    },
+    [abwesenheitCountProTag, kalenderAnsicht]
+  );
 
-  const typLabel = (t: string) => {
-    const m: Record<string, string> = {
-      urlaub: "Urlaub",
-      krank: "Krank",
-      fortbildung: "Fortbildung",
-      sonstiges: "Sonstiges",
+  const resourceHeaderTemplate = useCallback(
+    (props: Record<string, unknown>) => {
+      const id = String(props.Id ?? "");
+      const akzent = (props.farbe as string) ?? "#64748b";
+      const platzhalter = Boolean(props.platzhalter);
+      const kunde = String(props.kunde ?? "");
+      return (
+        <button
+          type="button"
+          className="group flex w-full min-w-0 items-start gap-2 rounded-r-md py-2 pl-2 pr-1 text-left transition-colors hover:bg-zinc-800/50"
+          style={{ borderLeft: `3px solid ${akzent}` }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (id === "_leer") return;
+            const sch = scheduleRef.current;
+            const d = sch?.selectedDate ?? new Date();
+            dialogNeuOeffnen({
+              projekt_id: id,
+              team_id: teamsListe[0]?.id,
+              date: format(d, "yyyy-MM-dd"),
+              start_time: "07:00",
+              end_time: "16:00",
+            });
+          }}
+        >
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[11px] font-semibold leading-tight text-zinc-100 group-hover:text-white">
+              {String(props.Subject ?? "")}
+            </p>
+            {platzhalter ? (
+              <p className="mt-0.5 text-[10px] text-zinc-600">Projekt anlegen</p>
+            ) : kunde ? (
+              <p className="mt-0.5 truncate text-[10px] text-zinc-500">{kunde}</p>
+            ) : (
+              <p className="mt-0.5 text-[10px] text-zinc-600">Einsatz planen</p>
+            )}
+          </div>
+        </button>
+      );
+    },
+    [teamsListe, dialogNeuOeffnen]
+  );
+
+  const eventSettings = useMemo(
+    () => ({
+      dataSource: syncfusionEvents,
+      template: EinsatzTemplate,
+      enableMaxHeight: true,
+      allowAdding: false,
+      allowEditing: false,
+      allowDeleting: false,
+      fields: {
+        id: "Id",
+        subject: { name: "Subject" },
+        startTime: { name: "StartTime" },
+        endTime: { name: "EndTime" },
+      },
+    }),
+    [syncfusionEvents]
+  );
+
+  useEffect(() => {
+    const root = document.getElementById("kalender-container");
+    if (!root) return;
+
+    const onDragOver = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes("application/json")) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      }
     };
-    return m[t] ?? t;
-  };
+
+    const onDrop = (e: DragEvent) => {
+      const raw = e.dataTransfer?.getData("application/json");
+      if (!raw) return;
+      e.preventDefault();
+      const sch = scheduleRef.current;
+      if (!sch) return;
+
+      let parsed: {
+        title?: string;
+        extendedProps?: {
+          projektId?: string;
+          projectId?: string;
+          teamId?: string;
+          typ?: string;
+          dienstleisterId?: string;
+        };
+      };
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        return;
+      }
+
+      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      if (!el) return;
+      const td = el.closest("td[data-group-index]") as HTMLElement | null;
+      if (!td) {
+        toast.info("Auf eine Projekt-Zeile und Tag ziehen.");
+        return;
+      }
+      const cellData = sch.getCellDetails(td);
+      if (!cellData?.startTime || cellData.groupIndex === undefined) return;
+
+      const resId = projektRessourcenSf[cellData.groupIndex]?.Id;
+      if (!resId || resId === "_leer") {
+        toast.info("Auf eine Projekt-Zeile und Tag ziehen.");
+        return;
+      }
+
+      const start = cellData.startTime;
+      const ep = parsed.extendedProps ?? {};
+
+      if (ep.typ === "dienstleister" && ep.dienstleisterId) {
+        dialogNeuOeffnen({
+          projekt_id: resId,
+          dienstleister_id: ep.dienstleisterId,
+          dienstleister_name: parsed.title,
+          date: format(start, "yyyy-MM-dd"),
+          start_time: "07:00",
+          end_time: "16:00",
+        });
+        return;
+      }
+
+      const teamFromDrag = ep.teamId;
+      if (teamFromDrag) {
+        dialogNeuOeffnen({
+          projekt_id: resId,
+          team_id: teamFromDrag,
+          date: format(start, "yyyy-MM-dd"),
+          start_time: "07:00",
+          end_time: "16:00",
+        });
+        return;
+      }
+
+      const projectId = ep.projektId ?? ep.projectId;
+      if (!projectId) return;
+      dialogNeuOeffnen({
+        projekt_id: projectId,
+        team_id: teamsListe[0]?.id,
+        date: format(start, "yyyy-MM-dd"),
+        start_time: "07:00",
+        end_time: "16:00",
+      });
+    };
+
+    root.addEventListener("dragover", onDragOver);
+    root.addEventListener("drop", onDrop);
+    return () => {
+      root.removeEventListener("dragover", onDragOver);
+      root.removeEventListener("drop", onDrop);
+    };
+  }, [projektRessourcenSf, teamsListe, dialogNeuOeffnen]);
 
   const kalenderInhalt = !kalenderBereit ? (
     <div className="space-y-2 py-8">
@@ -1021,219 +1242,56 @@ export function PlanungsKalender() {
       <Skeleton className="h-64 w-full bg-zinc-800" />
     </div>
   ) : (
-    <div className="fc-theme-standard h-full min-h-[420px] w-full min-w-0 overflow-x-auto">
-      <FullCalendar
-                ref={calendarRef}
-                schedulerLicenseKey="GPL-My-Project-Is-Open-Source"
-                plugins={[resourceTimelinePlugin, interactionPlugin]}
-                locale={deLocale}
-                initialView={
-                  kalenderAnsicht === "week"
-                    ? "resourceTimelineWeek"
-                    : "resourceTimelineMonth"
-                }
-                views={{
-                  resourceTimelineWeek: {
-                    slotDuration: "24:00:00",
-                    snapDuration: "24:00:00",
-                    slotMinTime: "00:00:00",
-                    slotMaxTime: "24:00:00",
-                    slotLabelFormat: [],
-                  },
-                  resourceTimelineMonth: {
-                    slotDuration: { days: 1 },
-                    snapDuration: { days: 1 },
-                    slotMinTime: "00:00:00",
-                    slotMaxTime: "24:00:00",
-                    slotLabelFormat: [],
-                  },
-                }}
-                headerToolbar={false}
-                height="auto"
-                contentHeight="auto"
-                resourceAreaWidth="28%"
-                resourceAreaHeaderContent="Projekte"
-                resources={projektRessourcen}
-                slotLabelContent={(arg) => {
-                  const d = arg.date;
-                  if (!d) return null;
-                  const iso = format(d, "yyyy-MM-dd");
-                  const absN = abwesenheitCountProTag[iso] ?? 0;
-                  const heute = isSameDay(d, new Date());
-                  return (
-                    <div
-                      className={cn(
-                        "flex min-w-[3rem] flex-col items-center gap-0.5 py-2",
-                        heute && "rounded-lg bg-blue-500/15 ring-1 ring-blue-500/30"
-                      )}
-                    >
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                        {format(d, "EEE", { locale: de })}
-                      </span>
-                      <span
-                        className={cn(
-                          "text-base font-bold tabular-nums",
-                          heute ? "text-blue-400" : "text-zinc-100"
-                        )}
-                      >
-                        {format(d, "d.", { locale: de })}
-                      </span>
-                      <span className="text-[9px] text-zinc-600">
-                        {format(d, "MMM", { locale: de })}
-                      </span>
-                      {absN > 0 ? (
-                        <span
-                          className="mt-0.5 rounded-full bg-amber-500/20 px-1.5 py-px text-[9px] font-medium text-amber-400"
-                          title="Abwesenheiten (Team-Mitglieder)"
-                        >
-                          {absN} abw.
-                        </span>
-                      ) : null}
-                    </div>
-                  );
-                }}
-                events={events}
-                editable
-                selectable
-                selectMirror
-                droppable
-                eventOverlap
-                datesSet={onDatesSet}
-                dateClick={onDateClick}
-                select={onSelect}
-                eventClick={onEventClick}
-                eventDrop={onEventDrop}
-                eventResize={onEventResize}
-                eventReceive={onEventReceive}
-                eventStartEditable
-                eventDurationEditable
-                eventResourceEditable
-                longPressDelay={200}
-                slotLabelClassNames={(arg) => {
-                  const d = arg.date;
-                  if (d && isSameDay(d, new Date())) {
-                    return ["fc-planung-heute-kopf"];
-                  }
-                  return [];
-                }}
-                eventContent={(arg) => {
-                  if (arg.event.display === "background") return undefined;
-                  const z = arg.event.extendedProps.zuweisung as
-                    | EinsatzEvent
-                    | undefined;
-                  if (!z) return undefined;
-                  const farbe =
-                    (arg.event.extendedProps.teamFarbe as string) ||
-                    teamFarbe(z.team_id);
-                  const zeit =
-                    (arg.event.extendedProps.zeitLabel as string) ?? "";
-                  const ort =
-                    (arg.event.extendedProps.ortLabel as string) ?? "";
-                  const teamName =
-                    (arg.event.extendedProps.teamName as string) ?? "";
-                  const kritisch = istKritischUi(
-                    z.prioritaet,
-                    z.projects?.priority
-                  );
-                  const tip = [teamName, zeit, ort].filter(Boolean).join(" · ");
-                  return (
-                    <div
-                      className="fc-planung-event-card flex h-full w-full flex-col gap-0.5 overflow-hidden rounded-lg border border-white/[0.08] bg-gradient-to-b from-zinc-900/98 to-zinc-950/98 px-2 py-1.5 text-left shadow-lg shadow-black/50 ring-1 ring-white/[0.06] backdrop-blur-md"
-                      style={{ borderLeftWidth: 3, borderLeftColor: farbe }}
-                      title={tip}
-                    >
-                      <div className="flex items-center gap-1">
-                        <span className="truncate text-[11px] font-semibold tracking-tight text-zinc-50">
-                          {teamName}
-                        </span>
-                        {kritisch ? (
-                          <Zap size={10} className="shrink-0 text-red-400" />
-                        ) : null}
-                      </div>
-                      <div className="flex items-center gap-1 text-[10px] tabular-nums text-zinc-300">
-                        <Clock className="size-2.5 shrink-0 opacity-80" />
-                        <span>{zeit}</span>
-                      </div>
-                      {ort ? (
-                        <div className="flex items-start gap-1 text-[9px] leading-snug text-zinc-500">
-                          <MapPin className="mt-0.5 size-2.5 shrink-0 opacity-80" />
-                          <span className="line-clamp-2">{ort}</span>
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                }}
-                eventDidMount={(info) => {
-                  if (info.event.display === "background") {
-                    const name = info.event.extendedProps.abwName as
-                      | string
-                      | undefined;
-                    const typ = info.event.extendedProps.abwTyp as
-                      | string
-                      | undefined;
-                    if (name) {
-                      info.el.setAttribute(
-                        "title",
-                        `Abwesenheit: ${name}, ${typLabel(typ ?? "")}`
-                      );
-                    }
-                    return;
-                  }
-                  if (info.event.extendedProps.hatKonflikt) {
-                    info.el.classList.add("border-2", "border-orange-400");
-                  }
-                }}
-                resourceLabelContent={(arg) => {
-                  const ep = arg.resource.extendedProps as {
-                    akzent?: string;
-                    platzhalter?: boolean;
-                    kunde?: string;
-                  };
-                  const akzent = ep.akzent ?? "#64748b";
-                  return (
-                    <button
-                      type="button"
-                      className="group flex w-full min-w-0 items-start gap-2 rounded-r-md py-2 pl-2 pr-1 text-left transition-colors hover:bg-zinc-800/50"
-                      style={{
-                        borderLeft: `3px solid ${akzent}`,
-                      }}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (arg.resource.id === "_leer") return;
-                        const api = kalenderApi();
-                        const d = api?.getDate() ?? new Date();
-                        dialogNeuOeffnen({
-                          projekt_id: arg.resource.id,
-                          team_id: teamsListe[0]?.id,
-                          date: format(d, "yyyy-MM-dd"),
-                          start_time: "07:00",
-                          end_time: "16:00",
-                        });
-                      }}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[11px] font-semibold leading-tight text-zinc-100 group-hover:text-white">
-                          {arg.resource.title}
-                        </p>
-                        {ep.platzhalter ? (
-                          <p className="mt-0.5 text-[10px] text-zinc-600">
-                            Projekt anlegen
-                          </p>
-                        ) : ep.kunde ? (
-                          <p className="mt-0.5 truncate text-[10px] text-zinc-500">
-                            {ep.kunde}
-                          </p>
-                        ) : (
-                          <p className="mt-0.5 text-[10px] text-zinc-600">
-                            Einsatz planen
-                          </p>
-                        )}
-                      </div>
-                    </button>
-                  );
-                }}
-              />
+    <div className="planung-sf flex min-h-[420px] min-w-0 flex-1 flex-col">
+      <ScheduleComponent
+        ref={scheduleRef}
+        cssClass="planung-sf-inner"
+        width="100%"
+        height="100%"
+        currentView={kalenderAnsicht === "week" ? "TimelineWeek" : "TimelineMonth"}
+        rowAutoHeight={false}
+        showHeaderBar={false}
+        showTimeIndicator
+        showQuickInfo={false}
+        allowDragAndDrop
+        allowResizing
+        popupOpen={onPopupOpen}
+        dateHeaderTemplate={dateHeaderTemplate}
+        resourceHeaderTemplate={resourceHeaderTemplate}
+        eventSettings={eventSettings}
+        eventClick={onEventClick}
+        cellClick={onCellClick}
+        dragStop={onDragStop}
+        resizeStop={onResizeStop}
+        eventRendered={onEventRendered}
+        dataBound={syncZeitraumFromSchedule}
+        group={{ resources: ["Projekte"], enableCompactView: false }}
+      >
+        <ResourcesDirective>
+          <ResourceDirective
+            field="ProjectId"
+            title="Projekte"
+            name="Projekte"
+            dataSource={projektRessourcenSf}
+            textField="Subject"
+            idField="Id"
+          />
+        </ResourcesDirective>
+        <ViewsDirective>
+          <ViewDirective
+            option="TimelineWeek"
+            timeScale={{ enable: false, interval: 1440, slotCount: 1 }}
+            workDays={[0, 1, 2, 3, 4, 5, 6]}
+            showWeekend
+          />
+          <ViewDirective
+            option="TimelineMonth"
+            workDays={[0, 1, 2, 3, 4, 5, 6]}
+            showWeekend
+          />
+        </ViewsDirective>
+        <Inject services={[TimelineViews, TimelineMonth, Resize, DragAndDrop]} />
+      </ScheduleComponent>
     </div>
   );
 
@@ -1266,9 +1324,9 @@ export function PlanungsKalender() {
         zeitraumLabel={zeitraumLabel}
         ansicht={kalenderAnsicht}
         onAnsicht={setzeAnsicht}
-        onPrev={() => kalenderApi()?.prev()}
-        onNext={() => kalenderApi()?.next()}
-        onHeute={() => kalenderApi()?.today()}
+        onPrev={handlePrev}
+        onNext={handleNext}
+        onHeute={handleHeute}
       />
 
       <ResizablePanelGroup
@@ -1304,7 +1362,7 @@ export function PlanungsKalender() {
           className="flex min-h-0 min-w-0 flex-1 flex-col"
         >
           <div
-            className="planung-fc flex min-h-0 flex-1 flex-col bg-zinc-900 p-2 md:p-4"
+            className="planung-sf flex min-h-0 flex-1 flex-col bg-zinc-900 p-2 md:p-4"
             id="kalender-container"
           >
             {kalenderInhalt}
@@ -1334,31 +1392,31 @@ export function PlanungsKalender() {
       </ResizablePanelGroup>
 
       <EinsatzEventDetailFloating
-          offen={detailOffen}
-          zuweisung={detailZuweisung}
-          position={detailPosition}
-          onClose={() => setDetailOffen(false)}
-          onBearbeiten={bearbeitenAusDetail}
-          onLoeschen={() => void loeschenAusDetail()}
-          loeschenOffen={loeschenDialogOffen}
-          setLoeschenOffen={setLoeschenDialogOffen}
-        />
+        offen={detailOffen}
+        zuweisung={detailZuweisung}
+        position={detailPosition}
+        onClose={() => setDetailOffen(false)}
+        onBearbeiten={bearbeitenAusDetail}
+        onLoeschen={() => void loeschenAusDetail()}
+        loeschenOffen={loeschenDialogOffen}
+        setLoeschenOffen={setLoeschenDialogOffen}
+      />
 
-        <EinsatzNeuDialog
-          open={dialogOffen}
-          onOpenChange={setDialogOffen}
-          teams={teamsListe}
-          projekte={projekteAktiv}
-          dienstleister={dienstleisterListe.map((d) => ({
-            id: d.id,
-            firma: d.firma,
-          }))}
-          bearbeiten={bearbeiten}
-          vorgaben={vorgaben}
-          eigeneMitarbeiterId={eigeneMitarbeiterId}
-          formularSchluessel={formularSchluessel}
-          onGespeichert={() => void laden()}
-        />
-      </div>
+      <EinsatzNeuDialog
+        open={dialogOffen}
+        onOpenChange={setDialogOffen}
+        teams={teamsListe}
+        projekte={projekteAktiv}
+        dienstleister={dienstleisterListe.map((d) => ({
+          id: d.id,
+          firma: d.firma,
+        }))}
+        bearbeiten={bearbeiten}
+        vorgaben={vorgaben}
+        eigeneMitarbeiterId={eigeneMitarbeiterId}
+        formularSchluessel={formularSchluessel}
+        onGespeichert={() => void laden()}
+      />
+    </div>
   );
 }

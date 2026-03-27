@@ -1,3 +1,5 @@
+@import "@syncfusion/ej2-base/styles/material-dark.css";
+@import "@syncfusion/ej2-react-schedule/styles/material-dark.css";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @tailwind base;
@@ -139,58 +141,101 @@
   }
 }
 
-/* FullCalendar: Planung — „2026“-taugliches dunkles Premium-Theme */
-.planung-fc .fc {
-  --fc-border-color: rgba(255, 255, 255, 0.08);
-  --fc-page-bg-color: transparent;
-  --fc-neutral-bg-color: rgba(255, 255, 255, 0.03);
-  --fc-list-event-hover-bg-color: #3f3f46;
-  --fc-today-bg-color: rgba(59, 130, 246, 0.07);
-  --fc-event-bg-color: transparent;
-  --fc-event-border-color: transparent;
-  --fc-resource-label-text-color: #d4d4d8;
-  --fc-now-indicator-color: #f87171;
-  --fc-timeline-slot-minor-border-color: transparent;
+/* ═══ SYNCFUSION DARK OVERRIDE ═══ */
+.planung-sf .e-schedule {
+  background: transparent !important;
+  border: 1px solid #27272a !important;
+  border-radius: 12px !important;
+  overflow: hidden;
+  font-family: inherit !important;
 }
-.planung-fc .fc-theme-standard td,
-.planung-fc .fc-theme-standard th {
-  border-color: rgba(255, 255, 255, 0.07);
+
+/* Header / Toolbar */
+.planung-sf .e-schedule .e-schedule-toolbar,
+.planung-sf .e-toolbar {
+  background: #18181b !important;
+  border-bottom: 1px solid #27272a !important;
 }
-.planung-fc .fc-timeline-lane-frame {
-  background: linear-gradient(
-    180deg,
-    rgba(24, 24, 27, 0.5) 0%,
-    rgba(9, 9, 11, 0.85) 100%
-  );
+.planung-sf .e-schedule .e-toolbar .e-tbar-btn {
+  background: transparent !important;
+  border: 1px solid #3f3f46 !important;
+  color: #a1a1aa !important;
+  border-radius: 8px !important;
 }
-.planung-fc .fc-timeline-body tr:nth-child(even) .fc-timeline-lane-frame {
-  background: rgba(255, 255, 255, 0.02);
+.planung-sf .e-schedule .e-toolbar .e-tbar-btn:hover {
+  background: #27272a !important;
+  color: #e4e4e7 !important;
 }
-.planung-fc .fc-datagrid-cell-frame {
-  background: rgba(9, 9, 11, 0.6);
-  border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
+
+/* Timeline Zellen */
+.planung-sf .e-schedule .e-timeline-view .e-work-cells,
+.planung-sf .e-schedule .e-timeline-month-view .e-work-cells {
+  background: transparent !important;
+  border-color: #27272a !important;
 }
-.planung-fc .fc-col-header-cell,
-.planung-fc .fc-timeline-slot-label {
-  color: #a1a1aa;
+
+/* Heute — blaue Spalte */
+.planung-sf .e-schedule .e-timeline-view .e-current-day,
+.planung-sf .e-schedule .e-timeline-month-view .e-current-day {
+  background: rgba(59, 130, 246, 0.06) !important;
 }
-.planung-fc .fc-timeline-slot-label {
-  border-color: rgba(255, 255, 255, 0.06);
+
+/* Datum-Header */
+.planung-sf .e-schedule .e-date-header-wrap table td {
+  background: #18181b !important;
+  border-color: #27272a !important;
+  color: #71717a !important;
+  font-size: 0.78rem !important;
+  font-weight: 600 !important;
 }
-.planung-fc .fc-toolbar-title {
-  color: #fafafa;
+.planung-sf .e-schedule .e-date-header-wrap table td.e-current-day {
+  color: #3b82f6 !important;
+  font-weight: 700 !important;
 }
-.planung-fc .fc-planung-heute-kopf {
-  font-weight: 700;
-  color: rgb(96 165 250) !important;
+
+/* Resource Area (linke Spalte) */
+.planung-sf .e-schedule .e-resource-left-td {
+  background: #18181b !important;
+  border-right: 1px solid #27272a !important;
+  width: 220px !important;
 }
-.planung-fc .fc-timeline-event {
-  border-radius: 0.5rem;
+.planung-sf .e-schedule .e-resource-cells {
+  background: #18181b !important;
+  border-bottom: 1px solid #27272a !important;
+  border-right: 1px solid #27272a !important;
 }
-.planung-fc .fc-timeline-event-harness {
-  margin-top: 2px;
-  margin-bottom: 2px;
+
+/* Event-Pills */
+.planung-sf .e-schedule .e-appointment {
+  border: none !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+  background: transparent !important;
 }
-.fc-event-konflikt .fc-event-main-frame {
-  box-shadow: inset 0 0 0 2px rgb(239 68 68);
+.planung-sf .e-schedule .e-appointment.e-konflikt {
+  box-shadow: 0 0 0 2px #f97316 !important;
+}
+
+/* Wochenende dezent */
+.planung-sf .e-schedule .e-timeline-view .e-work-cells.e-weekend,
+.planung-sf .e-schedule .e-timeline-month-view .e-work-cells.e-weekend {
+  background: rgba(0, 0, 0, 0.12) !important;
+}
+
+/* Scrollbar */
+.planung-sf .e-schedule ::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+.planung-sf .e-schedule ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.planung-sf .e-schedule ::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 3px;
+}
+
+/* Heute-Linie (Now Indicator) */
+.planung-sf .e-schedule .e-current-timeline {
+  border-color: #3b82f6 !important;
 }
