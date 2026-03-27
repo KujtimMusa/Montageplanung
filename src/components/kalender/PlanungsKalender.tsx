@@ -1,52 +1,36 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import resourceTimelinePlugin from "@fullcalendar/resource-timeline";
-import interactionPlugin from "@fullcalendar/interaction";
-import type { DateSelectArg, EventClickArg, EventDropArg } from "@fullcalendar/core";
-import type { EventInput } from "@fullcalendar/core";
-import type { EventResizeDoneArg } from "@fullcalendar/interaction";
+import interactionPlugin, {
+  Draggable,
+  type DateClickArg,
+  type EventReceiveArg,
+  type EventResizeDoneArg,
+} from "@fullcalendar/interaction";
+import type { DateSelectArg, EventClickArg, EventDropArg, EventInput } from "@fullcalendar/core";
 import deLocale from "@fullcalendar/core/locales/de";
-import { addDays, eachDayOfInterval, format, parseISO } from "date-fns";
+import { addDays, addHours, eachDayOfInterval, format, parseISO } from "date-fns";
 import { createClient } from "@/lib/supabase/client";
 import { pruefeEinsatzKonflikt } from "@/lib/utils/conflicts";
+import { getRepresentativeEmployeeId } from "@/lib/planung/team-representative";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
-
-type MitarbeiterZeile = {
-  id: string;
-  name: string;
-  abteilungsFarbe: string;
-  department_id: string | null;
-};
-
-type AbteilungOpt = { id: string; name: string; color: string };
-
-type ProjektOpt = { id: string; title: string };
-
-type TeamOpt = { id: string; name: string };
+import {
+  EinsatzNeuDialog,
+  type BearbeitenZuweisung,
+  type ProjektOption,
+  type TeamOption,
+} from "@/components/kalender/EinsatzNeuDialog";
 
 type ZuweisungRow = {
   id: string;
@@ -57,42 +41,21 @@ type ZuweisungRow = {
   date: string;
   start_time: string;
   end_time: string;
-  role: string | null;
   notes: string | null;
   projects: { title: string } | null;
-  teams: { name: string } | null;
+  teams: { name: string; farbe?: string | null } | null;
 };
 
 type AbwesenheitRow = {
   employee_id: string;
-  type: string;
+  employee_name: string;
   start_date: string;
   end_date: string;
 };
 
-function abwesenheitFarbe(typ: string): string {
-  const t = typ.toLowerCase();
-  if (t.includes("krank")) return "rgba(220, 38, 38, 0.35)";
-  if (t.includes("fort") || t.includes("bildung")) return "rgba(37, 99, 235, 0.3)";
-  return "rgba(113, 113, 122, 0.45)";
-}
-
 function datumUndZeitZuIso(datum: string, zeit: string): string {
   const z = zeit.length === 5 ? `${zeit}:00` : zeit;
   return `${datum}T${z}`;
-}
-
-function normalisiereUhrzeit(eingabe: string): string {
-  const e = eingabe.trim();
-  if (/^\d{1,2}:\d{2}$/.test(e)) {
-    const [h, m] = e.split(":");
-    return `${h!.padStart(2, "0")}:${m}:00`;
-  }
-  if (/^\d{1,2}:\d{2}:\d{2}$/.test(e)) {
-    const [h, m, s] = e.split(":");
-    return `${h!.padStart(2, "0")}:${m}:${s!.padStart(2, "0")}`;
-  }
-  return "08:00:00";
 }
 
 function einsatzTitel(z: ZuweisungRow): string {
@@ -100,57 +63,63 @@ function einsatzTitel(z: ZuweisungRow): string {
     z.projects?.title ??
     (z.project_title?.trim() ? z.project_title.trim() : null) ??
     "Einsatz";
-  const team = z.teams?.name?.trim();
-  if (team) return `[${team}] ${basis}`;
   return basis;
 }
 
-function liegtAufAbwesenheit(
-  z: ZuweisungRow,
+function teamHatKonflikt(
+  teamId: string,
+  datum: string,
+  membersByTeam: Map<string, Set<string>>,
   abwesenheiten: AbwesenheitRow[]
 ): boolean {
-  return abwesenheiten.some(
-    (a) =>
-      a.employee_id === z.employee_id &&
-      z.date >= a.start_date &&
-      z.date <= a.end_date
-  );
+  const members = membersByTeam.get(teamId);
+  if (!members || members.size === 0) return false;
+  for (const empId of Array.from(members)) {
+    for (const a of abwesenheiten) {
+      if (
+        a.employee_id === empId &&
+        datum >= a.start_date &&
+        datum <= a.end_date
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
-/**
- * Planungskalender: Resource Timeline, Filter, Drag & Drop, optionales Projekt.
- */
 export function PlanungsKalender() {
   const supabase = useMemo(() => createClient(), []);
-  const [mitarbeiter, setMitarbeiter] = useState<MitarbeiterZeile[]>([]);
-  const [abteilungen, setAbteilungen] = useState<AbteilungOpt[]>([]);
-  const [filterAbteilung, setFilterAbteilung] = useState<string>("alle");
-  const [projekte, setProjekte] = useState<ProjektOpt[]>([]);
-  const [teamsListe, setTeamsListe] = useState<TeamOpt[]>([]);
+  const calendarRef = useRef<FullCalendar>(null);
+  const [teamsListe, setTeamsListe] = useState<TeamOption[]>([]);
   const [zuweisungen, setZuweisungen] = useState<ZuweisungRow[]>([]);
   const [abwesenheiten, setAbwesenheiten] = useState<AbwesenheitRow[]>([]);
+  const [membersByTeam, setMembersByTeam] = useState<Map<string, Set<string>>>(
+    () => new Map()
+  );
+  const [projekteAktiv, setProjekteAktiv] = useState<ProjektOption[]>([]);
+  const [ungeplanteProjekte, setUngeplanteProjekte] = useState<ProjektOption[]>(
+    []
+  );
   const [eigeneMitarbeiterId, setEigeneMitarbeiterId] = useState<string | null>(
     null
   );
-  const [integration, setIntegration] = useState<{
-    outlook: boolean;
-    whatsapp: boolean;
-  }>({ outlook: false, whatsapp: false });
 
   const [dialogOffen, setDialogOffen] = useState(false);
-  const [bearbeitenId, setBearbeitenId] = useState<string | null>(null);
-  const [konfliktText, setKonfliktText] = useState<string | null>(null);
+  const [bearbeiten, setBearbeiten] = useState<BearbeitenZuweisung | null>(null);
+  const [vorgaben, setVorgaben] = useState<{
+    team_id: string;
+    date: string;
+    start_time?: string;
+    end_time?: string;
+    projekt_id?: string;
+  } | null>(null);
+  const [formularSchluessel, setFormularSchluessel] = useState(0);
 
-  const [formMitarbeiterId, setFormMitarbeiterId] = useState("");
-  const [formProjektId, setFormProjektId] = useState("");
-  const [formProjektFreitext, setFormProjektFreitext] = useState("");
-  const [formDatum, setFormDatum] = useState("");
-  const [formStart, setFormStart] = useState("08:00");
-  const [formEnde, setFormEnde] = useState("16:00");
-  const [formRolle, setFormRolle] = useState("Teamleiter");
-  const [formNotiz, setFormNotiz] = useState("");
-  const [formTeamId, setFormTeamId] = useState("");
-  const [speichernLaedt, setSpeichernLaedt] = useState(false);
+  const [sheetOffen, setSheetOffen] = useState(false);
+  const [kalenderAnsicht, setKalenderAnsicht] = useState<"week" | "month">(
+    "week"
+  );
 
   const laden = useCallback(async () => {
     try {
@@ -164,60 +133,91 @@ export function PlanungsKalender() {
         .maybeSingle();
       if (ich?.id) setEigeneMitarbeiterId(ich.id);
 
-      const [{ data: ma }, { data: deps }] = await Promise.all([
-        supabase
-          .from("employees")
-          .select("id,name,department_id")
-          .eq("active", true)
-          .order("name"),
-        supabase.from("departments").select("id,name,color").order("name"),
-      ]);
+      const { data: teamRows, error: teamErr } = await supabase
+        .from("teams")
+        .select("id,name,farbe")
+        .order("name");
 
-      const depMap = Object.fromEntries(
-        (deps ?? []).map((d) => [d.id, d.color as string])
-      );
-
-      setAbteilungen(
-        (deps ?? []).map((d) => ({
-          id: d.id as string,
-          name: d.name as string,
-          color: (d.color as string) ?? "#64748b",
-        }))
-      );
-
-      setMitarbeiter(
-        (ma ?? []).map((m) => ({
-          id: m.id,
-          name: m.name,
-          department_id: (m.department_id as string | null) ?? null,
-          abteilungsFarbe: m.department_id
-            ? depMap[m.department_id] ?? "#64748b"
-            : "#64748b",
-        }))
-      );
-
-      const [{ data: pr, error: prErr }, { data: teamRows, error: teamErr }] =
-        await Promise.all([
-          supabase.from("projects").select("id,title").order("title"),
-          supabase.from("teams").select("id,name").order("name"),
-        ]);
-      if (prErr) {
-        toast.error(`Projekte konnten nicht geladen werden: ${prErr.message}`);
-        setProjekte([]);
-      } else {
-        setProjekte(pr ?? []);
-      }
       if (teamErr) {
+        toast.error(`Teams konnten nicht geladen werden: ${teamErr.message}`);
         setTeamsListe([]);
       } else {
-        setTeamsListe((teamRows as TeamOpt[]) ?? []);
+        setTeamsListe(
+          (teamRows ?? []).map((t) => ({
+            id: t.id as string,
+            name: t.name as string,
+            farbe: (t.farbe as string) ?? "#3b82f6",
+          }))
+        );
       }
+
+      const teamIds = (teamRows ?? []).map((t) => t.id as string);
+
+      const { data: tmRows } =
+        teamIds.length > 0
+          ? await supabase
+              .from("team_members")
+              .select("team_id,employee_id")
+              .in("team_id", teamIds)
+          : { data: [] as { team_id: string; employee_id: string }[] };
+
+      const map = new Map<string, Set<string>>();
+      for (const row of tmRows ?? []) {
+        const tid = row.team_id as string;
+        const eid = row.employee_id as string;
+        if (!map.has(tid)) map.set(tid, new Set());
+        map.get(tid)!.add(eid);
+      }
+      setMembersByTeam(map);
+
+      const memberIds = Array.from(
+        new Set((tmRows ?? []).map((r) => r.employee_id as string))
+      );
+
+      const { data: pr, error: prErr } = await supabase
+        .from("projects")
+        .select("id,title")
+        .neq("status", "abgeschlossen")
+        .order("title");
+
+      if (prErr) {
+        toast.error(`Projekte konnten nicht geladen werden: ${prErr.message}`);
+        setProjekteAktiv([]);
+      } else {
+        setProjekteAktiv((pr ?? []) as ProjektOption[]);
+      }
+
+      const heute = format(new Date(), "yyyy-MM-dd");
+
+      const { data: busyRows } = await supabase
+        .from("assignments")
+        .select("project_id")
+        .not("project_id", "is", null)
+        .gte("date", heute);
+
+      const busyIds = new Set(
+        (busyRows ?? [])
+          .map((r) => r.project_id as string)
+          .filter(Boolean)
+      );
+
+      const { data: geplantRows } = await supabase
+        .from("projects")
+        .select("id,title")
+        .eq("status", "geplant")
+        .order("title");
+
+      const ungeplant = (geplantRows ?? []).filter(
+        (p) => !busyIds.has(p.id as string)
+      ) as ProjektOption[];
+      setUngeplanteProjekte(ungeplant);
 
       const { data: zu, error: zuErr } = await supabase
         .from("assignments")
         .select(
-          "id,employee_id,project_id,project_title,team_id,date,start_time,end_time,role,notes, projects(title), teams(name)"
-        );
+          "id,employee_id,project_id,project_title,team_id,date,start_time,end_time,notes, projects(title), teams(name,farbe)"
+        )
+        .not("team_id", "is", null);
 
       if (zuErr) {
         toast.error(`Einsätze konnten nicht geladen werden: ${zuErr.message}`);
@@ -230,8 +230,8 @@ export function PlanungsKalender() {
             | null;
           const projekt = Array.isArray(p) ? p[0] : p;
           const t = row.teams as
-            | { name?: string }
-            | { name?: string }[]
+            | { name?: string; farbe?: string }
+            | { name?: string; farbe?: string }[]
             | null;
           const team = Array.isArray(t) ? t[0] : t;
           return {
@@ -243,23 +243,42 @@ export function PlanungsKalender() {
             date: row.date as string,
             start_time: row.start_time as string,
             end_time: row.end_time as string,
-            role: row.role as string | null,
-            notes: row.notes as string | null,
+            notes: (row.notes as string | null) ?? null,
             projects: projekt?.title ? { title: projekt.title as string } : null,
-            teams: team?.name ? { name: team.name as string } : null,
+            teams: team?.name
+              ? { name: team.name as string, farbe: team.farbe as string | undefined }
+              : null,
           };
         });
         setZuweisungen(normalisiert);
       }
 
-      const { data: abw, error: abwErr } = await supabase
-        .from("absences")
-        .select("employee_id,type,start_date,end_date");
-
-      if (abwErr) {
+      if (memberIds.length === 0) {
         setAbwesenheiten([]);
       } else {
-        setAbwesenheiten((abw ?? []) as AbwesenheitRow[]);
+        const { data: abw, error: abwErr } = await supabase
+          .from("absences")
+          .select("employee_id,start_date,end_date,employees(name)")
+          .in("employee_id", memberIds);
+
+        if (abwErr) {
+          setAbwesenheiten([]);
+        } else {
+          const list: AbwesenheitRow[] = (abw ?? []).map((row) => {
+            const e = row.employees as
+              | { name?: string }
+              | { name?: string }[]
+              | null;
+            const name = Array.isArray(e) ? e[0]?.name : e?.name;
+            return {
+              employee_id: row.employee_id as string,
+              employee_name: (name as string) ?? "Mitarbeiter",
+              start_date: row.start_date as string,
+              end_date: row.end_date as string,
+            };
+          });
+          setAbwesenheiten(list);
+        }
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Unbekannter Fehler";
@@ -268,24 +287,12 @@ export function PlanungsKalender() {
   }, [supabase]);
 
   useEffect(() => {
-    void fetch("/api/integrationen/status")
-      .then((r) => r.json())
-      .then((j: { outlook?: boolean; whatsapp?: boolean }) =>
-        setIntegration({
-          outlook: Boolean(j.outlook),
-          whatsapp: Boolean(j.whatsapp),
-        })
-      )
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
     void laden();
   }, [laden]);
 
   useEffect(() => {
     const kanal = supabase
-      .channel("kalender-realtime")
+      .channel("kalender-realtime-p5")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "assignments" },
@@ -307,6 +314,13 @@ export function PlanungsKalender() {
           void laden();
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "team_members" },
+        () => {
+          void laden();
+        }
+      )
       .subscribe();
 
     return () => {
@@ -314,235 +328,199 @@ export function PlanungsKalender() {
     };
   }, [supabase, laden]);
 
-  const gefilterteMitarbeiter = useMemo(() => {
-    if (filterAbteilung === "alle") return mitarbeiter;
-    return mitarbeiter.filter((m) => m.department_id === filterAbteilung);
-  }, [mitarbeiter, filterAbteilung]);
+  useEffect(() => {
+    const el = document.getElementById("ungeplante-projekte-drag");
+    if (!el || !sheetOffen) return;
+
+    const d = new Draggable(el, {
+      itemSelector: ".draggable-projekt",
+      eventData: (dragEl: HTMLElement) => ({
+        title: dragEl.getAttribute("data-title") ?? "Projekt",
+        duration: "08:00",
+        extendedProps: {
+          projectId: dragEl.getAttribute("data-project-id") ?? "",
+        },
+      }),
+    });
+
+    return () => {
+      d.destroy();
+    };
+  }, [sheetOffen, ungeplanteProjekte]);
 
   const ressourcen = useMemo(() => {
-    if (gefilterteMitarbeiter.length === 0) {
+    if (teamsListe.length === 0) {
       return [
         {
           id: "_leer",
-          title:
-            mitarbeiter.length === 0
-              ? "Noch keine Mitarbeiter"
-              : "Keine Mitarbeiter in dieser Abteilung",
-          extendedProps: { abteilungsFarbe: "#64748b", platzhalter: true },
+          title: "Noch keine Teams",
+          extendedProps: { farbe: "#64748b", platzhalter: true },
         },
       ];
     }
-    return gefilterteMitarbeiter.map((m) => ({
-      id: m.id,
-      title: m.name,
-      extendedProps: { abteilungsFarbe: m.abteilungsFarbe },
+    return teamsListe.map((t) => ({
+      id: t.id,
+      title: t.name,
+      extendedProps: { farbe: t.farbe },
     }));
-  }, [gefilterteMitarbeiter, mitarbeiter.length]);
+  }, [teamsListe]);
 
   const abwesenheitEvents: EventInput[] = useMemo(() => {
     const list: EventInput[] = [];
     for (const a of abwesenheiten) {
-      let tage: Date[];
-      try {
-        tage = eachDayOfInterval({
-          start: parseISO(a.start_date),
-          end: parseISO(a.end_date),
-        });
-      } catch {
-        continue;
-      }
-      for (const tag of tage) {
-        const d = format(tag, "yyyy-MM-dd");
-        list.push({
-          id: `abw-${a.employee_id}-${d}-${a.type}`,
-          resourceId: a.employee_id,
-          display: "background",
-          start: `${d}T00:00:00`,
-          end: `${format(addDays(tag, 1), "yyyy-MM-dd")}T00:00:00`,
-          color: abwesenheitFarbe(a.type),
-          title: a.type,
-        });
+      for (const [teamId, members] of Array.from(membersByTeam.entries())) {
+        if (!members.has(a.employee_id)) continue;
+        let tage: Date[];
+        try {
+          tage = eachDayOfInterval({
+            start: parseISO(a.start_date),
+            end: parseISO(a.end_date),
+          });
+        } catch {
+          continue;
+        }
+        for (const tag of tage) {
+          const d = format(tag, "yyyy-MM-dd");
+          list.push({
+            id: `abw-bg-${teamId}-${a.employee_id}-${d}`,
+            resourceId: teamId,
+            display: "background",
+            start: `${d}T00:00:00`,
+            end: `${format(addDays(tag, 1), "yyyy-MM-dd")}T00:00:00`,
+            color: "#ef444420",
+            title: `${a.employee_name} abwesend`,
+          });
+        }
       }
     }
     return list;
-  }, [abwesenheiten]);
+  }, [abwesenheiten, membersByTeam]);
+
+  const teamFarbe = useCallback(
+    (teamId: string | null) => {
+      if (!teamId) return "#3b82f6";
+      return teamsListe.find((t) => t.id === teamId)?.farbe ?? "#3b82f6";
+    },
+    [teamsListe]
+  );
 
   const events: EventInput[] = useMemo(() => {
     const eins = zuweisungen.map((z) => {
-      const farbe =
-        mitarbeiter.find((m) => m.id === z.employee_id)?.abteilungsFarbe ??
-        "#3b82f6";
+      const tid = z.team_id as string;
+      const farbe = z.teams?.farbe?.trim() || teamFarbe(tid);
       const titel = einsatzTitel(z);
-      const konflikt = liegtAufAbwesenheit(z, abwesenheiten);
+      const hatKonflikt = teamHatKonflikt(
+        tid,
+        z.date,
+        membersByTeam,
+        abwesenheiten
+      );
       return {
         id: z.id,
-        resourceId: z.employee_id,
+        resourceId: tid,
         title: titel,
         start: datumUndZeitZuIso(z.date, z.start_time),
         end: datumUndZeitZuIso(z.date, z.end_time),
         backgroundColor: farbe,
-        borderColor: konflikt ? "#ef4444" : farbe,
-        classNames: konflikt ? ["fc-event-konflikt"] : undefined,
-        extendedProps: { zuweisung: z },
+        borderColor: farbe,
+        extendedProps: { zuweisung: z, hatKonflikt },
       };
     });
     return [...abwesenheitEvents, ...eins];
-  }, [zuweisungen, mitarbeiter, abwesenheitEvents, abwesenheiten]);
+  }, [zuweisungen, abwesenheitEvents, membersByTeam, abwesenheiten, teamFarbe]);
 
-  function dialogZuruecksetzen() {
-    setBearbeitenId(null);
-    setKonfliktText(null);
-    setFormMitarbeiterId("");
-    setFormProjektId("");
-    setFormProjektFreitext("");
-    setFormDatum("");
-    setFormStart("08:00");
-    setFormEnde("16:00");
-    setFormRolle("Teamleiter");
-    setFormNotiz("");
-    setFormTeamId("");
-  }
-
-  function dialogOeffnenFuerNeu(
-    mitarbeiterId: string,
-    start: Date,
-    ende: Date
-  ) {
-    dialogZuruecksetzen();
-    setBearbeitenId(null);
-    setFormMitarbeiterId(mitarbeiterId);
-    setFormDatum(format(start, "yyyy-MM-dd"));
-    setFormStart(format(start, "HH:mm"));
-    setFormEnde(format(ende, "HH:mm"));
-    setDialogOffen(true);
-  }
-
-  function dialogOeffnenBearbeiten(z: ZuweisungRow) {
-    setBearbeitenId(z.id);
-    setFormMitarbeiterId(z.employee_id);
-    setFormProjektId(z.project_id ?? "");
-    setFormProjektFreitext(z.project_title ?? "");
-    setFormTeamId(z.team_id ?? "");
-    setFormDatum(z.date);
-    setFormStart(z.start_time.slice(0, 5));
-    setFormEnde(z.end_time.slice(0, 5));
-    setFormRolle(z.role ?? "Teamleiter");
-    setFormNotiz(z.notes ?? "");
-    setKonfliktText(null);
-    setDialogOffen(true);
-  }
-
-  function projektPayload(): {
-    project_id: string | null;
-    project_title: string | null;
-  } {
-    const ft = formProjektFreitext.trim();
-    if (formProjektId && formProjektId !== "__frei__") {
-      return { project_id: formProjektId, project_title: null };
-    }
-    if (ft) return { project_id: null, project_title: ft };
-    return { project_id: null, project_title: null };
-  }
-
-  async function speichern() {
-    if (!formMitarbeiterId || !formDatum) {
-      toast.error("Mitarbeiter und Datum sind erforderlich.");
+  function dialogNeuOeffnen(v: {
+    team_id: string;
+    date: string;
+    start_time?: string;
+    end_time?: string;
+    projekt_id?: string;
+  }) {
+    if (v.team_id === "_leer") {
+      toast.info("Legen Sie zuerst Teams an.");
       return;
     }
+    setBearbeiten(null);
+    setVorgaben(v);
+    setFormularSchluessel((k) => k + 1);
+    setDialogOffen(true);
+  }
 
-    const normStart = normalisiereUhrzeit(formStart);
-    const normEnde = normalisiereUhrzeit(formEnde);
-
-    setSpeichernLaedt(true);
-    setKonfliktText(null);
-
-    const k = await pruefeEinsatzKonflikt(supabase, {
-      mitarbeiterId: formMitarbeiterId,
-      datum: formDatum,
-      startZeit: normStart,
-      endZeit: normEnde,
-      ausserhalbEinsatzId: bearbeitenId ?? undefined,
+  function onDateClick(info: DateClickArg) {
+    const resource = (
+      info as unknown as { resource?: { id: string } }
+    ).resource;
+    if (!resource?.id || resource.id === "_leer") {
+      toast.info("Bitte eine Team-Zeile oder einen freien Slot wählen.");
+      return;
+    }
+    dialogNeuOeffnen({
+      team_id: resource.id,
+      date: format(info.date, "yyyy-MM-dd"),
+      start_time: "08:00",
+      end_time: "16:00",
     });
-
-    if (k.hatKonflikt) {
-      setKonfliktText(k.nachricht);
-      setSpeichernLaedt(false);
-      return;
-    }
-
-    const { project_id, project_title } = projektPayload();
-    const team_id =
-      formTeamId && formTeamId !== "__none__" ? formTeamId : null;
-
-    if (bearbeitenId) {
-      const { error } = await supabase
-        .from("assignments")
-        .update({
-          employee_id: formMitarbeiterId,
-          project_id,
-          project_title,
-          team_id,
-          date: formDatum,
-          start_time: normStart,
-          end_time: normEnde,
-          role: formRolle,
-          notes: formNotiz || null,
-        })
-        .eq("id", bearbeitenId);
-      setSpeichernLaedt(false);
-      if (error) {
-        toast.error(error.message);
-        return;
-      }
-    } else {
-      const payload: Record<string, unknown> = {
-        employee_id: formMitarbeiterId,
-        project_id,
-        project_title,
-        team_id,
-        date: formDatum,
-        start_time: normStart,
-        end_time: normEnde,
-        role: formRolle,
-        notes: formNotiz || null,
-      };
-      if (eigeneMitarbeiterId) payload.created_by = eigeneMitarbeiterId;
-
-      const { error } = await supabase.from("assignments").insert(payload);
-      setSpeichernLaedt(false);
-      if (error) {
-        toast.error(error.message);
-        return;
-      }
-    }
-
-    toast.success("Einsatz gespeichert.");
-    setDialogOffen(false);
-    dialogZuruecksetzen();
-    void laden();
   }
 
-  async function loeschen() {
-    if (!bearbeitenId) return;
-    setSpeichernLaedt(true);
-    const { error } = await supabase
-      .from("assignments")
-      .delete()
-      .eq("id", bearbeitenId);
-    setSpeichernLaedt(false);
-    if (error) {
-      toast.error(error.message);
+  function onSelect(info: DateSelectArg) {
+    const resource = (
+      info as unknown as { resource?: { id: string } }
+    ).resource;
+    if (!resource?.id || resource.id === "_leer") {
+      toast.info("Bitte in einer Team-Zeile auswählen.");
       return;
     }
-    toast.success("Einsatz gelöscht.");
-    setDialogOffen(false);
-    dialogZuruecksetzen();
-    void laden();
+    if (!info.start || !info.end) return;
+    dialogNeuOeffnen({
+      team_id: resource.id,
+      date: format(info.start, "yyyy-MM-dd"),
+      start_time: format(info.start, "HH:mm"),
+      end_time: format(info.end, "HH:mm"),
+    });
+  }
+
+  function onEventClick(info: EventClickArg) {
+    if (info.event.display === "background") return;
+    const z = info.event.extendedProps.zuweisung as ZuweisungRow | undefined;
+    if (!z || !z.team_id) return;
+    setVorgaben(null);
+    setBearbeiten({
+      id: z.id,
+      employee_id: z.employee_id,
+      project_id: z.project_id,
+      team_id: z.team_id,
+      date: z.date,
+      start_time: z.start_time,
+      end_time: z.end_time,
+      notes: z.notes,
+    });
+    setFormularSchluessel((k) => k + 1);
+    setDialogOffen(true);
+  }
+
+  function onEventReceive(info: EventReceiveArg) {
+    info.revert();
+    const projectId = info.event.extendedProps?.projectId as string | undefined;
+    const res = info.event.getResources()[0];
+    const start = info.event.start;
+    if (!projectId || !start) return;
+    const teamId = res?.id;
+    if (!teamId || teamId === "_leer") {
+      toast.info("Bitte auf eine Team-Zeile im Kalender ziehen.");
+      return;
+    }
+    dialogNeuOeffnen({
+      team_id: teamId,
+      date: format(start, "yyyy-MM-dd"),
+      start_time: format(start, "HH:mm"),
+      end_time: format(addHours(start, 8), "HH:mm"),
+      projekt_id: projectId,
+    });
   }
 
   async function beiDragOderResize(
     id: string,
-    mitarbeiterId: string,
+    teamId: string,
     start: Date,
     ende: Date
   ) {
@@ -550,8 +528,14 @@ export function PlanungsKalender() {
     const startZeit = format(start, "HH:mm:ss");
     const endZeit = format(ende, "HH:mm:ss");
 
+    const empId = await getRepresentativeEmployeeId(supabase, teamId);
+    if (!empId) {
+      toast.error("Kein Mitarbeiter für dieses Team hinterlegt.");
+      return false;
+    }
+
     const k = await pruefeEinsatzKonflikt(supabase, {
-      mitarbeiterId,
+      mitarbeiterId: empId,
       datum,
       startZeit,
       endZeit,
@@ -565,7 +549,8 @@ export function PlanungsKalender() {
     const { error } = await supabase
       .from("assignments")
       .update({
-        employee_id: mitarbeiterId,
+        team_id: teamId,
+        employee_id: empId,
         date: datum,
         start_time: startZeit,
         end_time: endZeit,
@@ -573,7 +558,7 @@ export function PlanungsKalender() {
       .eq("id", id);
 
     if (error) {
-      toast.error(error.message);
+      toast.error("Fehler beim Verschieben");
       return false;
     }
     toast.success("Einsatz verschoben.");
@@ -581,29 +566,11 @@ export function PlanungsKalender() {
     return true;
   }
 
-  function onSelect(info: DateSelectArg) {
-    const res = info.resource;
-    if (!res?.id) {
-      toast.info("Bitte einen Bereich in der Zeile eines Mitarbeiters wählen.");
-      return;
-    }
-    if (String(res.id) === "_leer") {
-      toast.info(
-        "Lege Mitarbeiter an oder passe den Abteilungsfilter an, damit Zeilen sichtbar sind."
-      );
-      return;
-    }
-    if (!info.start || !info.end) return;
-    dialogOeffnenFuerNeu(res.id, info.start, info.end);
-  }
-
-  function onEventClick(info: EventClickArg) {
-    if (info.event.display === "background") return;
-    const z = info.event.extendedProps.zuweisung as ZuweisungRow | undefined;
-    if (z) dialogOeffnenBearbeiten(z);
-  }
-
   async function onEventDrop(info: EventDropArg) {
+    if (info.event.display === "background") {
+      info.revert();
+      return;
+    }
     const id = info.event.id;
     const res = info.event.getResources()[0];
     const start = info.event.start;
@@ -617,6 +584,10 @@ export function PlanungsKalender() {
   }
 
   async function onEventResize(info: EventResizeDoneArg) {
+    if (info.event.display === "background") {
+      info.revert();
+      return;
+    }
     const id = info.event.id;
     const res = info.event.getResources()[0];
     const start = info.event.start;
@@ -629,12 +600,24 @@ export function PlanungsKalender() {
     if (!ok) info.revert();
   }
 
+  function kalenderApi() {
+    return calendarRef.current?.getApi();
+  }
+
+  function setzeAnsicht(art: "week" | "month") {
+    setKalenderAnsicht(art);
+    const api = kalenderApi();
+    if (!api) return;
+    if (art === "week") api.changeView("resourceTimelineWeek");
+    else api.changeView("resourceTimelineMonth");
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <p className="text-xs text-zinc-500">
-          Rote Umrandung: Einsatz während Abwesenheit. Mehrere Einsätze pro Tag
-          sind möglich (eigene Blöcke). Team-Label optional.
+          Teams als Zeilen: farbige Ränder, Einsätze per Drag zwischen Teams.
+          Orange Umrandung: mögliche Überschneidung mit Team-Abwesenheit.
         </p>
         <p className="text-xs text-zinc-500">
           <Link
@@ -653,47 +636,114 @@ export function PlanungsKalender() {
         </p>
       </div>
 
-      <Tabs
-        value={filterAbteilung}
-        onValueChange={setFilterAbteilung}
-        className="w-full"
-      >
-        <TabsList className="flex h-auto min-h-10 w-full flex-wrap justify-start gap-1 bg-zinc-900 p-1">
-          <TabsTrigger
-            value="alle"
-            className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100"
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap gap-1 rounded-lg border border-zinc-800 bg-zinc-950 p-1">
+          <Button
+            type="button"
+            size="sm"
+            variant={kalenderAnsicht === "week" ? "secondary" : "ghost"}
+            className="h-8"
+            onClick={() => setzeAnsicht("week")}
           >
-            Alle Abteilungen
-          </TabsTrigger>
-          {abteilungen.map((a) => (
-            <TabsTrigger
-              key={a.id}
-              value={a.id}
-              className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100"
-            >
-              <span
-                className="mr-2 inline-block size-2 rounded-full"
-                style={{ backgroundColor: a.color }}
-              />
-              {a.name}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+            Woche
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={kalenderAnsicht === "month" ? "secondary" : "ghost"}
+            className="h-8"
+            onClick={() => setzeAnsicht("month")}
+          >
+            Monat
+          </Button>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8 border-zinc-700"
+          onClick={() => kalenderApi()?.prev()}
+        >
+          ← Zurück
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8 border-zinc-700"
+          onClick={() => kalenderApi()?.today()}
+        >
+          Heute
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8 border-zinc-700"
+          onClick={() => kalenderApi()?.next()}
+        >
+          Vor →
+        </Button>
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="h-8"
+            onClick={() => setSheetOffen(true)}
+          >
+            Ungeplante Projekte
+          </Button>
+          <Sheet open={sheetOffen} onOpenChange={setSheetOffen}>
+            <SheetContent side="right" className="w-full max-w-md border-zinc-800 bg-zinc-950">
+              <SheetHeader>
+                <SheetTitle className="text-zinc-50">
+                  Ungeplante Projekte
+                </SheetTitle>
+              </SheetHeader>
+              <p className="text-xs text-zinc-500">
+                Status &quot;geplant&quot;, kein Einsatz ab heute. Auf den Kalender
+                ziehen, um einen Termin anzulegen.
+              </p>
+              <div
+                id="ungeplante-projekte-drag"
+                className="mt-4 flex max-h-[70vh] flex-col gap-2 overflow-y-auto pr-1"
+              >
+                {ungeplanteProjekte.length === 0 ? (
+                  <p className="text-sm text-zinc-500">Keine ungeplanten Projekte.</p>
+                ) : (
+                  ungeplanteProjekte.map((p) => (
+                    <Card
+                      key={p.id}
+                      className="draggable-projekt cursor-grab border-zinc-800 bg-zinc-900 active:cursor-grabbing"
+                      data-project-id={p.id}
+                      data-title={p.title}
+                    >
+                      <CardContent className="p-3 text-sm text-zinc-100">
+                        {p.title}
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </SheetContent>
+          </Sheet>
+        </div>
+      </div>
 
       <div className="planung-fc rounded-lg border border-zinc-800 bg-zinc-900 p-2 md:p-4">
         <div className="fc-theme-standard min-h-[480px] w-full overflow-x-auto">
           <FullCalendar
+            ref={calendarRef}
             schedulerLicenseKey="GPL-My-Project-Is-Open-Source"
             plugins={[resourceTimelinePlugin, interactionPlugin]}
             locale={deLocale}
-            initialView="resourceTimelineWeek"
-            headerToolbar={{
-              left: "prev,next today",
-              center: "title",
-              right:
-                "resourceTimelineDay,resourceTimelineWeek,resourceTimelineMonth",
-            }}
+            initialView={
+              kalenderAnsicht === "week"
+                ? "resourceTimelineWeek"
+                : "resourceTimelineMonth"
+            }
+            headerToolbar={false}
             slotMinTime="05:00:00"
             slotMaxTime="21:00:00"
             slotDuration="00:30:00"
@@ -701,276 +751,75 @@ export function PlanungsKalender() {
             height="auto"
             contentHeight={560}
             resourceAreaWidth="28%"
+            resourceAreaHeaderContent="Teams"
             resources={ressourcen}
             events={events}
             editable
             selectable
             selectMirror
+            droppable
             eventOverlap
+            dateClick={onDateClick}
             select={onSelect}
             eventClick={onEventClick}
             eventDrop={onEventDrop}
             eventResize={onEventResize}
+            eventReceive={onEventReceive}
             eventStartEditable
             eventDurationEditable
             eventResourceEditable
             longPressDelay={200}
+            eventDidMount={(info) => {
+              if (info.event.display === "background") return;
+              if (info.event.extendedProps.hatKonflikt) {
+                info.el.classList.add("border-2", "border-orange-400");
+              }
+            }}
             resourceLabelContent={(arg) => (
-              <div className="flex items-center gap-2 py-1">
+              <button
+                type="button"
+                className="flex w-full min-w-0 items-center gap-2 rounded-sm px-0 py-1 text-left hover:bg-zinc-800/60"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const api = kalenderApi();
+                  const d = api?.getDate() ?? new Date();
+                  dialogNeuOeffnen({
+                    team_id: arg.resource.id,
+                    date: format(d, "yyyy-MM-dd"),
+                    start_time: "08:00",
+                    end_time: "16:00",
+                  });
+                }}
+              >
                 <span
                   className="inline-block h-8 w-1 shrink-0 rounded-full"
                   style={{
                     backgroundColor:
-                      (arg.resource.extendedProps as { abteilungsFarbe?: string })
-                        ?.abteilungsFarbe ?? "#64748b",
+                      (arg.resource.extendedProps as { farbe?: string }).farbe ??
+                      "#64748b",
                   }}
                 />
                 <span className="truncate text-sm font-medium text-zinc-100">
                   {arg.resource.title}
                 </span>
-              </div>
+              </button>
             )}
           />
         </div>
       </div>
 
-      <Dialog
+      <EinsatzNeuDialog
         open={dialogOffen}
-        onOpenChange={(o) => {
-          setDialogOffen(o);
-          if (!o) dialogZuruecksetzen();
-        }}
-      >
-        <DialogContent className="max-h-[90vh] overflow-y-auto border-zinc-700 bg-zinc-900 sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-zinc-50">
-              {bearbeitenId ? "Einsatz bearbeiten" : "Neuer Einsatz"}
-            </DialogTitle>
-          </DialogHeader>
-
-          {konfliktText && (
-            <Alert variant="destructive" className="border-red-900 bg-red-950/40">
-              <AlertTitle>Konflikt</AlertTitle>
-              <AlertDescription>{konfliktText}</AlertDescription>
-            </Alert>
-          )}
-
-          <div className="grid gap-3 py-2">
-            <div className="space-y-2">
-              <Label className="text-zinc-300">Mitarbeiter</Label>
-              <Select
-                value={formMitarbeiterId}
-                onValueChange={(v) => setFormMitarbeiterId(v ?? "")}
-              >
-                <SelectTrigger className="border-zinc-700 bg-zinc-950">
-                  <SelectValue placeholder="Wählen" />
-                </SelectTrigger>
-                <SelectContent>
-                  {mitarbeiter.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-zinc-300">Team (Label im Kalender, optional)</Label>
-              <Select
-                value={formTeamId && formTeamId !== "" ? formTeamId : "__none__"}
-                onValueChange={(v) => setFormTeamId(v === "__none__" || !v ? "" : v)}
-              >
-                <SelectTrigger className="border-zinc-700 bg-zinc-950">
-                  <SelectValue placeholder="Kein Team" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">— kein Team</SelectItem>
-                  {teamsListe.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-zinc-300">Projekt (optional)</Label>
-              <Select
-                value={
-                  formProjektId && formProjektId !== "__frei__"
-                    ? formProjektId
-                    : "__frei__"
-                }
-                onValueChange={(v) => {
-                  if (v === "__frei__") {
-                    setFormProjektId("");
-                  } else {
-                    setFormProjektId(v ?? "");
-                    setFormProjektFreitext("");
-                  }
-                }}
-              >
-                <SelectTrigger className="border-zinc-700 bg-zinc-950">
-                  <SelectValue placeholder="Aus Liste oder Freitext unten" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__frei__">— Freitext / kein Projekt</SelectItem>
-                  {projekte.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Input
-                placeholder="Oder Projektbezeichnung frei eingeben"
-                value={formProjektFreitext}
-                onChange={(e) => {
-                  setFormProjektFreitext(e.target.value);
-                  if (e.target.value.trim()) setFormProjektId("");
-                }}
-                className="border-zinc-700 bg-zinc-950 text-zinc-100"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="einsatz-datum" className="text-zinc-300">
-                Datum
-              </Label>
-              <Input
-                id="einsatz-datum"
-                type="date"
-                value={formDatum}
-                onChange={(e) => setFormDatum(e.target.value)}
-                className="border-zinc-700 bg-zinc-950"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-2">
-                <Label htmlFor="einsatz-start" className="text-zinc-300">
-                  Start
-                </Label>
-                <Input
-                  id="einsatz-start"
-                  type="time"
-                  value={formStart}
-                  onChange={(e) => setFormStart(e.target.value)}
-                  className="border-zinc-700 bg-zinc-950"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="einsatz-ende" className="text-zinc-300">
-                  Ende
-                </Label>
-                <Input
-                  id="einsatz-ende"
-                  type="time"
-                  value={formEnde}
-                  onChange={(e) => setFormEnde(e.target.value)}
-                  className="border-zinc-700 bg-zinc-950"
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-zinc-300">Rolle vor Ort (optional)</Label>
-              <Select
-                value={formRolle}
-                onValueChange={(v) => setFormRolle(v ?? "Teamleiter")}
-              >
-                <SelectTrigger className="border-zinc-700 bg-zinc-950">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Teamleiter">Teamleiter</SelectItem>
-                  <SelectItem value="Helfer">Helfer</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="einsatz-notiz" className="text-zinc-300">
-                Notiz
-              </Label>
-              <Textarea
-                id="einsatz-notiz"
-                value={formNotiz}
-                onChange={(e) => setFormNotiz(e.target.value)}
-                rows={2}
-                placeholder="Optional"
-                className="border-zinc-700 bg-zinc-950 text-zinc-100"
-              />
-            </div>
-
-            <div className="flex flex-wrap gap-2 border-t border-zinc-800 pt-3">
-              <span className="w-full text-xs font-medium text-zinc-500">
-                Benachrichtigungen (nach dem Speichern manuell)
-              </span>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                disabled={!integration.outlook}
-                title={
-                  integration.outlook
-                    ? "Outlook-Termin anlegen"
-                    : "Outlook nicht konfiguriert (AZURE_CLIENT_ID)"
-                }
-                className={cn(!integration.outlook && "opacity-50")}
-                onClick={() =>
-                  integration.outlook &&
-                  toast.info("Outlook-Sync ist noch ein Platzhalter.")
-                }
-              >
-                Outlook
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                disabled={!integration.whatsapp}
-                title={
-                  integration.whatsapp
-                    ? "WhatsApp an Mitarbeiter"
-                    : "WhatsApp nicht konfiguriert (Twilio)"
-                }
-                className={cn(!integration.whatsapp && "opacity-50")}
-                onClick={() =>
-                  integration.whatsapp &&
-                  toast.info("WhatsApp-Versand folgt bei Twilio-Konfiguration.")
-                }
-              >
-                WhatsApp
-              </Button>
-            </div>
-          </div>
-
-          <DialogFooter className="flex-col gap-2 sm:flex-row">
-            {bearbeitenId && (
-              <Button
-                type="button"
-                variant="destructive"
-                className="w-full sm:mr-auto sm:w-auto"
-                onClick={() => void loeschen()}
-                disabled={speichernLaedt}
-              >
-                Löschen
-              </Button>
-            )}
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setDialogOffen(false)}
-            >
-              Abbrechen
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void speichern()}
-              disabled={speichernLaedt}
-            >
-              {speichernLaedt ? "Speichern…" : "Speichern"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        onOpenChange={setDialogOffen}
+        teams={teamsListe}
+        projekte={projekteAktiv}
+        bearbeiten={bearbeiten}
+        vorgaben={vorgaben}
+        eigeneMitarbeiterId={eigeneMitarbeiterId}
+        formularSchluessel={formularSchluessel}
+        onGespeichert={() => void laden()}
+      />
     </div>
   );
 }
