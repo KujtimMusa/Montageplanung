@@ -22,7 +22,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { ListOrdered, Pencil, Plus, Trash2 } from "lucide-react";
+import { BuchungsregelnDialog } from "@/components/dienstleister/BuchungsregelnDialog";
 
 type Zeile = {
   id: string;
@@ -48,6 +49,9 @@ export function DienstleisterVerwaltung() {
   const [parallel, setParallel] = useState("2");
   const [notiz, setNotiz] = useState("");
   const [lädt, setLädt] = useState(false);
+  const [regelnOffen, setRegelnOffen] = useState(false);
+  const [regelnFuerId, setRegelnFuerId] = useState<string | null>(null);
+  const [regelnFuerName, setRegelnFuerName] = useState("");
 
   const laden = useCallback(async () => {
     try {
@@ -175,7 +179,7 @@ export function DienstleisterVerwaltung() {
               <TableHead>WhatsApp</TableHead>
               <TableHead>Spezialisierung</TableHead>
               <TableHead>Vorlauf (Tage)</TableHead>
-              <TableHead className="w-[90px] text-right">Aktionen</TableHead>
+              <TableHead className="w-[130px] text-right">Aktionen</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -196,6 +200,20 @@ export function DienstleisterVerwaltung() {
                   </TableCell>
                   <TableCell>{z.lead_time_days}</TableCell>
                   <TableCell className="text-right">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                      title="Buchungsregeln"
+                      onClick={() => {
+                        setRegelnFuerId(z.id);
+                        setRegelnFuerName(z.company_name);
+                        setRegelnOffen(true);
+                      }}
+                    >
+                      <ListOrdered className="size-4" />
+                    </Button>
                     <Button
                       type="button"
                       variant="ghost"
@@ -308,12 +326,15 @@ export function DienstleisterVerwaltung() {
         </DialogContent>
       </Dialog>
 
-      <p className="text-xs text-muted-foreground">
-        Buchungsregeln (Trigger, Auto-Buchung) können später pro Dienstleister
-        ergänzt werden — Tabelle{" "}
-        <code className="rounded bg-muted px-1">booking_rules</code> ist in der DB
-        vorbereitet.
-      </p>
+      <BuchungsregelnDialog
+        offen={regelnOffen}
+        onOffenChange={(o) => {
+          setRegelnOffen(o);
+          if (!o) setRegelnFuerId(null);
+        }}
+        dienstleisterId={regelnFuerId}
+        firmenname={regelnFuerName}
+      />
     </div>
   );
 }
