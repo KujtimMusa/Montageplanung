@@ -40,6 +40,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import * as LucideIcons from "lucide-react";
 import { Building2, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import { nachrichtAusUnbekannt } from "@/lib/fehler";
 
 type Zeile = {
   id: string;
@@ -138,8 +139,7 @@ export function AbteilungenVerwaltung() {
         }))
       );
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Laden fehlgeschlagen.";
-      toast.error(msg);
+      toast.error(nachrichtAusUnbekannt(e, "Laden fehlgeschlagen."));
     } finally {
       setListeLaedt(false);
     }
@@ -197,8 +197,7 @@ export function AbteilungenVerwaltung() {
       leeren();
       void laden();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Speichern fehlgeschlagen.";
-      toast.error(msg);
+      toast.error(nachrichtAusUnbekannt(e, "Speichern fehlgeschlagen."));
     } finally {
       setLädt(false);
     }
@@ -219,8 +218,7 @@ export function AbteilungenVerwaltung() {
       leeren();
       void laden();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Löschen fehlgeschlagen.";
-      toast.error(msg);
+      toast.error(nachrichtAusUnbekannt(e, "Löschen fehlgeschlagen."));
     } finally {
       setLädt(false);
     }

@@ -44,6 +44,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { toast } from "sonner";
+import { nachrichtAusUnbekannt } from "@/lib/fehler";
 import {
   ChevronsUpDown,
   Loader2,
@@ -224,7 +225,7 @@ export function TeamsVerwaltung() {
       );
     } catch (e) {
       toast.error(
-        e instanceof Error ? e.message : "Teams konnten nicht geladen werden."
+        nachrichtAusUnbekannt(e, "Teams konnten nicht geladen werden.")
       );
     } finally {
       setLaedt(false);
@@ -323,7 +324,9 @@ export function TeamsVerwaltung() {
       setTeamSheetOffen(false);
       void laden();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Speichern fehlgeschlagen.");
+      toast.error(
+        nachrichtAusUnbekannt(e, "Speichern fehlgeschlagen.")
+      );
     }
   }
 

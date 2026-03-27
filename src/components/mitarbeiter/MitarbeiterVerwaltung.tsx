@@ -43,6 +43,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Loader2, Pencil, Plus, Trash2, Users } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { nachrichtAusUnbekannt } from "@/lib/fehler";
 
 type Zeile = {
   id: string;
@@ -322,7 +323,9 @@ export function MitarbeiterVerwaltung() {
       setMonteurSheetOffen(false);
       void laden();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Speichern fehlgeschlagen.");
+      toast.error(
+        nachrichtAusUnbekannt(e, "Speichern fehlgeschlagen.")
+      );
     }
   }
 
@@ -449,12 +452,12 @@ export function MitarbeiterVerwaltung() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
+      <div className="flex flex-col gap-3 rounded-xl border border-zinc-800/80 bg-zinc-900/30 p-4 ring-1 ring-white/[0.03] md:flex-row md:flex-wrap md:items-center">
         <Input
           placeholder="Suche nach Name…"
           value={suche}
           onChange={(e) => setSuche(e.target.value)}
-          className="max-w-sm border-zinc-700 bg-zinc-950"
+          className="max-w-sm border-zinc-700 bg-zinc-950/80"
         />
         <Select
           value={typFilter}
