@@ -1,113 +1,177 @@
-import { NextResponse } from "next/server";
+import { convertToModelMessages, streamText, type UIMessage } from "ai";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
-import {
-  istGeminiKonfiguriert,
-  rufeGeminiFlashAuf,
-} from "@/lib/agents/gemini";
+import { istKiKonfiguriert, kiModell } from "@/lib/agents/ki-client";
+
+async function kontextLaden(supabase: SupabaseClient) {
+  const heute = new Date().toISOString().slice(0, 10);
+
+  const [
+    { data: ma },
+    { data: pr },
+    { data: zu },
+    { data: abw },
+    { data: heuteZu },
+    { data: einsaetze },
+    { data: projekteOffen },
+    { data: abwesenheiten },
+  ] = await Promise.all([
+    supabase
+      .from("employees")
+      .select("id,name,role,active,department_id")
+      .eq("active", true)
+      .limit(300),
+    supabase
+      .from("projects")
+      .select("id,title,status,priority,planned_start,planned_end")
+      .limit(150),
+    supabase
+      .from("assignments")
+      .select(
+        "id,employee_id,project_id,project_title,date,start_time,end_time"
+      )
+      .order("date", { ascending: false })
+      .limit(200),
+    supabase
+      .from("absences")
+      .select("id,employee_id,type,start_date,end_date,status")
+      .limit(200),
+    supabase
+      .from("assignments")
+      .select(
+        "id,employee_id,project_id,project_title,date,start_time,end_time"
+      )
+      .eq("date", heute)
+      .limit(100),
+    supabase
+      .from("assignments")
+      .select(
+        "id,date,start_time,end_time,project_title, projects(title), teams(name)"
+      )
+      .gte("date", heute)
+      .order("date", { ascending: true })
+      .limit(50),
+    supabase
+      .from("projects")
+      .select("title,status,priority")
+      .neq("status", "abgeschlossen")
+      .limit(20),
+    supabase
+      .from("absences")
+      .select("type,start_date,end_date, employees(name)")
+      .gte("end_date", heute)
+      .limit(20),
+  ]);
+
+  const kontext = [
+    `Heutiges Datum (ISO): ${heute}`,
+    `Lokales Datum: ${new Date().toLocaleDateString("de-DE")}`,
+    "Du bist der KI-Assistent für einen Handwerksbetrieb (Einsatzplanung).",
+    "Antworte auf Deutsch, präzise und praxisorientiert.",
+    "Nutze nur die mitgelieferten Daten; keine erfundenen Namen oder Termine.",
+    "Bei Planungsfragen: konkrete Namen, Daten und Empfehlungen nennen.",
+    "",
+    "AKTIVE MITARBEITER (Auszug):",
+    JSON.stringify(ma ?? []),
+    "",
+    "PROJEKTE (Auszug):",
+    JSON.stringify(pr ?? []),
+    "",
+    "EINSÄTZE (Auszug):",
+    JSON.stringify(zu ?? []),
+    "",
+    "ABWESENHEITEN:",
+    JSON.stringify(abw ?? []),
+    "",
+    "EINSÄTZE NUR HEUTE:",
+    JSON.stringify(heuteZu ?? []),
+    "",
+    "KOMMENDE EINSÄTZE (mit Projekt/Team, ab heute):",
+    JSON.stringify(einsaetze ?? []),
+    "",
+    "OFFENE PROJEKTE (nicht abgeschlossen, Stichprobe):",
+    JSON.stringify(projekteOffen ?? []),
+    "",
+    "ABWESENHEITEN (mit Name, endet nicht vor heute):",
+    JSON.stringify(abwesenheiten ?? []),
+  ].join("\n");
+
+  return {
+    kontext,
+    stats: {
+      ma: ma?.length ?? 0,
+      pr: pr?.length ?? 0,
+      zu: zu?.length ?? 0,
+      abw: abw?.length ?? 0,
+    },
+  };
+}
 
 export async function POST(request: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const raw = (await request.json()) as {
+    messages?: UIMessage[];
+    message?: string;
+  };
+
+  const legacy =
+    typeof raw.message === "string" &&
+    raw.message.trim().length > 0 &&
+    (!raw.messages || raw.messages.length === 0);
+
+  const { kontext, stats } = await kontextLaden(supabase);
+
+  if (!istKiKonfiguriert()) {
+    return new Response(
+      JSON.stringify({
+        error:
+          "KI nicht konfiguriert — bitte GEMINI_API_KEY setzen. Datenüberblick ohne KI: " +
+          `${stats.ma} Mitarbeiter, ${stats.pr} Projekte, ${stats.zu} Einsätze (Stichprobe), ${stats.abw} Abwesenheiten.`,
+        antwort:
+          "KI nicht konfiguriert — bitte GEMINI_API_KEY setzen. Datenüberblick ohne KI: " +
+          `${stats.ma} Mitarbeiter, ${stats.pr} Projekte, ${stats.zu} Einsätze (Stichprobe), ${stats.abw} Abwesenheiten.`,
+      }),
+      { status: 503, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json(
-        { fehler: "Nicht angemeldet." },
-        { status: 401 }
-      );
+    if (legacy) {
+      const result = streamText({
+        model: kiModell,
+        system: kontext,
+        prompt: raw.message!.trim(),
+      });
+      return result.toTextStreamResponse();
     }
 
-    const body = (await request.json()) as { message?: string };
-    const frage = (body.message ?? "").trim();
-    if (!frage) {
-      return NextResponse.json(
-        { fehler: "Leere Nachricht." },
-        { status: 400 }
-      );
-    }
-
-    const heute = new Date().toISOString().slice(0, 10);
-
-    const [
-      { data: ma },
-      { data: pr },
-      { data: zu },
-      { data: abw },
-      { data: heuteZu },
-    ] = await Promise.all([
-      supabase
-        .from("employees")
-        .select("id,name,role,active,department_id")
-        .limit(300),
-      supabase
-        .from("projects")
-        .select("id,title,status,priority,planned_start,planned_end")
-        .limit(150),
-      supabase
-        .from("assignments")
-        .select(
-          "id,employee_id,project_id,project_title,date,start_time,end_time"
-        )
-        .order("date", { ascending: false })
-        .limit(200),
-      supabase
-        .from("absences")
-        .select("id,employee_id,type,start_date,end_date,status")
-        .limit(200),
-      supabase
-        .from("assignments")
-        .select(
-          "id,employee_id,project_id,project_title,date,start_time,end_time"
-        )
-        .eq("date", heute)
-        .limit(100),
-    ]);
-
-    const kontext = [
-      `Heutiges Datum (ISO): ${heute}`,
-      "Du unterstützt Teamleitung, Abteilungs- und Bereichsleiter bei Einsatzplanung und Steuerung. Antworte knapp auf Deutsch.",
-      "Mitarbeiter (Auszug):",
-      JSON.stringify(ma ?? []),
-      "Projekte (Auszug):",
-      JSON.stringify(pr ?? []),
-      "Einsätze (Auszug, inkl. project_title wenn kein Projekt verknüpft):",
-      JSON.stringify(zu ?? []),
-      "Abwesenheiten:",
-      JSON.stringify(abw ?? []),
-      "Einsätze nur heute:",
-      JSON.stringify(heuteZu ?? []),
-      "Hinweis: Prüfe bei Bedarf zeitliche Überschneidungen pro Mitarbeiter selbst aus den Einsätzen.",
-      "Wenn du einen neuen Einsatz vorschlägst, formuliere klare Felder (Mitarbeiter-ID oder Name, Datum, Zeit, Projekt/Freitext).",
-      "Nutzerfrage:",
-      frage,
-    ].join("\n");
-
-    if (!istGeminiKonfiguriert()) {
-      return NextResponse.json({
-        antwort:
-          "KI ist nicht konfiguriert: Bitte GEMINI_API_KEY in den Umgebungsvariablen setzen (z. B. Vercel → Settings → Environment Variables). Datenüberblick ohne KI: " +
-          `${(ma ?? []).length} Mitarbeiter, ${(pr ?? []).length} Projekte, ${(zu ?? []).length} Einsätze (Stichprobe), ${(abw ?? []).length} Abwesenheiten.`,
+    const messages = raw.messages;
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return new Response(JSON.stringify({ error: "messages required" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
       });
     }
 
-    try {
-      const antwort = await rufeGeminiFlashAuf(
-        "Du hilfst bei Planung und Steuerung. Nutze nur die mitgelieferten JSON-Daten. Antworte auf Deutsch, sachlich. Wenn eine konkrete Aktion sinnvoll wäre (z. B. Einsatz anlegen), beschreibe sie am Ende in einem Satz mit 'Vorschlag:' und den nötigen Feldern — der Nutzer bestätigt in der App.",
-        kontext
-      );
-      return NextResponse.json({ antwort });
-    } catch (err) {
-      const detail =
-        err instanceof Error ? err.message : "Unbekannter API-Fehler.";
-      return NextResponse.json({
-        antwort:
-          `Die KI konnte gerade nicht antworten (${detail}). ` +
-          `Prüfen Sie GEMINI_API_KEY, ggf. GEMINI_MODEL (Standard: gemini-2.5-flash) und Kontingent bei Google AI Studio.`,
-      });
-    }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "Unbekannter Fehler.";
-    return NextResponse.json({ fehler: msg }, { status: 500 });
+    const modelMessages = await convertToModelMessages(messages);
+    const result = streamText({
+      model: kiModell,
+      system: kontext,
+      messages: modelMessages,
+    });
+    return result.toUIMessageStreamResponse();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unbekannter Fehler.";
+    return new Response(JSON.stringify({ error: msg }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }

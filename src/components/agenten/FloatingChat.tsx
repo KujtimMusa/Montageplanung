@@ -35,14 +35,60 @@ export function FloatingChat() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: t }),
       });
-      const data = (await res.json()) as { antwort?: string; fehler?: string };
-      if (!res.ok) {
-        throw new Error(data.fehler ?? "Anfrage fehlgeschlagen.");
+      const ct = res.headers.get("content-type") ?? "";
+      if (ct.includes("application/json")) {
+        const data = (await res.json()) as {
+          antwort?: string;
+          fehler?: string;
+          error?: string;
+        };
+        if (!res.ok) {
+          throw new Error(
+            data.fehler ?? data.error ?? "Anfrage fehlgeschlagen."
+          );
+        }
+        setVerlauf((v) => [
+          ...v,
+          {
+            rolle: "assistant",
+            text: data.antwort ?? "(Keine Antwort)",
+          },
+        ]);
+        return;
       }
-      setVerlauf((v) => [
-        ...v,
-        { rolle: "assistant", text: data.antwort ?? "(Keine Antwort)" },
-      ]);
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        throw new Error("Keine Antwort.");
+      }
+      setVerlauf((v) => [...v, { rolle: "assistant", text: "" }]);
+      const decoder = new TextDecoder();
+      let antwort = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        antwort += decoder.decode(value, { stream: true });
+        setVerlauf((v) => {
+          const copy = [...v];
+          const last = copy[copy.length - 1];
+          if (last?.rolle === "assistant") {
+            copy[copy.length - 1] = { rolle: "assistant", text: antwort };
+          }
+          return copy;
+        });
+      }
+      if (!antwort.trim()) {
+        setVerlauf((v) => {
+          const copy = [...v];
+          if (copy[copy.length - 1]?.rolle === "assistant") {
+            copy[copy.length - 1] = {
+              rolle: "assistant",
+              text: "(Keine Antwort)",
+            };
+          }
+          return copy;
+        });
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Chat fehlgeschlagen.";
       toast.error(msg);
