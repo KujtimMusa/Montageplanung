@@ -141,177 +141,154 @@
   }
 }
 
-/* ═══ SYNCFUSION — Referenz-Dark (#0f0f0f / #141414) ═══ */
-.planung-sf .e-schedule,
-.planung-fc {
+/* ═══ SYNCFUSION — Referenz-Dark ═══ */
+
+/* ── Hintergrund ── */
+.planung-sf .e-schedule {
   background: #0f0f0f !important;
-  border: 1px solid #1f1f1f !important;
+  border: 1px solid #1e1e1e !important;
   border-radius: 12px !important;
   overflow: hidden;
   font-family: inherit !important;
 }
 
-/* Header / Toolbar */
-.planung-sf .e-schedule .e-schedule-toolbar,
-.planung-sf .e-toolbar {
+/* ── Zellen ── */
+.planung-sf .e-work-cells,
+.planung-sf .e-alternate-cells {
   background: #0f0f0f !important;
-  border-bottom: 1px solid #1f1f1f !important;
-}
-.planung-sf .e-schedule .e-toolbar .e-tbar-btn {
-  background: transparent !important;
-  border: 1px solid #3f3f46 !important;
-  color: #a1a1aa !important;
-  border-radius: 8px !important;
-}
-.planung-sf .e-schedule .e-toolbar .e-tbar-btn:hover {
-  background: #27272a !important;
-  color: #e4e4e7 !important;
+  border-color: #1e1e1e !important;
 }
 
-/* Timeline-Zellen */
 .planung-sf .e-schedule .e-timeline-view .e-work-cells,
 .planung-sf .e-schedule .e-timeline-month-view .e-work-cells {
   background: #0f0f0f !important;
-  border-color: #1f1f1f !important;
+  border-color: #1e1e1e !important;
+  min-height: 5rem !important;
 }
 
-.planung-sf .e-work-cells {
-  background: #0f0f0f !important;
-  border-color: #1f1f1f !important;
-}
-
-/* Heute-Spalte (dezent) */
-.planung-sf .e-schedule .e-timeline-view .e-current-day,
-.planung-sf .e-schedule .e-timeline-month-view .e-current-day {
-  background: #141414 !important;
-}
-
-/* Datum-Header */
-.planung-sf .e-schedule .e-date-header-wrap table td {
-  background: #0f0f0f !important;
-  border-color: #1f1f1f !important;
-  color: #71717a !important;
-  font-size: 0.78rem !important;
-  font-weight: 600 !important;
-}
-.planung-sf .e-schedule .e-date-header-wrap table td.e-current-day {
-  color: #f4f4f5 !important;
-  font-weight: 700 !important;
-}
-
-.planung-sf .e-schedule .e-header-cells,
-.planung-sf .e-schedule .e-date-header-container table td {
-  background: #0f0f0f !important;
-  border-color: #1f1f1f !important;
-  color: #52525b !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.08em !important;
-}
-
-/* Resource Area (linke Spalte) */
-.planung-sf .e-schedule .e-resource-left-td {
-  background: #0f0f0f !important;
-  border-right: 1px solid #1f1f1f !important;
-  width: 220px !important;
-}
-.planung-sf .e-schedule .e-resource-cells {
-  background: #0f0f0f !important;
-  border-bottom: 1px solid #1f1f1f !important;
-  border-right: 1px solid #1f1f1f !important;
-}
-
-/* Event-Pills */
-.planung-sf .e-schedule .e-appointment {
-  border: none !important;
-  border-radius: 6px !important;
-  box-shadow: none !important;
-  background: transparent !important;
-}
-.planung-sf .e-schedule .e-appointment.e-konflikt {
-  box-shadow: 0 0 0 2px #f97316 !important;
-}
-
-/* Wochenende */
 .planung-sf .e-schedule .e-timeline-view .e-work-cells.e-weekend,
 .planung-sf .e-schedule .e-timeline-month-view .e-work-cells.e-weekend {
   background: #141414 !important;
 }
 
-/* Scrollbar */
-.planung-sf .e-schedule ::-webkit-scrollbar {
-  height: 6px;
-  width: 6px;
-}
-.planung-sf .e-schedule ::-webkit-scrollbar-track {
-  background: transparent;
-}
-.planung-sf .e-schedule ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
-  border-radius: 3px;
+/* ── Heute-Spalte ── */
+.planung-sf .e-current-day {
+  background: #141414 !important;
 }
 
-/* Heute-Linie (Now Indicator) */
-.planung-sf .e-schedule .e-current-timeline {
-  border-color: #3b82f6 !important;
+.planung-sf .e-schedule .e-timeline-view .e-current-day,
+.planung-sf .e-schedule .e-timeline-month-view .e-current-day {
+  background: #141414 !important;
 }
 
-/*
- * Syncfusion-Event-Editor wird an <body> gehängt (nicht unter .planung-sf).
- * Doppelklick ist zusätzlich in PlanungsKalender abgeschaltet; hier Absicherung.
- */
-.e-schedule-dialog.e-dialog,
-.e-schedule-dialog-container {
-  display: none !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
+/* ── Ressourcen-Spalte (Projektzeilen links) ── */
+.planung-sf .e-resource-left-td {
+  background: #0f0f0f !important;
+  border-right: 1px solid #1e1e1e !important;
+  width: 220px !important;
 }
 
-/* Zeilenhöhe */
-.planung-sf .e-schedule .e-timeline-view .e-work-cells,
-.planung-sf .e-schedule .e-timeline-month-view .e-work-cells {
-  min-height: 5rem !important;
+.planung-sf .e-resource-cells {
+  background: #0f0f0f !important;
+  border-color: #1e1e1e !important;
+  color: #e4e4e7 !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
 }
 
-.planung-sf .e-schedule .e-timeline-view tbody tr:nth-child(even) .e-work-cells,
-.planung-sf .e-schedule .e-timeline-month-view tbody tr:nth-child(even) .e-work-cells {
-  background: rgba(255, 255, 255, 0.02) !important;
+/* ── Header (Datum-Zeile) ── */
+.planung-sf .e-header-cells,
+.planung-sf .e-date-header-wrap {
+  background: #0c0c0c !important;
+  border-color: #1e1e1e !important;
+  color: #52525b !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.06em !important;
 }
 
-.planung-sf .e-schedule .e-timeline-view tbody tr:nth-child(even) .e-resource-cells,
-.planung-sf .e-schedule .e-timeline-month-view tbody tr:nth-child(even) .e-resource-cells {
-  background: #141416 !important;
+.planung-sf .e-schedule .e-date-header-wrap table td {
+  background: #0c0c0c !important;
+  border-color: #1e1e1e !important;
 }
 
-/* Linke Spalte etwas breiter + klarer */
-.planung-sf .e-schedule .e-resource-left-td {
-  width: 260px !important;
-  min-width: 220px !important;
+/* ── Heute-Datum: Kreis ── */
+.planung-sf .e-current-date .e-navigate {
+  background: #ffffff !important;
+  color: #000000 !important;
+  border-radius: 50% !important;
+  width: 22px !important;
+  height: 22px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-weight: 700 !important;
 }
 
-/* Header-Zeile: Datumsspalten klarer getrennt */
-.planung-sf .e-schedule .e-date-header-container table td {
-  border-left: 1px solid rgba(255, 255, 255, 0.06) !important;
+/* ── Event-Appointments ── */
+.planung-sf .e-appointment {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 1px 2px !important;
 }
 
-/* Event-Höhe: Woche = Karten, Monat = kompakte Pills */
-.planung-sf .e-schedule .e-timeline-view:not(.e-timeline-month-view) .e-appointment {
-  min-height: 52px !important;
+.planung-sf .e-appointment.e-konflikt {
+  box-shadow: 0 0 0 2px #f97316 !important;
 }
 
-.planung-sf .e-schedule .e-timeline-month-view .e-appointment {
-  min-height: 22px !important;
+.planung-sf .e-appointment-details {
+  padding: 0 !important;
+  height: 100% !important;
 }
 
 .planung-sf .e-schedule .e-appointment .e-subject {
   display: none !important;
 }
 
-.planung-sf-event-inner {
-  min-height: 52px;
+/* ── Monat: Event-Höhe ── */
+.planung-sf .e-timeline-month-view .e-appointment {
+  height: 22px !important;
+  min-height: 22px !important;
+  margin-bottom: 2px !important;
 }
 
-.planung-sf-event-pill--kompakt {
-  min-height: 18px !important;
+/* ── Woche: Event-Mindesthöhe ── */
+.planung-sf .e-timeline-week-view .e-appointment,
+.planung-sf .e-schedule .e-timeline-view:not(.e-timeline-month-view) .e-appointment {
+  min-height: 60px !important;
+}
+
+/* ── Toolbar ── */
+.planung-sf .e-toolbar {
+  background: #0c0c0c !important;
+  border-color: #1e1e1e !important;
+}
+
+.planung-sf .e-schedule .e-current-timeline {
+  border-color: #3b82f6 !important;
+}
+
+/* ── Scrollbar ── */
+.planung-sf ::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.planung-sf ::-webkit-scrollbar-track {
+  background: #0f0f0f;
+}
+.planung-sf ::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 99px;
+}
+
+/*
+ * Syncfusion-Event-Editor an <body>
+ */
+.e-schedule-dialog.e-dialog,
+.e-schedule-dialog-container {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }

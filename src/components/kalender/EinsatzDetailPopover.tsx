@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   Activity,
   AlertTriangle,
@@ -13,6 +19,7 @@ import {
   MoreHorizontal,
   Users,
   Wrench,
+  X,
 } from "lucide-react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -34,7 +41,7 @@ function hexWithAlpha(hex: string, alphaHex: string): string {
 
 type EinsatzDetailPopoverProps = {
   einsatz: EinsatzEvent;
-  position: { top: number; left: number };
+  position: { x: number; y: number };
   onClose: () => void;
   onBearbeiten: () => void;
   onDeleteMenu: () => void;
@@ -48,10 +55,7 @@ export function EinsatzDetailPopover({
   onDeleteMenu,
 }: EinsatzDetailPopoverProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const [coords, setCoords] = useState({
-    left: position.left,
-    top: position.top,
-  });
+  const [coords, setCoords] = useState({ left: position.x, top: position.y });
 
   const projektName =
     einsatz.projects?.title?.trim() ||
@@ -81,38 +85,35 @@ export function EinsatzDetailPopover({
     einsatz.prioritaet ?? einsatz.projects?.priority
   );
 
+  /** Kritisch rot, Hoch blau, Normal/Mittel grün, Niedrig grau */
   const statusFarbe: { bg: string; text: string; label: string } =
     {
-      niedrig: { bg: "#1c2a1e", text: "#86efac", label: "Niedrig" },
-      mittel: { bg: "#166534", text: "#4ade80", label: "Geplant" },
-      hoch: { bg: "#1e3a5f", text: "#60a5fa", label: "Aktiv" },
       kritisch: { bg: "#7f1d1d", text: "#f87171", label: "Kritisch" },
-    }[priUi] ?? { bg: "#166534", text: "#4ade80", label: "Geplant" };
+      hoch: { bg: "#1e3a5f", text: "#60a5fa", label: "Hoch" },
+      mittel: { bg: "#166534", text: "#4ade80", label: "Normal" },
+      niedrig: { bg: "#27272a", text: "#a1a1aa", label: "Niedrig" },
+    }[priUi] ?? { bg: "#166534", text: "#4ade80", label: "Normal" };
+
+  const tageAnzahl = 1;
 
   useLayoutEffect(() => {
-    const w = 280;
-    const h = 420;
-    let left = position.left;
-    let top = position.top;
-    if (typeof window !== "undefined") {
-      left = Math.min(left, window.innerWidth - w - 8);
-      top = Math.min(top, window.innerHeight - h - 8);
-      left = Math.max(8, left);
-      top = Math.max(8, top);
-    }
-    setCoords({ left, top });
-  }, [position.left, position.top]);
+    if (typeof window === "undefined") return;
+    const x = Math.max(8, Math.min(position.x, window.innerWidth - 296));
+    const y = Math.max(8, Math.min(position.y, window.innerHeight - 450));
+    setCoords({ left: x, top: y });
+  }, [position.x, position.y]);
 
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      const t = e.target as HTMLElement | null;
-      if (!t) return;
-      if (ref.current?.contains(t)) return;
+    function handleClickOutside(ev: MouseEvent) {
+      const t = ev.target as Node | null;
+      if (!t || !ref.current) return;
+      if (ref.current.contains(t)) return;
+      const el = t as HTMLElement;
       if (
-        t.closest('[data-slot="dropdown-menu-content"]') ||
-        t.closest('[data-slot="dropdown-menu-portal"]') ||
-        t.closest('[data-slot="dialog-content"]') ||
-        t.closest('[data-slot="dialog-overlay"]')
+        el.closest?.('[data-slot="dropdown-menu-content"]') ||
+        el.closest?.('[data-slot="dropdown-menu-portal"]') ||
+        el.closest?.('[data-slot="dialog-content"]') ||
+        el.closest?.('[data-slot="dialog-overlay"]')
       )
         return;
       onClose();
@@ -143,7 +144,7 @@ export function EinsatzDetailPopover({
             {projektName}
           </span>
         </div>
-        <div className="flex shrink-0 gap-1">
+        <div className="flex shrink-0 items-center gap-0.5">
           <button
             type="button"
             className="rounded-md p-1 text-[#71717a] hover:bg-[#27272a] hover:text-[#e4e4e7]"
@@ -158,54 +159,54 @@ export function EinsatzDetailPopover({
           <DropdownMenu>
             <DropdownMenuTrigger
               className="rounded-md p-1 text-[#71717a] hover:bg-[#27272a] hover:text-[#e4e4e7]"
-              aria-label="Weitere Aktionen"
+              aria-label="Menü"
             >
               <MoreHorizontal size={13} />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-[9rem]">
               <DropdownMenuItem
                 className="text-red-400 focus:text-red-300"
-                onSelect={() => {
-                  onDeleteMenu();
-                }}
+                onSelect={() => onDeleteMenu()}
               >
                 Löschen
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <button
+            type="button"
+            className="rounded-md p-1 text-[#71717a] hover:bg-[#27272a] hover:text-[#e4e4e7]"
+            aria-label="Schließen"
+            onClick={onClose}
+          >
+            <X size={13} />
+          </button>
         </div>
       </div>
 
       <div className="flex flex-col gap-2.5 px-3.5 py-2.5">
-        <div className="flex items-center gap-2.5">
-          <Activity size={13} className="shrink-0 text-[#52525b]" aria-hidden />
-          <span className="w-[70px] shrink-0 text-xs text-[#71717a]">
-            Status
-          </span>
+        <Row icon={<Activity size={13} className="text-[#52525b]" />} label="Status">
           <span
             className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold"
             style={{
               color: statusFarbe.text,
-              backgroundColor: `${statusFarbe.bg}66`,
-              borderColor: `${statusFarbe.text}4d`,
+              backgroundColor: `${statusFarbe.bg}99`,
+              borderColor: `${statusFarbe.text}40`,
             }}
           >
             <span
-              className="inline-block size-[5px] rounded-full"
+              className="size-1 rounded-full"
               style={{ background: statusFarbe.text }}
             />
             {statusFarbe.label}
           </span>
-        </div>
+        </Row>
 
-        <div className="flex items-center gap-2.5">
-          <Users size={13} className="shrink-0 text-[#52525b]" aria-hidden />
-          <span className="w-[70px] shrink-0 text-xs text-[#71717a]">Team</span>
+        <Row icon={<Users size={13} className="text-[#52525b]" />} label="Team">
           <div className="flex min-w-0 items-center gap-1.5">
             <span
               className="flex size-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold"
               style={{
-                background: hexWithAlpha(teamFarbe, "30"),
+                background: hexWithAlpha(teamFarbe, "33"),
                 border: `1px solid ${teamFarbe}`,
                 color: teamFarbe,
               }}
@@ -216,38 +217,33 @@ export function EinsatzDetailPopover({
               {teamName}
             </span>
           </div>
-        </div>
+        </Row>
 
-        <div className="flex items-center gap-2.5">
-          <Calendar size={13} className="shrink-0 text-[#52525b]" aria-hidden />
-          <span className="w-[70px] shrink-0 text-xs text-[#71717a]">
-            Datum
-          </span>
+        <Row
+          icon={<Calendar size={13} className="text-[#52525b]" />}
+          label="Datum"
+        >
           <span className="text-xs text-[#e4e4e7]">
             {datum}
             <span className="text-[#71717a]"> · </span>
-            <span className="tabular-nums text-[#a1a1aa]">1 Tag</span>
+            <span className="tabular-nums text-[#a1a1aa]">
+              {tageAnzahl} {tageAnzahl === 1 ? "Tag" : "Tage"}
+            </span>
           </span>
-        </div>
+        </Row>
 
-        <div className="flex items-center gap-2.5">
-          <Clock size={13} className="shrink-0 text-[#52525b]" aria-hidden />
-          <span className="w-[70px] shrink-0 text-xs text-[#71717a]">Zeit</span>
+        <Row icon={<Clock size={13} className="text-[#52525b]" />} label="Zeit">
           <span className="text-xs tabular-nums text-[#e4e4e7]">
             {start} – {end} Uhr
           </span>
-        </div>
+        </Row>
 
         {adresseAnzeige ? (
-          <div className="flex items-start gap-2.5">
-            <MapPin
-              size={13}
-              className="mt-0.5 shrink-0 text-[#52525b]"
-              aria-hidden
-            />
-            <span className="w-[70px] shrink-0 text-xs text-[#71717a]">
-              Adresse
-            </span>
+          <Row
+            icon={<MapPin size={13} className="mt-0.5 text-[#52525b]" />}
+            label="Adresse"
+            alignStart
+          >
             <a
               href={`https://maps.google.com/?q=${encodeURIComponent(adresseAnzeige)}`}
               target="_blank"
@@ -257,19 +253,15 @@ export function EinsatzDetailPopover({
               <span className="line-clamp-3">{adresseAnzeige}</span>
               <ArrowUpRight size={10} className="shrink-0" />
             </a>
-          </div>
+          </Row>
         ) : null}
 
         {mitglieder.length > 0 ? (
-          <div className="flex items-start gap-2.5">
-            <HardHat
-              size={13}
-              className="mt-0.5 shrink-0 text-[#52525b]"
-              aria-hidden
-            />
-            <span className="w-[70px] shrink-0 text-xs text-[#71717a]">
-              Monteure
-            </span>
+          <Row
+            icon={<HardHat size={13} className="mt-0.5 text-[#52525b]" />}
+            label="Monteure"
+            alignStart
+          >
             <div className="flex min-w-0 flex-wrap gap-1">
               {mitglieder.slice(0, 3).map((m) => {
                 const parts = m.name.trim().split(/\s+/);
@@ -291,21 +283,20 @@ export function EinsatzDetailPopover({
                 </span>
               ) : null}
             </div>
-          </div>
+          </Row>
         ) : null}
 
         {dienstleister ? (
-          <div className="flex items-center gap-2.5">
-            <Wrench size={13} className="shrink-0 text-[#52525b]" aria-hidden />
-            <span className="w-[70px] shrink-0 text-xs text-[#71717a]">
-              Dienstl.
-            </span>
+          <Row
+            icon={<Wrench size={13} className="text-[#52525b]" />}
+            label="Dienstl."
+          >
             <span className="text-xs text-[#e4e4e7]">{dienstleister}</span>
-          </div>
+          </Row>
         ) : null}
 
         {einsatz.notes?.trim() ? (
-          <div className="mt-1 rounded-lg bg-[#27272a] p-2 text-[11px] leading-relaxed text-[#a1a1aa]">
+          <div className="rounded-lg bg-[#27272a] p-2 text-[11px] leading-relaxed text-[#a1a1aa]">
             {einsatz.notes.trim()}
           </div>
         ) : null}
@@ -316,7 +307,7 @@ export function EinsatzDetailPopover({
           className="flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-1"
           style={{
             background: hexWithAlpha(farbe, "15"),
-            borderColor: `${farbe}4d`,
+            borderColor: `${farbe}40`,
           }}
         >
           <span
@@ -338,6 +329,28 @@ export function EinsatzDetailPopover({
           </span>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function Row({
+  icon,
+  label,
+  children,
+  alignStart,
+}: {
+  icon: ReactNode;
+  label: string;
+  children: ReactNode;
+  alignStart?: boolean;
+}) {
+  return (
+    <div
+      className={`flex gap-2.5 ${alignStart ? "items-start" : "items-center"}`}
+    >
+      <span className="mt-0.5 shrink-0 [&>svg]:block">{icon}</span>
+      <span className="w-[70px] shrink-0 text-xs text-[#71717a]">{label}</span>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
 }

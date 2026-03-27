@@ -39,7 +39,7 @@ export function EinsatzEventDetailFloating({
     <>
       <EinsatzDetailPopover
         einsatz={zuweisung}
-        position={position}
+        position={{ x: position.left, y: position.top }}
         onClose={onClose}
         onBearbeiten={onBearbeiten}
         onDeleteMenu={() => setLoeschenOffen(true)}

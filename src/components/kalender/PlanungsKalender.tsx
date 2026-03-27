@@ -37,7 +37,7 @@ import {
   parseISO,
 } from "date-fns";
 import { de } from "date-fns/locale";
-import { CircleHelp, Clock, MapPin } from "lucide-react";
+import { CircleHelp } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { ortLabelFromProjektJoin } from "@/lib/planung/ort-label";
@@ -147,12 +147,6 @@ function prioRangUngeplant(prio: string): number {
   }
 }
 
-function hexMitAlpha(hex: string, alphaHex: string): string {
-  const h = hex.trim();
-  if (/^#[0-9A-Fa-f]{6}$/.test(h)) return `${h}${alphaHex}`;
-  return "#3b82f615";
-}
-
 function projektBalkenFarbe(z: EinsatzEvent): string {
   const pf = z.projects?.farbe?.trim();
   if (pf) return pf;
@@ -177,125 +171,198 @@ function parseTeamMitglieder(team: unknown): { id: string; name: string }[] {
   return out;
 }
 
-function EinsatzTemplate(props: Record<string, unknown>) {
-  const farbe = (props.TeamFarbe as string) ?? "#3b82f6";
-  const kritisch = Boolean(props.Kritisch);
-  const konflikt = Boolean(props.HatKonflikt);
-  const kompaktMonat = Boolean(props.KompaktMonat);
-  const projekt = String(props.ProjektTitel ?? "").trim();
-  const ort = String(props.OrtLabel ?? "").trim();
-  const rolleTag = (props.RolleTag as "Team" | "Partner") ?? "Team";
-  const rolleName = String(props.RolleName ?? "").trim();
-  const subject = String(props.Subject ?? "").trim();
-  const hauptTitel = projekt || subject.split(" · ")[0] || subject;
-  const title = [hauptTitel, rolleName, ort, String(props.ZeitLabel ?? "")]
-    .filter(Boolean)
-    .join(" · ");
-  const partnerBadge =
-    rolleTag === "Partner"
-      ? "border-violet-500/40 bg-violet-500/15 text-violet-200"
-      : "border-blue-500/40 bg-blue-500/15 text-blue-200";
+function hexSuffix(farbe: string, suf: string): string {
+  const f = farbe.trim();
+  return /^#[0-9A-Fa-f]{6}$/.test(f) ? `${f}${suf}` : "#3b82f682";
+}
 
-  if (kompaktMonat) {
-    const projektName = hauptTitel;
+function EinsatzTemplate(props: Record<string, unknown>) {
+  const e = props as SyncfusionEvent;
+  const farbe = (e.TeamFarbe as string) ?? "#3b82f6";
+  const kompakt = Boolean(e.KompaktMonat);
+  const titel =
+    String(e.ProjektTitel ?? "").trim() ||
+    String(e.Subject ?? "").split(" · ")[0] ||
+    "Einsatz";
+  const zeit = String(e.ZeitLabel ?? "");
+  const ort = String(e.OrtLabel ?? "");
+  const hatKonflikt = Boolean(e.HatKonflikt);
+  const kritisch = Boolean(e.Kritisch);
+
+  if (kompakt) {
     return (
       <div
-        className="planung-sf-event-pill--kompakt flex h-full w-full cursor-pointer items-center overflow-hidden rounded-[5px]"
         style={{
+          display: "flex",
           alignItems: "center",
-          gap: 6,
-          background: hexMitAlpha(farbe, "15"),
-          borderRadius: 5,
-          padding: "2px 6px 2px 0",
-          overflow: "hidden",
-          cursor: "pointer",
-          border: "none",
           width: "100%",
+          height: "22px",
+          borderRadius: "4px",
+          overflow: "hidden",
+          background: hexSuffix(farbe, "18"),
+          cursor: "pointer",
+          position: "relative",
         }}
-        title={projektName}
+        title={titel}
       >
         <div
           style={{
-            width: 3,
-            minHeight: 18,
+            width: "3px",
+            height: "100%",
             background: farbe,
-            borderRadius: "2px 0 0 2px",
             flexShrink: 0,
-            alignSelf: "stretch",
           }}
         />
         <span
           style={{
-            fontSize: 11,
+            fontSize: "11px",
             fontWeight: 500,
             color: "#e4e4e7",
+            padding: "0 6px",
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
             flex: 1,
+            lineHeight: "22px",
           }}
         >
-          {projektName}
+          {titel}
         </span>
+        {hatKonflikt ? (
+          <div
+            style={{
+              width: "5px",
+              height: "5px",
+              borderRadius: "50%",
+              background: "#f97316",
+              marginRight: "5px",
+              flexShrink: 0,
+            }}
+          />
+        ) : null}
       </div>
     );
   }
 
   return (
     <div
-      className="planung-sf-event-inner flex h-full min-h-[52px] w-full flex-col justify-center gap-0.5 overflow-hidden rounded-md border border-white/10 px-1.5 py-1 shadow-sm"
       style={{
-        background: `linear-gradient(135deg, ${farbe}22 0%, rgba(9,9,11,0.92) 55%)`,
-        borderLeftWidth: 3,
-        borderLeftColor: farbe,
-        boxShadow: konflikt ? `inset 0 0 0 1px rgba(249,115,22,0.55)` : undefined,
+        height: "100%",
+        borderRadius: "6px",
+        overflow: "hidden",
+        background: hexSuffix(farbe, "12"),
+        border: `1px solid ${hexSuffix(farbe, "25")}`,
+        display: "flex",
+        flexDirection: "column",
+        cursor: "pointer",
+        position: "relative",
       }}
-      title={title}
+      title={[titel, zeit, ort].filter(Boolean).join(" · ")}
     >
-      <div className="flex min-w-0 items-start gap-1">
-        {kritisch ? (
-          <span className="shrink-0 text-[10px] leading-none" aria-hidden>
-            ⚡
-          </span>
-        ) : null}
-        {konflikt ? (
-          <span
-            className="shrink-0 text-[10px] leading-none text-orange-400"
-            title="Konflikt mit Abwesenheit"
-            aria-hidden
-          >
-            ⚠
-          </span>
-        ) : null}
-        <span className="min-w-0 flex-1 truncate text-[11px] font-semibold leading-tight tracking-tight text-zinc-50">
-          {hauptTitel}
-        </span>
-      </div>
-      {rolleName ? (
-        <div className="flex min-w-0 flex-wrap items-center gap-1 pl-0.5">
-          <span
-            className={cn(
-              "shrink-0 rounded border px-1 py-px text-[8px] font-semibold uppercase tracking-wide",
-              partnerBadge
-            )}
-          >
-            {rolleTag}
-          </span>
-          <span className="min-w-0 truncate text-[10px] font-medium text-zinc-300">
-            {rolleName}
-          </span>
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: "3px",
+          background: kritisch ? "#ef4444" : farbe,
+          borderRadius: "6px 0 0 6px",
+        }}
+      />
+
+      <div style={{ padding: "6px 8px 6px 11px", flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: "12px",
+            fontWeight: 600,
+            color: "#f4f4f5",
+            lineHeight: 1.3,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            marginBottom: "4px",
+          }}
+        >
+          {titel}
         </div>
-      ) : null}
-      <div className="flex items-center gap-1 text-[10px] tabular-nums text-zinc-400">
-        <Clock className="size-2.5 shrink-0 opacity-80" aria-hidden />
-        <span className="text-zinc-300">{String(props.ZeitLabel ?? "")}</span>
-      </div>
-      {ort ? (
-        <div className="flex min-w-0 items-start gap-0.5 pl-0.5 text-[9px] leading-snug text-zinc-500">
-          <MapPin className="mt-0.5 size-2.5 shrink-0 opacity-75" aria-hidden />
-          <span className="line-clamp-2">{ort}</span>
+
+        <div
+          style={{
+            display: "flex",
+            gap: "4px",
+            flexWrap: "wrap",
+            marginBottom: "4px",
+          }}
+        >
+          {e.RolleName ? (
+            <span
+              style={{
+                fontSize: "10px",
+                fontWeight: 600,
+                color: farbe,
+                background: hexSuffix(farbe, "20"),
+                padding: "1px 5px",
+                borderRadius: "3px",
+                border: `1px solid ${hexSuffix(farbe, "30")}`,
+              }}
+            >
+              {e.RolleTag} {e.RolleName}
+            </span>
+          ) : null}
+          {hatKonflikt ? (
+            <span
+              style={{
+                fontSize: "10px",
+                fontWeight: 600,
+                color: "#f97316",
+                background: "#f9731610",
+                padding: "1px 5px",
+                borderRadius: "3px",
+                border: "1px solid #f9731630",
+              }}
+            >
+              ⚠ Konflikt
+            </span>
+          ) : null}
         </div>
-      ) : null}
+
+        {zeit ? (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+              fontSize: "10px",
+              color: "#71717a",
+            }}
+          >
+            <span>⏱</span>
+            <span style={{ fontVariantNumeric: "tabular-nums" }}>{zeit}</span>
+          </div>
+        ) : null}
+
+        {ort ? (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+              fontSize: "10px",
+              color: "#71717a",
+              marginTop: "2px",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <span>📍</span>
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+              {ort}
+            </span>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
