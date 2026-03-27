@@ -21,6 +21,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertTriangle } from "lucide-react";
 
 type Zeile = {
   id: string;
@@ -35,6 +37,7 @@ const TYPEN = [
   { value: "urlaub", label: "Urlaub" },
   { value: "krank", label: "Krank" },
   { value: "fortbildung", label: "Fortbildung" },
+  { value: "sonstiges", label: "Sonstiges" },
 ] as const;
 
 export function AbwesenheitenVerwaltung() {
@@ -47,6 +50,8 @@ export function AbwesenheitenVerwaltung() {
   const [typ, setTyp] = useState<string>("urlaub");
   const [von, setVon] = useState("");
   const [bis, setBis] = useState("");
+  const [notiz, setNotiz] = useState("");
+  const [konfliktHinweis, setKonfliktHinweis] = useState<string | null>(null);
   const [lädt, setLädt] = useState(false);
 
   const laden = useCallback(async () => {
@@ -95,18 +100,36 @@ export function AbwesenheitenVerwaltung() {
       return;
     }
     setLädt(true);
+    setKonfliktHinweis(null);
     try {
+      const { data: planTreffer, error: planErr } = await supabase
+        .from("assignments")
+        .select("id,date")
+        .eq("employee_id", maId)
+        .gte("date", von)
+        .lte("date", bis);
+      if (planErr) throw planErr;
+      const n = planTreffer?.length ?? 0;
+      if (n > 0) {
+        setKonfliktHinweis(
+          `Achtung: In diesem Zeitraum sind ${n} Einsatz/Einsätze geplant — bitte Planung prüfen.`
+        );
+      }
+
       const { error } = await supabase.from("absences").insert({
         employee_id: maId,
         type: typ,
         start_date: von,
         end_date: bis,
         status: "beantragt",
+        notes: notiz.trim() || null,
+        quelle: "manuell",
       });
       if (error) throw error;
       toast.success("Abwesenheit erfasst.");
       setVon("");
       setBis("");
+      setNotiz("");
       void laden();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Speichern fehlgeschlagen.";
@@ -177,7 +200,23 @@ export function AbwesenheitenVerwaltung() {
               onChange={(e) => setBis(e.target.value)}
             />
           </div>
+          <div className="space-y-2 sm:col-span-2 lg:col-span-3">
+            <Label htmlFor="ab-notiz">Notiz (optional)</Label>
+            <Input
+              id="ab-notiz"
+              value={notiz}
+              onChange={(e) => setNotiz(e.target.value)}
+              placeholder="Kurze Bemerkung"
+            />
+          </div>
         </div>
+        {konfliktHinweis && (
+          <Alert className="mt-4 border-amber-600/50 bg-amber-950/30">
+            <AlertTriangle className="size-4 text-amber-500" />
+            <AlertTitle>Konflikt mit Planung</AlertTitle>
+            <AlertDescription>{konfliktHinweis}</AlertDescription>
+          </Alert>
+        )}
         <Button
           type="button"
           className="mt-4"
