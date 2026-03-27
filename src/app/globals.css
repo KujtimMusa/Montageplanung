@@ -141,16 +141,19 @@
 
 /* FullCalendar: dunkles Theme in der Planung */
 .planung-fc .fc {
-  --fc-border-color: #3f3f46;
-  --fc-page-bg-color: #18181b;
-  --fc-neutral-bg-color: #27272a;
+  --fc-border-color: rgba(255, 255, 255, 0.06);
+  --fc-page-bg-color: transparent;
+  --fc-neutral-bg-color: rgba(255, 255, 255, 0.02);
   --fc-list-event-hover-bg-color: #3f3f46;
-  --fc-today-bg-color: rgba(59, 130, 246, 0.12);
+  --fc-today-bg-color: rgba(59, 130, 246, 0.06);
+  --fc-event-bg-color: transparent;
+  --fc-event-border-color: transparent;
+  --fc-resource-label-text-color: #a1a1aa;
   --fc-now-indicator-color: #ef4444;
 }
 .planung-fc .fc-theme-standard td,
 .planung-fc .fc-theme-standard th {
-  border-color: #3f3f46;
+  border-color: rgba(255, 255, 255, 0.06);
 }
 .planung-fc .fc-col-header-cell,
 .planung-fc .fc-timeline-slot-label {
@@ -158,6 +161,10 @@
 }
 .planung-fc .fc-toolbar-title {
   color: #fafafa;
+}
+.planung-fc .fc-planung-heute-kopf {
+  font-weight: 700;
+  color: rgb(96 165 250) !important;
 }
 .fc-event-konflikt .fc-event-main-frame {
   box-shadow: inset 0 0 0 2px rgb(239 68 68);

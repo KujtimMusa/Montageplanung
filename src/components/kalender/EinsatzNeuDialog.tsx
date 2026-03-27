@@ -4,18 +4,30 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { CheckIcon, ChevronsUpDownIcon } from "lucide-react";
+import {
+  AlertTriangleIcon,
+  CalendarIcon,
+  CheckIcon,
+  ChevronsUpDownIcon,
+} from "lucide-react";
+import { de } from "date-fns/locale";
+import { eachDayOfInterval, format, parseISO } from "date-fns";
+import type { DateRange } from "react-day-picker";
 import { createClient } from "@/lib/supabase/client";
-import { pruefeEinsatzKonflikt } from "@/lib/utils/conflicts";
+import {
+  pruefeAbwesenheitKonfliktText,
+  pruefeEinsatzKonflikt,
+} from "@/lib/utils/conflicts";
 import { getRepresentativeEmployeeId } from "@/lib/planung/team-representative";
+import { dbPrioritaetZuUi, uiPrioritaetZuDb } from "@/lib/utils/priority";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -35,34 +47,43 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import type {
+  BearbeitenZuweisung,
+  EinsatzPrioritaetUi,
+  ProjektOption,
+  TeamOption,
+} from "@/types/planung";
 
-const schema = z.object({
-  projekt_id: z.string().uuid("Projekt wählen."),
-  team_id: z.string().uuid("Team wählen."),
-  date: z.string().min(1, "Datum erforderlich."),
-  start_time: z.string().optional(),
-  end_time: z.string().optional(),
-  notes: z.string().optional(),
-});
+const prioritaetEnum = z.enum(["niedrig", "mittel", "hoch", "kritisch"]);
+
+const schema = z
+  .object({
+    projekt_id: z.string().uuid("Projekt wählen."),
+    team_id: z.string().uuid("Team wählen."),
+    date_von: z.string().min(1, "Von-Datum erforderlich."),
+    date_bis: z.string().min(1, "Bis-Datum erforderlich."),
+    start_time: z.string().optional(),
+    end_time: z.string().optional(),
+    notes: z.string().optional(),
+    prioritaet: prioritaetEnum,
+  })
+  .refine((d) => d.date_von <= d.date_bis, {
+    message: "Ende muss nach oder gleich Start sein.",
+    path: ["date_bis"],
+  });
 
 export type EinsatzFormularWerte = z.infer<typeof schema>;
 
-export type TeamOption = { id: string; name: string; farbe: string };
-export type ProjektOption = { id: string; title: string };
-
-export type BearbeitenZuweisung = {
-  id: string;
-  employee_id: string;
-  project_id: string | null;
-  team_id: string | null;
-  date: string;
-  start_time: string;
-  end_time: string;
-  notes: string | null;
-};
+export type { TeamOption, ProjektOption, BearbeitenZuweisung };
 
 function normalisiereUhrzeit(eingabe: string | undefined, fallback: string): string {
   const e = (eingabe ?? "").trim();
@@ -77,6 +98,30 @@ function normalisiereUhrzeit(eingabe: string | undefined, fallback: string): str
   }
   return fallback;
 }
+
+const STATUS_BADGE: Record<string, string> = {
+  neu: "bg-zinc-700 text-zinc-200",
+  geplant: "bg-blue-900/50 text-blue-200",
+  aktiv: "bg-emerald-900/40 text-emerald-200",
+  abgeschlossen: "bg-zinc-800 text-zinc-400",
+};
+
+function statusLabel(s: string) {
+  const m: Record<string, string> = {
+    neu: "Neu",
+    geplant: "Geplant",
+    aktiv: "Aktiv",
+    abgeschlossen: "Abgeschlossen",
+  };
+  return m[s] ?? s;
+}
+
+const PRIORITAET_FARBE: Record<EinsatzPrioritaetUi, string> = {
+  niedrig: "bg-zinc-500",
+  mittel: "bg-blue-500",
+  hoch: "bg-orange-500",
+  kritisch: "bg-red-500",
+};
 
 type Props = {
   open: boolean;
@@ -109,52 +154,83 @@ export function EinsatzNeuDialog({
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const [konfliktText, setKonfliktText] = useState<string | null>(null);
+  const [abwesenheitWarnung, setAbwesenheitWarnung] = useState<string | null>(
+    null
+  );
   const [comboOffen, setComboOffen] = useState(false);
+  const [rangeOpen, setRangeOpen] = useState(false);
 
   const form = useForm<EinsatzFormularWerte>({
     resolver: zodResolver(schema),
     defaultValues: {
       projekt_id: "",
       team_id: "",
-      date: "",
+      date_von: "",
+      date_bis: "",
       start_time: "",
       end_time: "",
       notes: "",
+      prioritaet: "mittel",
     },
   });
+
+  const dateVon = form.watch("date_von");
+  const dateBis = form.watch("date_bis");
+
+  const rangeSelected: DateRange | undefined = useMemo(() => {
+    if (!dateVon) return undefined;
+    try {
+      const from = parseISO(dateVon);
+      const to = dateBis ? parseISO(dateBis) : from;
+      return { from, to };
+    } catch {
+      return undefined;
+    }
+  }, [dateVon, dateBis]);
 
   useEffect(() => {
     if (!open) return;
     setKonfliktText(null);
+    setAbwesenheitWarnung(null);
     if (bearbeiten) {
+      const pri = dbPrioritaetZuUi(
+        bearbeiten.prioritaet ??
+          projekte.find((x) => x.id === bearbeiten.project_id)?.priority
+      );
       form.reset({
         projekt_id: bearbeiten.project_id ?? "",
         team_id: bearbeiten.team_id ?? "",
-        date: bearbeiten.date,
+        date_von: bearbeiten.date,
+        date_bis: bearbeiten.date,
         start_time: bearbeiten.start_time.slice(0, 5),
         end_time: bearbeiten.end_time.slice(0, 5),
         notes: bearbeiten.notes ?? "",
+        prioritaet: pri,
       });
     } else if (vorgaben) {
       form.reset({
         projekt_id: vorgaben.projekt_id ?? "",
         team_id: vorgaben.team_id,
-        date: vorgaben.date,
+        date_von: vorgaben.date,
+        date_bis: vorgaben.date,
         start_time: vorgaben.start_time ?? "08:00",
         end_time: vorgaben.end_time ?? "16:00",
         notes: "",
+        prioritaet: "mittel",
       });
     } else {
       form.reset({
         projekt_id: "",
         team_id: "",
-        date: "",
+        date_von: "",
+        date_bis: "",
         start_time: "08:00",
         end_time: "16:00",
         notes: "",
+        prioritaet: "mittel",
       });
     }
-  }, [open, bearbeiten, vorgaben, formularSchluessel, form]);
+  }, [open, bearbeiten, vorgaben, formularSchluessel, form, projekte]);
 
   async function benachrichtigungFireAndForget(
     teamId: string,
@@ -192,8 +268,10 @@ export function EinsatzNeuDialog({
 
   async function onSubmit(werte: EinsatzFormularWerte) {
     setKonfliktText(null);
+    setAbwesenheitWarnung(null);
     const startNorm = normalisiereUhrzeit(werte.start_time, "08:00:00");
     const endNorm = normalisiereUhrzeit(werte.end_time, "16:00:00");
+    const prioritaetDb = uiPrioritaetZuDb(werte.prioritaet);
 
     const empId = await getRepresentativeEmployeeId(supabase, werte.team_id);
     if (!empId) {
@@ -201,65 +279,138 @@ export function EinsatzNeuDialog({
       return;
     }
 
-    const k = await pruefeEinsatzKonflikt(supabase, {
+    const abwText = await pruefeAbwesenheitKonfliktText(supabase, {
       mitarbeiterId: empId,
-      datum: werte.date,
-      startZeit: startNorm,
-      endZeit: endNorm,
-      ausserhalbEinsatzId: bearbeiten?.id,
+      von: werte.date_von,
+      bis: werte.date_bis,
     });
-
-    if (k.hatKonflikt) {
-      setKonfliktText(k.nachricht);
+    if (abwText) {
+      setAbwesenheitWarnung(abwText);
       return;
     }
 
     if (bearbeiten) {
+      const k = await pruefeEinsatzKonflikt(supabase, {
+        mitarbeiterId: empId,
+        datum: werte.date_von,
+        startZeit: startNorm,
+        endZeit: endNorm,
+        ausserhalbEinsatzId: bearbeiten.id,
+      });
+      if (k.hatKonflikt) {
+        setKonfliktText(k.nachricht);
+        return;
+      }
+
+      const updatePayload: Record<string, unknown> = {
+        employee_id: empId,
+        project_id: werte.projekt_id,
+        project_title: null,
+        team_id: werte.team_id,
+        date: werte.date_von,
+        start_time: startNorm,
+        end_time: endNorm,
+        notes: werte.notes?.trim() || null,
+        prioritaet: prioritaetDb,
+      };
+
       const { error } = await supabase
         .from("assignments")
-        .update({
-          employee_id: empId,
-          project_id: werte.projekt_id,
-          project_title: null,
-          team_id: werte.team_id,
-          date: werte.date,
-          start_time: startNorm,
-          end_time: endNorm,
-          notes: werte.notes?.trim() || null,
-        })
+        .update(updatePayload)
         .eq("id", bearbeiten.id);
 
       if (error) {
-        toast.error(error.message);
-        return;
+        if (error.message.includes("prioritaet") || error.code === "42703") {
+          delete updatePayload.prioritaet;
+          const { error: e2 } = await supabase
+            .from("assignments")
+            .update(updatePayload)
+            .eq("id", bearbeiten.id);
+          if (e2) {
+            toast.error(e2.message);
+            return;
+          }
+        } else {
+          toast.error(error.message);
+          return;
+        }
       }
+
+      await supabase
+        .from("projects")
+        .update({ priority: prioritaetDb })
+        .eq("id", werte.projekt_id);
+
       toast.success("Einsatz gespeichert.");
       onOpenChange(false);
       onGespeichert();
       return;
     }
 
-    const payload: Record<string, unknown> = {
+    const tage = eachDayOfInterval({
+      start: parseISO(werte.date_von),
+      end: parseISO(werte.date_bis),
+    });
+
+    for (const tag of tage) {
+      const d = format(tag, "yyyy-MM-dd");
+      const k = await pruefeEinsatzKonflikt(supabase, {
+        mitarbeiterId: empId,
+        datum: d,
+        startZeit: startNorm,
+        endZeit: endNorm,
+      });
+      if (k.hatKonflikt) {
+        setKonfliktText(`${k.nachricht} (Datum ${format(tag, "dd.MM.yyyy")})`);
+        return;
+      }
+    }
+
+    const insertBase: Record<string, unknown> = {
       employee_id: empId,
       project_id: werte.projekt_id,
       project_title: null,
       team_id: werte.team_id,
-      date: werte.date,
       start_time: startNorm,
       end_time: endNorm,
       notes: werte.notes?.trim() || null,
+      prioritaet: prioritaetDb,
     };
-    if (eigeneMitarbeiterId) payload.created_by = eigeneMitarbeiterId;
+    if (eigeneMitarbeiterId) insertBase.created_by = eigeneMitarbeiterId;
 
-    const { error } = await supabase.from("assignments").insert(payload);
-    if (error) {
-      toast.error(error.message);
-      return;
+    for (const tag of tage) {
+      const d = format(tag, "yyyy-MM-dd");
+      const payload: Record<string, unknown> = { ...insertBase, date: d };
+      const { error } = await supabase.from("assignments").insert(payload);
+      if (error) {
+        if (error.message.includes("prioritaet") || error.code === "42703") {
+          delete payload.prioritaet;
+          const { error: e2 } = await supabase.from("assignments").insert(payload);
+          if (e2) {
+            toast.error(e2.message);
+            return;
+          }
+        } else {
+          toast.error(error.message);
+          return;
+        }
+      }
     }
 
-    toast.success("Einsatz gespeichert.");
+    await supabase
+      .from("projects")
+      .update({ priority: prioritaetDb })
+      .eq("id", werte.projekt_id);
+
+    toast.success(
+      tage.length > 1 ? `${tage.length} Einsätze gespeichert.` : "Einsatz gespeichert."
+    );
     try {
-      void benachrichtigungFireAndForget(werte.team_id, werte.projekt_id, werte.date);
+      void benachrichtigungFireAndForget(
+        werte.team_id,
+        werte.projekt_id,
+        werte.date_von
+      );
     } catch {
       /* nicht blockieren */
     }
@@ -282,20 +433,35 @@ export function EinsatzNeuDialog({
   const titel = bearbeiten ? "Einsatz bearbeiten" : "Neuer Einsatz";
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto border-zinc-700 bg-zinc-900 sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="text-zinc-50">{titel}</DialogTitle>
-        </DialogHeader>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className="flex w-full flex-col border-zinc-800 bg-zinc-950 sm:max-w-[500px]"
+      >
+        <SheetHeader>
+          <SheetTitle className="text-zinc-50">{titel}</SheetTitle>
+        </SheetHeader>
 
-        {konfliktText && (
-          <Alert variant="destructive" className="border-red-900 bg-red-950/40">
+        {(konfliktText || abwesenheitWarnung) && (
+          <Alert variant="destructive" className="border-red-900/80 bg-red-950/35">
+            <AlertTriangleIcon className="size-4 shrink-0" />
             <AlertTitle>Konflikt</AlertTitle>
-            <AlertDescription>{konfliktText}</AlertDescription>
+            <AlertDescription>
+              {abwesenheitWarnung && (
+                <span>
+                  {abwesenheitWarnung.startsWith("⚠") ? "" : "⚠ "}
+                  {abwesenheitWarnung}
+                </span>
+              )}
+              {konfliktText && <span>{konfliktText}</span>}
+            </AlertDescription>
           </Alert>
         )}
 
-        <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-3 py-2">
+        <form
+          onSubmit={form.handleSubmit(onSubmit)}
+          className="flex flex-1 flex-col gap-3 overflow-y-auto py-2"
+        >
           <div className="space-y-2">
             <Label className="text-zinc-300">Projekt</Label>
             <Controller
@@ -309,25 +475,60 @@ export function EinsatzNeuDialog({
                     )}
                     nativeButton
                   >
-                    <span className="truncate">
-                      {field.value
-                        ? projekte.find((p) => p.id === field.value)?.title ?? "Projekt wählen"
-                        : "Projekt suchen …"}
+                    <span className="flex min-w-0 flex-1 items-center gap-2 truncate">
+                      {field.value ? (
+                        <>
+                          <span className="truncate">
+                            {projekte.find((p) => p.id === field.value)?.title ??
+                              "Projekt"}
+                          </span>
+                          {(() => {
+                            const p = projekte.find((x) => x.id === field.value);
+                            if (!p) return null;
+                            return (
+                              <>
+                                <Badge
+                                  variant="secondary"
+                                  className={cn(
+                                    "shrink-0 text-[10px]",
+                                    STATUS_BADGE[p.status] ?? "bg-zinc-800"
+                                  )}
+                                >
+                                  {statusLabel(p.status)}
+                                </Badge>
+                                <span
+                                  className={cn(
+                                    "size-2 shrink-0 rounded-full",
+                                    PRIORITAET_FARBE[dbPrioritaetZuUi(p.priority)]
+                                  )}
+                                  title="Priorität"
+                                />
+                              </>
+                            );
+                          })()}
+                        </>
+                      ) : (
+                        "Projekt suchen …"
+                      )}
                     </span>
                     <ChevronsUpDownIcon className="ml-2 size-4 shrink-0 opacity-50" />
                   </PopoverTrigger>
                   <PopoverContent className="w-[var(--anchor-width)] p-0" align="start">
                     <Command>
-                      <CommandInput placeholder="Suchen …" />
+                      <CommandInput placeholder="Titel oder Kunde …" />
                       <CommandList>
                         <CommandEmpty>Kein Treffer.</CommandEmpty>
                         <CommandGroup>
                           {projekte.map((p) => (
                             <CommandItem
                               key={p.id}
-                              value={`${p.title} ${p.id}`}
+                              value={`${p.title} ${p.customerLabel} ${p.id}`}
                               onSelect={() => {
                                 field.onChange(p.id);
+                                form.setValue(
+                                  "prioritaet",
+                                  dbPrioritaetZuUi(p.priority)
+                                );
                                 setComboOffen(false);
                               }}
                             >
@@ -337,7 +538,31 @@ export function EinsatzNeuDialog({
                                   field.value === p.id ? "opacity-100" : "opacity-0"
                                 )}
                               />
-                              {p.title}
+                              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                                <span className="flex items-center gap-2 truncate font-medium">
+                                  {p.title}
+                                  <Badge
+                                    variant="secondary"
+                                    className={cn(
+                                      "text-[10px]",
+                                      STATUS_BADGE[p.status] ?? "bg-zinc-800"
+                                    )}
+                                  >
+                                    {statusLabel(p.status)}
+                                  </Badge>
+                                  <span
+                                    className={cn(
+                                      "size-2 rounded-full",
+                                      PRIORITAET_FARBE[dbPrioritaetZuUi(p.priority)]
+                                    )}
+                                  />
+                                </span>
+                                {p.customerLabel ? (
+                                  <span className="truncate text-xs text-zinc-500">
+                                    {p.customerLabel}
+                                  </span>
+                                ) : null}
+                              </span>
                             </CommandItem>
                           ))}
                         </CommandGroup>
@@ -348,7 +573,9 @@ export function EinsatzNeuDialog({
               )}
             />
             {form.formState.errors.projekt_id && (
-              <p className="text-xs text-red-400">{form.formState.errors.projekt_id.message}</p>
+              <p className="text-xs text-red-400">
+                {form.formState.errors.projekt_id.message}
+              </p>
             )}
           </div>
 
@@ -378,30 +605,61 @@ export function EinsatzNeuDialog({
                 </Select>
               )}
             />
-            {form.formState.errors.team_id && (
-              <p className="text-xs text-red-400">{form.formState.errors.team_id.message}</p>
-            )}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="einsatz-datum" className="text-zinc-300">
-              Datum
-            </Label>
-            <Input
-              id="einsatz-datum"
-              type="date"
-              className="border-zinc-700 bg-zinc-950"
-              {...form.register("date")}
-            />
-            {form.formState.errors.date && (
-              <p className="text-xs text-red-400">{form.formState.errors.date.message}</p>
+            <Label className="text-zinc-300">Zeitraum</Label>
+            <Popover open={rangeOpen} onOpenChange={setRangeOpen}>
+              <PopoverTrigger
+                className={cn(
+                  "inline-flex h-9 w-full items-center justify-start gap-2 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100"
+                )}
+                nativeButton
+              >
+                <CalendarIcon className="size-4 opacity-60" />
+                {dateVon ? (
+                  dateBis && dateBis !== dateVon ? (
+                    <>
+                      {format(parseISO(dateVon), "dd.MM.yyyy", { locale: de })} –{" "}
+                      {format(parseISO(dateBis), "dd.MM.yyyy", { locale: de })}
+                    </>
+                  ) : (
+                    format(parseISO(dateVon), "dd.MM.yyyy", { locale: de })
+                  )
+                ) : (
+                  "Datum wählen"
+                )}
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="range"
+                  locale={de}
+                  numberOfMonths={1}
+                  selected={rangeSelected}
+                  onSelect={(r) => {
+                    if (!r?.from) return;
+                    form.setValue("date_von", format(r.from, "yyyy-MM-dd"));
+                    form.setValue(
+                      "date_bis",
+                      format(r.to ?? r.from, "yyyy-MM-dd")
+                    );
+                    if (r.to) setRangeOpen(false);
+                  }}
+                />
+              </PopoverContent>
+            </Popover>
+            {(form.formState.errors.date_von || form.formState.errors.date_bis) && (
+              <p className="text-xs text-red-400">
+                {form.formState.errors.date_von?.message ??
+                  form.formState.errors.date_bis?.message}
+              </p>
             )}
           </div>
 
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-2">
               <Label htmlFor="einsatz-start" className="text-zinc-300">
-                Start (optional)
+                Start
               </Label>
               <Input
                 id="einsatz-start"
@@ -412,7 +670,7 @@ export function EinsatzNeuDialog({
             </div>
             <div className="space-y-2">
               <Label htmlFor="einsatz-ende" className="text-zinc-300">
-                Ende (optional)
+                Ende
               </Label>
               <Input
                 id="einsatz-ende"
@@ -421,6 +679,43 @@ export function EinsatzNeuDialog({
                 {...form.register("end_time")}
               />
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-zinc-300">Priorität</Label>
+            <Controller
+              control={form.control}
+              name="prioritaet"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger className="border-zinc-700 bg-zinc-950">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(
+                      [
+                        "niedrig",
+                        "mittel",
+                        "hoch",
+                        "kritisch",
+                      ] as EinsatzPrioritaetUi[]
+                    ).map((p) => (
+                      <SelectItem key={p} value={p}>
+                        <span className="flex items-center gap-2">
+                          <span
+                            className={cn("size-2 rounded-full", PRIORITAET_FARBE[p])}
+                          />
+                          {p === "niedrig" && "Niedrig"}
+                          {p === "mittel" && "Mittel"}
+                          {p === "hoch" && "Hoch"}
+                          {p === "kritisch" && "Kritisch"}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
           </div>
 
           <div className="space-y-2">
@@ -436,7 +731,7 @@ export function EinsatzNeuDialog({
             />
           </div>
 
-          <DialogFooter className="flex-col gap-2 sm:flex-row">
+          <SheetFooter className="mt-auto flex-col gap-2 border-t border-zinc-800 pt-4 sm:flex-row">
             {bearbeiten && (
               <Button
                 type="button"
@@ -458,9 +753,9 @@ export function EinsatzNeuDialog({
             <Button type="submit" disabled={form.formState.isSubmitting}>
               {form.formState.isSubmitting ? "Speichern…" : "Speichern"}
             </Button>
-          </DialogFooter>
+          </SheetFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }

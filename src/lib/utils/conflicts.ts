@@ -80,3 +80,48 @@ function zeitZuMinuten(t: string): number {
   const ss = Number.isFinite(s) ? s : 0;
   return hh * 60 + mm + ss / 60;
 }
+
+const TYP_LABEL: Record<string, string> = {
+  urlaub: "Urlaub",
+  krank: "Krank",
+  fortbildung: "Fortbildung",
+  sonstiges: "Sonstiges",
+};
+
+/**
+ * Liefert Warn-Text, wenn der Mitarbeiter im Zeitraum [von, bis] abwesend ist (Datums-Strings yyyy-MM-dd).
+ */
+export async function pruefeAbwesenheitKonfliktText(
+  supabase: SupabaseClient,
+  parameter: {
+    mitarbeiterId: string;
+    von: string;
+    bis: string;
+  }
+): Promise<string | null> {
+  const { mitarbeiterId, von, bis } = parameter;
+
+  const { data: rows, error } = await supabase
+    .from("absences")
+    .select("start_date,end_date,type,employees(name)")
+    .eq("employee_id", mitarbeiterId)
+    .lte("start_date", bis)
+    .gte("end_date", von);
+
+  if (error || !rows?.length) return null;
+
+  const row = rows[0];
+  const e = row.employees as
+    | { name?: string }
+    | { name?: string }[]
+    | null;
+  const name = Array.isArray(e) ? e[0]?.name : e?.name;
+  const nm = (name as string) ?? "Mitarbeiter";
+  const typ = TYP_LABEL[row.type as string] ?? (row.type as string) ?? "Abwesenheit";
+  const fmt = (d: string) => {
+    const [y, m, day] = d.split("-");
+    return `${day}.${m}.${y}`;
+  };
+
+  return `${nm} ist vom ${fmt(row.start_date as string)} bis ${fmt(row.end_date as string)} abwesend (${typ}).`;
+}
