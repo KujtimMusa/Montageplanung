@@ -1,12 +1,19 @@
 import { createClient } from "@/lib/supabase/server";
 
+export type AngestellterRolle =
+  | "admin"
+  | "abteilungsleiter"
+  | "teamleiter"
+  | "monteur";
+
 export type AngestellterProfil = {
   id: string;
   name: string;
   email: string | null;
-  role: string;
+  role: AngestellterRolle;
   active: boolean;
   department_id: string | null;
+  auth_user_id: string | null;
 };
 
 /**
@@ -28,7 +35,7 @@ export async function ladeAngestelltenProfil(): Promise<AngestellterProfil | nul
 
   const { data, error } = await supabase
     .from("employees")
-    .select("id,name,email,role,active,department_id")
+    .select("id,name,email,role,active,department_id,auth_user_id")
     .eq("auth_user_id", user.id)
     .maybeSingle();
 
@@ -36,15 +43,26 @@ export async function ladeAngestelltenProfil(): Promise<AngestellterProfil | nul
   return data as AngestellterProfil;
 }
 
-/** Admin / Abteilungsleiter: Einladungen, API-Rollen, sensible Admin-Endpunkte */
+export function istAdmin(rolle: string | undefined): boolean {
+  return rolle === "admin";
+}
+
+export function darfAlles(rolle: string | undefined): boolean {
+  return rolle === "admin";
+}
+
 export function darfMitarbeiterVerwalten(rolle: string | undefined): boolean {
   return rolle === "admin" || rolle === "abteilungsleiter";
 }
 
-/**
- * Leitung: Teams, Kalender-Steuerung, Stammdaten — jede Rolle außer „monteur“.
- */
-export function darfLeitungPersonal(rolle: string | undefined): boolean {
-  if (!rolle) return false;
-  return rolle !== "monteur";
+export function darfTeamsVerwalten(rolle: string | undefined): boolean {
+  return (
+    rolle === "admin" ||
+    rolle === "abteilungsleiter" ||
+    rolle === "teamleiter"
+  );
+}
+
+export function istNurMonteur(rolle: string | undefined): boolean {
+  return rolle === "monteur";
 }
