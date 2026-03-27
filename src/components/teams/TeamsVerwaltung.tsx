@@ -16,13 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Sheet,
-  SheetContent,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   Dialog,
   DialogContent,
@@ -528,24 +522,24 @@ export function TeamsVerwaltung() {
       <Sheet open={teamSheetOffen} onOpenChange={setTeamSheetOffen}>
         <SheetContent
           side="right"
-          className="w-full border-zinc-800 bg-zinc-950 sm:max-w-md"
+          className="flex w-full max-h-[90dvh] flex-col gap-0 overflow-y-auto border-zinc-800 bg-zinc-950 p-0 shadow-2xl sm:max-w-md"
         >
           <form
             onSubmit={teamF.handleSubmit((d) => void teamSpeichern(d))}
-            className="flex h-full flex-col"
+            className="flex flex-col"
           >
-            <SheetHeader>
-              <SheetTitle>
+            <SheetHeader className="sticky top-0 z-10 border-b border-zinc-800/80 bg-zinc-950/95 px-4 pb-3 pt-4 pr-12 backdrop-blur-sm">
+              <SheetTitle className="text-lg">
                 {bearbeitenTeamId ? "Team bearbeiten" : "Neues Team"}
               </SheetTitle>
             </SheetHeader>
-            <div className="flex-1 space-y-4 overflow-y-auto py-4">
+            <div className="space-y-5 px-4 py-5">
               <div className="space-y-2">
                 <Label htmlFor="t-name">Name *</Label>
                 <Input
                   id="t-name"
                   {...teamF.register("name")}
-                  className="border-zinc-700 bg-zinc-900"
+                  className="h-10 w-full border-zinc-700/90 bg-zinc-900/80"
                 />
                 {teamF.formState.errors.name && (
                   <p className="text-xs text-destructive">
@@ -564,11 +558,11 @@ export function TeamsVerwaltung() {
                     )
                   }
                 >
-                  <SelectTrigger className="border-zinc-700 bg-zinc-900">
-                    <SelectValue placeholder="Wählen" />
+                  <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-900/80">
+                    <SelectValue placeholder="Abteilung wählen" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">—</SelectItem>
+                    <SelectItem value="__none__">Bitte Abteilung wählen</SelectItem>
                     {abteilungen.map((a) => (
                       <SelectItem key={a.id} value={a.id}>
                         {a.name}
@@ -592,7 +586,7 @@ export function TeamsVerwaltung() {
                     onChange={(e) => teamF.setValue("farbe", e.target.value)}
                   />
                   <Input
-                    className="border-zinc-700 bg-zinc-900 font-mono text-sm"
+                    className="h-10 min-w-0 flex-1 border-zinc-700/90 bg-zinc-900/80 font-mono text-sm"
                     value={teamF.watch("farbe")}
                     onChange={(e) => teamF.setValue("farbe", e.target.value)}
                   />
@@ -609,11 +603,11 @@ export function TeamsVerwaltung() {
                     )
                   }
                 >
-                  <SelectTrigger className="border-zinc-700 bg-zinc-900">
+                  <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-900/80">
                     <SelectValue placeholder="Optional" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">—</SelectItem>
+                    <SelectItem value="__none__">Kein Teamleiter</SelectItem>
                     {koordinatoren.map((k) => (
                       <SelectItem key={k.id} value={k.id}>
                         {k.name}
@@ -627,13 +621,15 @@ export function TeamsVerwaltung() {
                 <Textarea
                   id="t-desc"
                   {...teamF.register("beschreibung")}
-                  className="min-h-[80px] border-zinc-700 bg-zinc-900"
+                  className="min-h-[88px] w-full resize-y border-zinc-700/90 bg-zinc-900/80"
                 />
               </div>
             </div>
-            <SheetFooter className="border-t border-zinc-800 pt-4">
-              <Button type="submit">Speichern</Button>
-            </SheetFooter>
+            <div className="sticky bottom-0 border-t border-zinc-800/90 bg-zinc-950/95 px-4 py-4 backdrop-blur-sm">
+              <Button type="submit" className="w-full sm:w-auto">
+                Speichern
+              </Button>
+            </div>
           </form>
         </SheetContent>
       </Sheet>
@@ -644,15 +640,15 @@ export function TeamsVerwaltung() {
       >
         <SheetContent
           side="right"
-          className="flex w-full flex-col border-zinc-800 bg-zinc-950 sm:max-w-[400px]"
+          className="flex w-full max-h-[90dvh] flex-col gap-0 overflow-y-auto border-zinc-800 bg-zinc-950 p-0 sm:max-w-[400px]"
         >
-          <SheetHeader>
-            <SheetTitle>
+          <SheetHeader className="border-b border-zinc-800/80 px-4 pb-3 pt-4 pr-12">
+            <SheetTitle className="text-base">
               {drawerTeam ? `${drawerTeam.name} – Mitglieder` : "Mitglieder"}
             </SheetTitle>
           </SheetHeader>
-          <div className="flex flex-1 flex-col gap-4 overflow-hidden py-2">
-            <div className="max-h-[45vh] space-y-2 overflow-y-auto">
+          <div className="flex flex-col gap-4 px-4 py-4">
+            <div className="max-h-[min(50vh,420px)] space-y-2 overflow-y-auto pr-1">
               {drawerTeam &&
                 (mitgliederNachTeam[drawerTeam.id] ?? []).length === 0 && (
                   <p className="text-sm text-muted-foreground">

@@ -41,14 +41,14 @@ export function TeamsBereich() {
   }
 
   return (
-    <Card className="overflow-hidden border-zinc-800/80 bg-zinc-900/35 shadow-xl ring-1 ring-white/5">
-      <CardHeader className="space-y-1 border-b border-zinc-800/80 bg-zinc-900/50 pb-4">
-        <CardTitle className="text-base font-semibold text-zinc-100">
+    <Card className="overflow-hidden border-zinc-800/80 bg-zinc-900/40 shadow-xl ring-1 ring-white/[0.06]">
+      <CardHeader className="space-y-1 border-b border-zinc-800/80 px-5 pb-4 pt-5 sm:px-6">
+        <CardTitle className="text-base font-semibold tracking-tight text-zinc-100">
           Stammdaten
         </CardTitle>
-        <CardDescription className="text-zinc-500">
-          Wechsle zwischen Mitarbeitern, Teams und Abteilungen — der aktive Tab
-          wird in der URL gespeichert.
+        <CardDescription className="text-sm text-zinc-500">
+          Mitarbeiter, Teams und Abteilungen — der gewählte Bereich bleibt in der
+          Adresszeile erhalten.
         </CardDescription>
       </CardHeader>
       <CardContent className="p-0">
@@ -57,48 +57,47 @@ export function TeamsBereich() {
           onValueChange={onTabChange}
           className="w-full gap-0"
         >
-          <TabsList
-            variant="line"
-            className={cn(
-              "h-auto w-full justify-start gap-0 rounded-none border-b border-zinc-800/80 bg-transparent p-0"
-            )}
-          >
-            <TabsTrigger
-              value="mitarbeiter"
+          <div className="border-b border-zinc-800/80 px-4 py-3 sm:px-5">
+            <TabsList
+              variant="default"
               className={cn(
-                "relative flex-1 gap-2 rounded-none border-0 bg-transparent py-3 text-zinc-500 shadow-none",
-                "data-active:bg-transparent data-active:text-zinc-50",
-                "data-active:after:absolute data-active:after:bottom-0 data-active:after:left-2 data-active:after:right-2 data-active:after:h-0.5 data-active:after:rounded-full data-active:after:bg-sky-500"
+                "grid h-auto w-full max-w-xl grid-cols-3 gap-1 rounded-lg bg-zinc-950/80 p-1 ring-1 ring-zinc-800/90"
               )}
             >
-              <Users className="size-4 opacity-80" aria-hidden />
-              Mitarbeiter
-            </TabsTrigger>
-            <TabsTrigger
-              value="teams"
-              className={cn(
-                "relative flex-1 gap-2 rounded-none border-0 bg-transparent py-3 text-zinc-500 shadow-none",
-                "data-active:bg-transparent data-active:text-zinc-50",
-                "data-active:after:absolute data-active:after:bottom-0 data-active:after:left-2 data-active:after:right-2 data-active:after:h-0.5 data-active:after:rounded-full data-active:after:bg-sky-500"
-              )}
-            >
-              <UsersRound className="size-4 opacity-80" aria-hidden />
-              Teams
-            </TabsTrigger>
-            <TabsTrigger
-              value="abteilungen"
-              className={cn(
-                "relative flex-1 gap-2 rounded-none border-0 bg-transparent py-3 text-zinc-500 shadow-none",
-                "data-active:bg-transparent data-active:text-zinc-50",
-                "data-active:after:absolute data-active:after:bottom-0 data-active:after:left-2 data-active:after:right-2 data-active:after:h-0.5 data-active:after:rounded-full data-active:after:bg-sky-500"
-              )}
-            >
-              <Building2 className="size-4 opacity-80" aria-hidden />
-              Abteilungen
-            </TabsTrigger>
-          </TabsList>
+              <TabsTrigger
+                value="mitarbeiter"
+                className={cn(
+                  "gap-2 py-2.5 text-xs font-medium text-zinc-400 shadow-none sm:text-sm",
+                  "data-active:bg-zinc-800 data-active:text-zinc-50 data-active:shadow-sm"
+                )}
+              >
+                <Users className="size-4 shrink-0 opacity-90" aria-hidden />
+                <span className="truncate">Mitarbeiter</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="teams"
+                className={cn(
+                  "gap-2 py-2.5 text-xs font-medium text-zinc-400 shadow-none sm:text-sm",
+                  "data-active:bg-zinc-800 data-active:text-zinc-50 data-active:shadow-sm"
+                )}
+              >
+                <UsersRound className="size-4 shrink-0 opacity-90" aria-hidden />
+                <span className="truncate">Teams</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="abteilungen"
+                className={cn(
+                  "gap-2 py-2.5 text-xs font-medium text-zinc-400 shadow-none sm:text-sm",
+                  "data-active:bg-zinc-800 data-active:text-zinc-50 data-active:shadow-sm"
+                )}
+              >
+                <Building2 className="size-4 shrink-0 opacity-90" aria-hidden />
+                <span className="truncate">Abteilungen</span>
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
-          <div className="bg-zinc-950/40 p-4 md:p-6">
+          <div className="px-4 py-5 sm:px-6 sm:py-6">
             <TabsContent value="mitarbeiter" className="mt-0 outline-none">
               <MitarbeiterVerwaltung />
             </TabsContent>

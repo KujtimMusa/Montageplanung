@@ -30,13 +30,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Sheet,
-  SheetContent,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
@@ -452,12 +446,12 @@ export function MitarbeiterVerwaltung() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 rounded-xl border border-zinc-800/80 bg-zinc-900/30 p-4 ring-1 ring-white/[0.03] md:flex-row md:flex-wrap md:items-center">
+      <div className="grid grid-cols-1 gap-3 rounded-xl border border-zinc-800/70 bg-zinc-900/25 p-4 sm:grid-cols-2 lg:grid-cols-4">
         <Input
           placeholder="Suche nach Name…"
           value={suche}
           onChange={(e) => setSuche(e.target.value)}
-          className="max-w-sm border-zinc-700 bg-zinc-950/80"
+          className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-950/90 sm:col-span-2 lg:col-span-1"
         />
         <Select
           value={typFilter}
@@ -465,7 +459,7 @@ export function MitarbeiterVerwaltung() {
             setTypFilter((v ?? "alle") as "alle" | "monteur" | "koordinator")
           }
         >
-          <SelectTrigger className="w-full md:w-[180px] border-zinc-700 bg-zinc-950">
+          <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-950/90">
             <SelectValue placeholder="Typ" />
           </SelectTrigger>
           <SelectContent>
@@ -478,7 +472,7 @@ export function MitarbeiterVerwaltung() {
           value={abteilungFilter}
           onValueChange={(v) => setAbteilungFilter(v ?? "alle")}
         >
-          <SelectTrigger className="w-full md:w-[200px] border-zinc-700 bg-zinc-950">
+          <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-950/90">
             <SelectValue placeholder="Abteilung" />
           </SelectTrigger>
           <SelectContent>
@@ -494,7 +488,7 @@ export function MitarbeiterVerwaltung() {
           value={teamFilter}
           onValueChange={(v) => setTeamFilter(v ?? "alle")}
         >
-          <SelectTrigger className="w-full md:w-[200px] border-zinc-700 bg-zinc-950">
+          <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-950/90">
             <SelectValue placeholder="Team" />
           </SelectTrigger>
           <SelectContent>
@@ -639,24 +633,24 @@ export function MitarbeiterVerwaltung() {
       <Sheet open={monteurSheetOffen} onOpenChange={setMonteurSheetOffen}>
         <SheetContent
           side="right"
-          className="w-full border-zinc-800 bg-zinc-950 sm:max-w-md"
+          className="flex w-full max-h-[90dvh] flex-col gap-0 overflow-y-auto border-zinc-800 bg-zinc-950 p-0 shadow-2xl sm:max-w-md"
         >
           <form
             onSubmit={monteurF.handleSubmit((d) => void monteurSpeichern(d))}
-            className="flex h-full flex-col"
+            className="flex flex-col"
           >
-            <SheetHeader>
-              <SheetTitle>
+            <SheetHeader className="sticky top-0 z-10 border-b border-zinc-800/80 bg-zinc-950/95 px-4 pb-3 pt-4 pr-12 backdrop-blur-sm">
+              <SheetTitle className="text-lg">
                 {bearbeitenId ? "Monteur bearbeiten" : "Monteur hinzufügen"}
               </SheetTitle>
             </SheetHeader>
-            <div className="flex-1 space-y-4 overflow-y-auto py-4">
+            <div className="space-y-5 px-4 py-5">
               <div className="space-y-2">
                 <Label htmlFor="m-name">Name *</Label>
                 <Input
                   id="m-name"
                   {...monteurF.register("name")}
-                  className="border-zinc-700 bg-zinc-900"
+                  className="h-10 w-full border-zinc-700/90 bg-zinc-900/80"
                 />
                 {monteurF.formState.errors.name && (
                   <p className="text-xs text-destructive">
@@ -670,7 +664,7 @@ export function MitarbeiterVerwaltung() {
                   id="m-phone"
                   placeholder="+49 151…"
                   {...monteurF.register("phone")}
-                  className="border-zinc-700 bg-zinc-900"
+                  className="h-10 w-full border-zinc-700/90 bg-zinc-900/80"
                 />
               </div>
               <div className="space-y-2">
@@ -679,7 +673,7 @@ export function MitarbeiterVerwaltung() {
                   id="m-wa"
                   placeholder="+49 151…"
                   {...monteurF.register("whatsapp")}
-                  className="border-zinc-700 bg-zinc-900"
+                  className="h-10 w-full border-zinc-700/90 bg-zinc-900/80"
                 />
                 <p className="text-xs text-muted-foreground">
                   Für Einsatz-Benachrichtigungen
@@ -695,11 +689,11 @@ export function MitarbeiterVerwaltung() {
                     monteurF.setValue("team_id", "");
                   }}
                 >
-                  <SelectTrigger className="border-zinc-700 bg-zinc-900">
-                    <SelectValue placeholder="Optional" />
+                  <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-900/80">
+                    <SelectValue placeholder="Abteilung wählen" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">—</SelectItem>
+                    <SelectItem value="__none__">Keine Abteilung</SelectItem>
                     {abteilungen.map((a) => (
                       <SelectItem key={a.id} value={a.id}>
                         {a.name}
@@ -719,11 +713,11 @@ export function MitarbeiterVerwaltung() {
                     )
                   }
                 >
-                  <SelectTrigger className="border-zinc-700 bg-zinc-900">
-                    <SelectValue placeholder="Optional" />
+                  <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-900/80">
+                    <SelectValue placeholder="Team wählen" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">—</SelectItem>
+                    <SelectItem value="__none__">Kein Team</SelectItem>
                     {teamsGefiltert.map((t) => (
                       <SelectItem key={t.id} value={t.id}>
                         {t.name}
@@ -745,7 +739,7 @@ export function MitarbeiterVerwaltung() {
                       }
                     }}
                     placeholder="Eingabe + Enter"
-                    className="border-zinc-700 bg-zinc-900"
+                    className="h-10 w-full border-zinc-700/90 bg-zinc-900/80"
                   />
                 </div>
                 <div className="flex flex-wrap gap-1">
@@ -763,9 +757,11 @@ export function MitarbeiterVerwaltung() {
                 </div>
               </div>
             </div>
-            <SheetFooter className="border-t border-zinc-800 pt-4">
-              <Button type="submit">Speichern</Button>
-            </SheetFooter>
+            <div className="sticky bottom-0 border-t border-zinc-800/90 bg-zinc-950/95 px-4 py-4 backdrop-blur-sm">
+              <Button type="submit" className="w-full sm:w-auto">
+                Speichern
+              </Button>
+            </div>
           </form>
         </SheetContent>
       </Sheet>

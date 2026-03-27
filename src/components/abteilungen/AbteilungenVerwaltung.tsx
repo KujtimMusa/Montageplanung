@@ -325,21 +325,21 @@ export function AbteilungenVerwaltung() {
       >
         <SheetContent
           side="right"
-          className="w-full border-zinc-800 bg-zinc-950 sm:max-w-md"
+          className="flex w-full max-h-[90dvh] flex-col gap-0 overflow-y-auto border-zinc-800 bg-zinc-950 p-0 shadow-2xl sm:max-w-md"
         >
-          <SheetHeader>
-            <SheetTitle>
+          <SheetHeader className="sticky top-0 z-10 border-b border-zinc-800/80 bg-zinc-950/95 px-4 pb-3 pt-4 pr-12 backdrop-blur-sm">
+            <SheetTitle className="text-lg">
               {bearbeitenId ? "Abteilung bearbeiten" : "Neue Abteilung"}
             </SheetTitle>
           </SheetHeader>
-          <div className="flex flex-1 flex-col gap-4 overflow-y-auto py-4">
+          <div className="space-y-5 px-4 py-5">
             <div className="space-y-2">
               <Label htmlFor="ab-name">Name *</Label>
               <Input
                 id="ab-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="border-zinc-700 bg-zinc-900"
+                className="h-10 w-full border-zinc-700/90 bg-zinc-900/80"
               />
             </div>
             <div className="space-y-2">
@@ -347,21 +347,21 @@ export function AbteilungenVerwaltung() {
               <div className="flex items-center gap-2">
                 <Input
                   type="color"
-                  className="h-10 w-14 cursor-pointer p-1"
+                  className="h-10 w-14 shrink-0 cursor-pointer p-1"
                   value={farbe}
                   onChange={(e) => setFarbe(e.target.value)}
                 />
                 <Input
                   value={farbe}
                   onChange={(e) => setFarbe(e.target.value)}
-                  className="border-zinc-700 bg-zinc-900 font-mono text-sm"
+                  className="h-10 min-w-0 flex-1 border-zinc-700/90 bg-zinc-900/80 font-mono text-sm"
                 />
               </div>
             </div>
             <div className="space-y-2">
               <Label>Icon</Label>
               <Select value={icon} onValueChange={(v) => setIcon(v ?? "Wrench")}>
-                <SelectTrigger className="border-zinc-700 bg-zinc-900">
+                <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-900/80">
                   <SelectValue>
                     <IconOption name={icon} />
                   </SelectValue>
@@ -376,7 +376,7 @@ export function AbteilungenVerwaltung() {
               </Select>
             </div>
           </div>
-          <SheetFooter className="flex-col gap-2 border-t border-zinc-800 sm:flex-row sm:justify-between">
+          <SheetFooter className="sticky bottom-0 border-t border-zinc-800/90 bg-zinc-950/95 backdrop-blur-sm flex-col gap-2 sm:flex-row sm:justify-between">
             {bearbeitenId && (
               <Button
                 type="button"
