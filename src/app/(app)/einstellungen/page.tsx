@@ -9,7 +9,8 @@ export default function EinstellungenSeite() {
           Einstellungen
         </h1>
         <p className="text-sm text-zinc-400">
-          Kurzanleitung, Kunden, Abteilungen, Abwesenheiten und Integrationen.
+          Integrationen (Twilio, Teams, Personio, Resend, Gemini), Benachrichtigungen
+          und Profil — Werte in der Datenbank <code className="text-zinc-500">settings</code>.
         </p>
       </div>
       <Suspense
