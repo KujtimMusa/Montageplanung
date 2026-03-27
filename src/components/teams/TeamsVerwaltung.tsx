@@ -107,7 +107,13 @@ function initialen(name: string): string {
   return name.slice(0, 2).toUpperCase() || "?";
 }
 
-export function TeamsVerwaltung() {
+type TeamsVerwaltungProps = {
+  onDatenGeaendert?: () => void;
+};
+
+export function TeamsVerwaltung({
+  onDatenGeaendert,
+}: TeamsVerwaltungProps = {}) {
   const supabase = useMemo(() => createClient(), []);
   const [teams, setTeams] = useState<TeamRow[]>([]);
   const [mitglieder, setMitglieder] = useState<Mitglied[]>([]);
@@ -237,8 +243,9 @@ export function TeamsVerwaltung() {
       );
     } finally {
       setLaedt(false);
+      onDatenGeaendert?.();
     }
-  }, [supabase]);
+  }, [supabase, onDatenGeaendert]);
 
   useEffect(() => {
     void laden();

@@ -32,7 +32,6 @@ import {
 } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Loader2, Pencil, Plus, Trash2, Users } from "lucide-react";
@@ -42,7 +41,16 @@ import { cn } from "@/lib/utils";
 import { StammdatenSection } from "@/components/stammdaten/StammdatenSection";
 import { StammdatenFilterBar } from "@/components/stammdaten/StammdatenFilterBar";
 import { StammdatenSheetFooter } from "@/components/stammdaten/StammdatenSheetFooter";
-import { STAMMDATEN_FILTER_INPUT } from "@/components/stammdaten/stammdatenKlassen";
+import {
+  STAMMDATEN_FILTER_INPUT,
+  STAMMDATEN_FORM_INPUT,
+  STAMMDATEN_FORM_SELECT_TRIGGER,
+} from "@/components/stammdaten/stammdatenKlassen";
+import { StammdatenFormField } from "@/components/stammdaten/StammdatenFormField";
+import {
+  MITARBEITER_ROLLEN_OPTIONS,
+  rolleLabel,
+} from "@/lib/rollen";
 
 type Zeile = {
   id: string;
@@ -71,13 +79,6 @@ const monteurSchema = z.object({
 
 type MonteurForm = z.infer<typeof monteurSchema>;
 
-const koordinatorRollen = [
-  { wert: "admin", label: "Admin" },
-  { wert: "abteilungsleiter", label: "Abteilungsleiter" },
-  { wert: "teamleiter", label: "Teamleiter" },
-  { wert: "monteur", label: "Mitarbeiter (Ausführung)" },
-] as const;
-
 function apiFehler(json: { error?: string; fehler?: string }): string {
   return json.error ?? json.fehler ?? "Unbekannter Fehler.";
 }
@@ -87,14 +88,10 @@ function darfAlleMitarbeiterVerwalten(rolle: string | undefined): boolean {
   return rolle === "admin" || rolle === "abteilungsleiter";
 }
 
-function rollenLabel(rolle: string): string {
-  const m: Record<string, string> = {
-    admin: "Admin",
-    abteilungsleiter: "Abteilungsleiter",
-    teamleiter: "Teamleiter",
-    monteur: "Mitarbeiter (Ausführung)",
-  };
-  return m[rolle] ?? rolle;
+function initialenAusName(name: string): string {
+  const p = name.trim().split(/\s+/).filter(Boolean);
+  if (p.length >= 2) return (p[0]![0]! + p[1]![0]!).toUpperCase();
+  return name.slice(0, 2).toUpperCase() || "?";
 }
 
 function zeileAusSupabase(
@@ -126,7 +123,13 @@ function zeileAusSupabase(
   };
 }
 
-export function MitarbeiterVerwaltung() {
+type MitarbeiterVerwaltungProps = {
+  onDatenGeaendert?: () => void;
+};
+
+export function MitarbeiterVerwaltung({
+  onDatenGeaendert,
+}: MitarbeiterVerwaltungProps = {}) {
   const supabase = useMemo(() => createClient(), []);
   const [zeilen, setZeilen] = useState<Zeile[]>([]);
   const [abteilungen, setAbteilungen] = useState<{ id: string; name: string }[]>(
@@ -249,8 +252,9 @@ export function MitarbeiterVerwaltung() {
       );
     } finally {
       setLaedt(false);
+      onDatenGeaendert?.();
     }
-  }, [supabase]);
+  }, [supabase, onDatenGeaendert]);
 
   useEffect(() => {
     void laden();
@@ -617,15 +621,31 @@ export function MitarbeiterVerwaltung() {
         <div className="overflow-x-auto rounded-md border border-zinc-800">
           <Table>
             <TableHeader>
-              <TableRow className="border-zinc-800 hover:bg-transparent">
-                <TableHead>Name</TableHead>
-                <TableHead>Typ</TableHead>
-                <TableHead>Abteilung</TableHead>
-                <TableHead>Team</TableHead>
-                <TableHead>Telefon</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Rolle</TableHead>
-                <TableHead className="text-right">Aktionen</TableHead>
+              <TableRow className="border-0 hover:bg-transparent">
+                <TableHead className="text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 pb-3 px-2">
+                  Name
+                </TableHead>
+                <TableHead className="text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 pb-3 px-2">
+                  Typ
+                </TableHead>
+                <TableHead className="text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 pb-3 px-2">
+                  Abteilung
+                </TableHead>
+                <TableHead className="text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 pb-3 px-2">
+                  Team
+                </TableHead>
+                <TableHead className="text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 pb-3 px-2">
+                  Telefon
+                </TableHead>
+                <TableHead className="text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 pb-3 px-2">
+                  Status
+                </TableHead>
+                <TableHead className="text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 pb-3 px-2">
+                  Rolle
+                </TableHead>
+                <TableHead className="pb-3 px-2 text-right text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                  Aktionen
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -642,9 +662,18 @@ export function MitarbeiterVerwaltung() {
                 gefilterteZeilen.map((z) => {
                   const istKoordinator = z.auth_user_id !== null;
                   return (
-                    <TableRow key={z.id} className="border-zinc-800">
+                    <TableRow
+                      key={z.id}
+                      className="group border-b border-zinc-800/40 transition-colors hover:bg-zinc-900/50"
+                    >
                       <TableCell className="font-medium">
                         <span className="inline-flex flex-wrap items-center gap-2">
+                          <div
+                            className="flex size-7 shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-zinc-800 text-xs font-bold text-zinc-400"
+                            aria-hidden
+                          >
+                            {initialenAusName(z.name)}
+                          </div>
                           {z.name}
                           {authUserId && z.auth_user_id === authUserId ? (
                             <Badge
@@ -670,9 +699,10 @@ export function MitarbeiterVerwaltung() {
                       </TableCell>
                       <TableCell>
                         {z.active ? (
-                          <Badge className="bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/25">
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-900/50 bg-emerald-950 px-2 py-0.5 text-xs font-semibold text-emerald-400">
+                            <span className="size-1.5 animate-pulse rounded-full bg-emerald-400" />
                             Aktiv
-                          </Badge>
+                          </span>
                         ) : (
                           <Badge variant="secondary">Inaktiv</Badge>
                         )}
@@ -691,9 +721,9 @@ export function MitarbeiterVerwaltung() {
                               (eigeneZeile &&
                                 (z.role === "monteur" || z.role === "teamleiter"));
                             const optionen = darfAlle
-                              ? koordinatorRollen
-                              : koordinatorRollen.filter((r) =>
-                                  ["monteur", "teamleiter"].includes(r.wert)
+                              ? MITARBEITER_ROLLEN_OPTIONS
+                              : MITARBEITER_ROLLEN_OPTIONS.filter((r) =>
+                                  ["monteur", "teamleiter"].includes(r.value)
                                 );
                             return kannDropdown ? (
                               <Select
@@ -702,12 +732,12 @@ export function MitarbeiterVerwaltung() {
                                   if (v) void rolleAendern(z.id, v);
                                 }}
                               >
-                                <SelectTrigger className="h-8 min-w-[12rem] max-w-[220px] border-zinc-600">
+                                <SelectTrigger className="h-8 min-w-[12rem] max-w-[220px] border-zinc-800 bg-zinc-900 text-zinc-100 hover:bg-zinc-800/50 focus:ring-zinc-600/50">
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {optionen.map((r) => (
-                                    <SelectItem key={r.wert} value={r.wert}>
+                                    <SelectItem key={r.value} value={r.value}>
                                       {r.label}
                                     </SelectItem>
                                   ))}
@@ -715,22 +745,22 @@ export function MitarbeiterVerwaltung() {
                               </Select>
                             ) : (
                               <span className="text-muted-foreground">
-                                {rollenLabel(z.role)}
+                                {rolleLabel(z.role)}
                               </span>
                             );
                           })()
                         ) : (
                           <span className="text-muted-foreground">
-                            {rollenLabel(z.role)}
+                            {rolleLabel(z.role)}
                           </span>
                         )}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right opacity-0 transition-opacity group-hover:opacity-100">
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="size-8"
+                          className="size-8 rounded-md text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
                           onClick={() => {
                             if (istKoordinator) {
                               setKoorBearbeiten(z);
@@ -741,16 +771,16 @@ export function MitarbeiterVerwaltung() {
                           }}
                           title="Bearbeiten"
                         >
-                          <Pencil className="size-4" />
+                          <Pencil className="size-[13px]" />
                         </Button>
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="size-8 text-destructive"
+                          className="size-8 rounded-md text-zinc-500 hover:bg-red-950 hover:text-red-400"
                           onClick={() => setLoeschenId(z.id)}
                         >
-                          <Trash2 className="size-4" />
+                          <Trash2 className="size-[13px]" />
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -773,48 +803,47 @@ export function MitarbeiterVerwaltung() {
             })}
             className="flex flex-col"
           >
-            <SheetHeader className="sticky top-0 z-10 border-b border-zinc-800/80 bg-zinc-950/95 px-4 pb-3 pt-4 pr-12 backdrop-blur-sm">
-              <SheetTitle className="text-lg">
-                {bearbeitenId ? "Mitarbeiter bearbeiten" : "Mitarbeiter hinzufügen"}
+            <SheetHeader className="sticky top-0 z-10 border-b border-zinc-800/60 bg-zinc-950/95 px-6 pb-4 pt-6 pr-14 backdrop-blur-sm">
+              <SheetTitle className="text-base font-semibold text-zinc-100">
+                {bearbeitenId ? "Mitarbeiter bearbeiten" : "Neuen Mitarbeiter hinzufügen"}
               </SheetTitle>
+              <p className="mt-0.5 text-sm text-zinc-500">
+                Stammdaten für die Montageplanung und Benachrichtigungen.
+              </p>
             </SheetHeader>
-            <div className="space-y-5 px-4 py-5">
-              <div className="space-y-2">
-                <Label htmlFor="m-name">Name *</Label>
+            <div className="space-y-4 px-6 py-5">
+              <StammdatenFormField label="Name *">
                 <Input
                   id="m-name"
                   {...monteurF.register("name")}
-                  className="h-10 w-full border-zinc-700/90 bg-zinc-900/80"
+                  className={STAMMDATEN_FORM_INPUT}
                 />
                 {monteurF.formState.errors.name && (
                   <p className="text-xs text-destructive">
                     {monteurF.formState.errors.name.message}
                   </p>
                 )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="m-phone">Telefon</Label>
+              </StammdatenFormField>
+              <StammdatenFormField label="Telefon">
                 <Input
                   id="m-phone"
                   placeholder="+49 151…"
                   {...monteurF.register("phone")}
-                  className="h-10 w-full border-zinc-700/90 bg-zinc-900/80"
+                  className={STAMMDATEN_FORM_INPUT}
                 />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="m-wa">WhatsApp</Label>
+              </StammdatenFormField>
+              <StammdatenFormField
+                label="WhatsApp"
+                hint="Für Einsatz-Benachrichtigungen"
+              >
                 <Input
                   id="m-wa"
                   placeholder="+49 151…"
                   {...monteurF.register("whatsapp")}
-                  className="h-10 w-full border-zinc-700/90 bg-zinc-900/80"
+                  className={STAMMDATEN_FORM_INPUT}
                 />
-                <p className="text-xs text-muted-foreground">
-                  Für Einsatz-Benachrichtigungen
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label>Abteilung</Label>
+              </StammdatenFormField>
+              <StammdatenFormField label="Abteilung">
                 <Select
                   value={monteurF.watch("department_id") || "__none__"}
                   onValueChange={(v) => {
@@ -823,7 +852,9 @@ export function MitarbeiterVerwaltung() {
                     monteurF.setValue("team_id", "");
                   }}
                 >
-                  <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-900/80">
+                  <SelectTrigger
+                    className={cn(STAMMDATEN_FORM_SELECT_TRIGGER, "h-10 rounded-lg")}
+                  >
                     <SelectValue placeholder="Abteilung wählen" />
                   </SelectTrigger>
                   <SelectContent>
@@ -835,9 +866,8 @@ export function MitarbeiterVerwaltung() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Team</Label>
+              </StammdatenFormField>
+              <StammdatenFormField label="Team">
                 <Select
                   value={monteurF.watch("team_id") || "__none__"}
                   onValueChange={(v) =>
@@ -847,7 +877,9 @@ export function MitarbeiterVerwaltung() {
                     )
                   }
                 >
-                  <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-900/80">
+                  <SelectTrigger
+                    className={cn(STAMMDATEN_FORM_SELECT_TRIGGER, "h-10 rounded-lg")}
+                  >
                     <SelectValue placeholder="Team wählen" />
                   </SelectTrigger>
                   <SelectContent>
@@ -859,24 +891,21 @@ export function MitarbeiterVerwaltung() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Qualifikationen</Label>
-                <div className="flex gap-2">
-                  <Input
-                    value={tagInput}
-                    onChange={(e) => setTagInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        qualifikationHinzufuegen();
-                      }
-                    }}
-                    placeholder="Eingabe + Enter"
-                    className="h-10 w-full border-zinc-700/90 bg-zinc-900/80"
-                  />
-                </div>
-                <div className="flex flex-wrap gap-1">
+              </StammdatenFormField>
+              <StammdatenFormField label="Qualifikationen">
+                <Input
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      qualifikationHinzufuegen();
+                    }
+                  }}
+                  placeholder="Eingabe + Enter"
+                  className={STAMMDATEN_FORM_INPUT}
+                />
+                <div className="flex flex-wrap gap-1 pt-1">
                   {qualifikationen.map((q) => (
                     <Badge
                       key={q}
@@ -889,7 +918,7 @@ export function MitarbeiterVerwaltung() {
                     </Badge>
                   ))}
                 </div>
-              </div>
+              </StammdatenFormField>
             </div>
             <StammdatenSheetFooter
               onCancel={() => setMonteurSheetOffen(false)}
@@ -903,22 +932,25 @@ export function MitarbeiterVerwaltung() {
         open={!!koorBearbeiten}
         onOpenChange={(o) => !o && setKoorBearbeiten(null)}
       >
-        <DialogContent className="border-zinc-800 bg-zinc-950">
-          <DialogHeader>
-            <DialogTitle>Koordinator</DialogTitle>
-            <DialogDescription>
+        <DialogContent className="max-w-md overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 p-0">
+          <DialogHeader className="border-b border-zinc-800/60 px-6 pb-4 pt-6 text-left">
+            <DialogTitle className="text-base font-semibold text-zinc-100">
+              Koordinator
+            </DialogTitle>
+            <DialogDescription className="text-sm text-zinc-500">
               Status für {koorBearbeiten?.name ?? ""}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1">
-              <Label>E-Mail</Label>
-              <p className="text-sm text-muted-foreground">
+          <div className="space-y-4 px-6 py-5">
+            <StammdatenFormField label="E-Mail">
+              <p className="text-sm text-zinc-400">
                 {koorBearbeiten?.email ?? "—"}
               </p>
-            </div>
+            </StammdatenFormField>
             <div className="flex items-center justify-between gap-4">
-              <Label htmlFor="koor-aktiv">Aktiv</Label>
+              <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                Aktiv
+              </span>
               <Switch
                 id="koor-aktiv"
                 checked={koorAktiv}
@@ -926,16 +958,18 @@ export function MitarbeiterVerwaltung() {
               />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="border-t border-zinc-800/60 px-6 pb-6 pt-3">
             <Button
               type="button"
-              variant="secondary"
+              variant="ghost"
+              className="text-zinc-400"
               onClick={() => setKoorBearbeiten(null)}
             >
               Abbrechen
             </Button>
             <Button
               type="button"
+              className="bg-zinc-100 font-semibold text-zinc-900 hover:bg-white"
               onClick={() => void koorAktivSpeichern()}
               disabled={koorSpeichert}
             >
@@ -950,26 +984,38 @@ export function MitarbeiterVerwaltung() {
       </Dialog>
 
       <Dialog open={koordinatorOffen} onOpenChange={setKoordinatorOffen}>
-        <DialogContent className="border-zinc-800 bg-zinc-950">
-          <DialogHeader>
-            <DialogTitle>Koordinator einladen</DialogTitle>
-            <DialogDescription>
+        <DialogContent className="max-w-md overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 p-0">
+          <DialogHeader className="border-b border-zinc-800/60 px-6 pb-4 pt-6 text-left">
+            <DialogTitle className="text-base font-semibold text-zinc-100">
+              Koordinator einladen
+            </DialogTitle>
+            <DialogDescription className="text-sm text-zinc-500">
               Der Eingeladene erhält eine E-Mail und kann sich dann einloggen.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 py-2">
-            <Label htmlFor="k-email">E-Mail *</Label>
-            <Input
-              id="k-email"
-              type="email"
-              value={koordinatorEmail}
-              onChange={(e) => setKoordinatorEmail(e.target.value)}
-              className="border-zinc-700 bg-zinc-900"
-            />
+          <div className="px-6 py-5">
+            <StammdatenFormField label="E-Mail *">
+              <Input
+                id="k-email"
+                type="email"
+                value={koordinatorEmail}
+                onChange={(e) => setKoordinatorEmail(e.target.value)}
+                className={STAMMDATEN_FORM_INPUT}
+              />
+            </StammdatenFormField>
           </div>
-          <DialogFooter>
+          <DialogFooter className="border-t border-zinc-800/60 px-6 pb-6 pt-3">
             <Button
               type="button"
+              variant="ghost"
+              className="text-zinc-400"
+              onClick={() => setKoordinatorOffen(false)}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="button"
+              className="bg-zinc-100 font-semibold text-zinc-900 hover:bg-white"
               onClick={() => void koordinatorEinladen()}
               disabled={koordinatorLaedt}
             >
@@ -984,17 +1030,20 @@ export function MitarbeiterVerwaltung() {
       </Dialog>
 
       <Dialog open={!!loeschenId} onOpenChange={(o) => !o && setLoeschenId(null)}>
-        <DialogContent className="border-zinc-800 bg-zinc-950">
-          <DialogHeader>
-            <DialogTitle>Eintrag löschen?</DialogTitle>
-            <DialogDescription>
+        <DialogContent className="max-w-md overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 p-0">
+          <DialogHeader className="border-b border-zinc-800/60 px-6 pb-4 pt-6 text-left">
+            <DialogTitle className="text-base font-semibold text-zinc-100">
+              Eintrag löschen?
+            </DialogTitle>
+            <DialogDescription className="text-sm text-zinc-500">
               Diese Aktion kann nicht rückgängig gemacht werden.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2">
+          <DialogFooter className="px-6 pb-6 pt-3">
             <Button
               type="button"
-              variant="secondary"
+              variant="ghost"
+              className="text-zinc-400"
               onClick={() => setLoeschenId(null)}
             >
               Abbrechen

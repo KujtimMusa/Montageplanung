@@ -6,6 +6,8 @@ export type Abwesenheit = {
   id: string;
   employee_id: string;
   employee_name: string;
+  /** Rohwert aus der DB (z. B. Personio-Synonyme) für Badge-Farben */
+  type_raw: string;
   type: AbwesenheitTyp;
   start_date: string;
   end_date: string;

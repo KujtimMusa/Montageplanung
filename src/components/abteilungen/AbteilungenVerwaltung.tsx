@@ -101,7 +101,13 @@ function IconOption({ name }: { name: string }) {
   );
 }
 
-export function AbteilungenVerwaltung() {
+type AbteilungenVerwaltungProps = {
+  onDatenGeaendert?: () => void;
+};
+
+export function AbteilungenVerwaltung({
+  onDatenGeaendert,
+}: AbteilungenVerwaltungProps = {}) {
   const supabase = useMemo(() => createClient(), []);
   const [zeilen, setZeilen] = useState<Zeile[]>([]);
   const [sheetOffen, setSheetOffen] = useState(false);
@@ -150,8 +156,9 @@ export function AbteilungenVerwaltung() {
       toast.error(nachrichtAusUnbekannt(e, "Laden fehlgeschlagen."));
     } finally {
       setListeLaedt(false);
+      onDatenGeaendert?.();
     }
-  }, [supabase]);
+  }, [supabase, onDatenGeaendert]);
 
   useEffect(() => {
     void laden();

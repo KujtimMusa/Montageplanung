@@ -14,8 +14,10 @@ import {
   Palmtree,
   Pencil,
   Plus,
+  Search,
   Thermometer,
   Trash2,
+  X,
 } from "lucide-react";
 import {
   differenceInCalendarDays,
@@ -38,16 +40,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Sheet,
   SheetContent,
@@ -105,9 +97,17 @@ const schema = z
     path: ["end_date"],
   });
 
+/** Datumsschlüssel YYYY-MM-DD (auch bei ISO-Timestamps aus der API) */
+function toDateKey(d: string): string {
+  if (!d) return d;
+  const t = d.indexOf("T");
+  if (t > 0) return d.slice(0, 10);
+  return d.length >= 10 ? d.slice(0, 10) : d;
+}
+
 function formatDatum(iso: string): string {
   try {
-    return format(parseISO(iso), "dd.MM.yyyy", { locale: de });
+    return format(parseISO(toDateKey(iso)), "dd.MM.yyyy", { locale: de });
   } catch {
     return iso;
   }
@@ -116,11 +116,26 @@ function formatDatum(iso: string): string {
 function berecheDauer(start: string, end: string): number {
   try {
     return (
-      differenceInCalendarDays(parseISO(end), parseISO(start)) + 1
+      differenceInCalendarDays(parseISO(toDateKey(end)), parseISO(toDateKey(start))) +
+      1
     );
   } catch {
     return 0;
   }
+}
+
+function formatZeitraum(start: string, end: string): string {
+  const s = parseISO(toDateKey(start));
+  const e = parseISO(toDateKey(end));
+  const days = berecheDauer(start, end);
+  const tagLabel = days === 1 ? "1 Tag" : `${days} Tage`;
+  if (format(s, "yyyy-MM-dd") === format(e, "yyyy-MM-dd")) {
+    return `${format(s, "d. MMMM yyyy", { locale: de })} · ${tagLabel}`;
+  }
+  if (s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear()) {
+    return `${format(s, "d.", { locale: de })} – ${format(e, "d. MMMM yyyy", { locale: de })} · ${tagLabel}`;
+  }
+  return `${format(s, "d. MMM yyyy", { locale: de })} – ${format(e, "d. MMM yyyy", { locale: de })} · ${tagLabel}`;
 }
 
 function normalisiereTyp(raw: string): AbwesenheitTyp {
@@ -129,7 +144,12 @@ function normalisiereTyp(raw: string): AbwesenheitTyp {
 }
 
 function normalisiereStatus(raw: string): AbwesenheitStatus {
-  const s = raw as AbwesenheitStatus;
+  const u = String(raw ?? "").toLowerCase().trim();
+  if (["genehmigt", "approved", "genehmig"].includes(u)) return "genehmigt";
+  if (["abgelehnt", "rejected", "declined"].includes(u)) return "abgelehnt";
+  if (["beantragt", "ausstehend", "pending", "offen"].includes(u))
+    return "beantragt";
+  const s = u as AbwesenheitStatus;
   return ABWESENHEIT_STATUS.some((x) => x.value === s) ? s : "beantragt";
 }
 
@@ -139,8 +159,85 @@ function intervalleUeberlappen(
   bStart: string,
   bEnd: string
 ): boolean {
-  return aStart <= bEnd && aEnd >= bStart;
+  const as = toDateKey(aStart);
+  const ae = toDateKey(aEnd);
+  const bs = toDateKey(bStart);
+  const be = toDateKey(bEnd);
+  return as <= be && ae >= bs;
 }
+
+function mitarbeiterInitialen(name: string): string {
+  const p = name.trim().split(/\s+/).filter(Boolean);
+  if (p.length >= 2)
+    return `${p[0]!.charAt(0)}${p[1]!.charAt(0)}`.toUpperCase();
+  return name.slice(0, 2).toUpperCase() || "—";
+}
+
+const STATUS_STYLE: Record<
+  AbwesenheitStatus,
+  {
+    bg: string;
+    text: string;
+    border: string;
+    pulse: boolean;
+    label: string;
+  }
+> = {
+  beantragt: {
+    bg: "bg-amber-950",
+    text: "text-amber-400",
+    border: "border-amber-900/50",
+    pulse: true,
+    label: "Ausstehend",
+  },
+  genehmigt: {
+    bg: "bg-emerald-950",
+    text: "text-emerald-400",
+    border: "border-emerald-900/50",
+    pulse: false,
+    label: "Genehmigt",
+  },
+  abgelehnt: {
+    bg: "bg-red-950",
+    text: "text-red-400",
+    border: "border-red-900/50",
+    pulse: false,
+    label: "Abgelehnt",
+  },
+};
+
+function typBadgeMeta(typeRaw: string, norm: AbwesenheitTyp): {
+  label: string;
+  className: string;
+} {
+  const r = typeRaw.toLowerCase().trim();
+  if (["bezahlter_urlaub", "urlaubstag", "urlaub"].includes(r))
+    return { label: "Urlaub", className: "bg-blue-950 text-blue-300 border-blue-900/50" };
+  if (["krank", "krankheit", "krankmeldung"].includes(r))
+    return { label: "Krank", className: "bg-red-950 text-red-300 border-red-900/50" };
+  if (r.includes("kind") && r.includes("krank"))
+    return { label: typeRaw || "Kind krank", className: "bg-pink-950 text-pink-300 border-pink-900/50" };
+  if (r.includes("eltern"))
+    return { label: "Elternzeit", className: "bg-violet-950 text-violet-300 border-violet-900/50" };
+  if (r.includes("freizeit") || r.includes("gleitzeit"))
+    return { label: "Freizeitausgleich", className: "bg-emerald-950 text-emerald-300 border-emerald-900/50" };
+  const fromEnum = ABWESENHEIT_TYPEN.find((t) => t.value === norm);
+  if (norm === "fortbildung")
+    return {
+      label: fromEnum?.label ?? "Fortbildung",
+      className: "bg-violet-950 text-violet-300 border-violet-900/50",
+    };
+  if (norm === "urlaub")
+    return { label: "Urlaub", className: "bg-blue-950 text-blue-300 border-blue-900/50" };
+  if (norm === "krank")
+    return { label: "Krank", className: "bg-red-950 text-red-300 border-red-900/50" };
+  return {
+    label: fromEnum?.label ?? "Sonstiges",
+    className: "bg-zinc-800 text-zinc-300 border-zinc-700/50",
+  };
+}
+
+type FilterTyp = "all" | "urlaub" | "krank" | "sonstige";
 
 export function AbwesenheitenVerwaltung() {
   const supabase = useMemo(() => createClient(), []);
@@ -156,11 +253,15 @@ export function AbwesenheitenVerwaltung() {
   );
   const [filter, setFilter] = useState({
     suche: "",
-    typ: "all",
-    status: "all",
+    typ: "all" as FilterTyp,
+    status: "all" as "all" | AbwesenheitStatus,
     monat: "all",
   });
   const [speichern, setSpeichern] = useState(false);
+  const [statusUpdate, setStatusUpdate] = useState<{
+    id: string;
+    to: "genehmigt" | "abgelehnt";
+  } | null>(null);
   const [loeschenDialog, setLoeschenDialog] = useState<{
     id: string;
     name: string;
@@ -181,7 +282,7 @@ export function AbwesenheitenVerwaltung() {
 
   const ladenDaten = useCallback(async () => {
     try {
-      const [{ data: m }, { data: a }] = await Promise.all([
+      const [resM, resA] = await Promise.all([
         supabase
           .from("employees")
           .select("id,name,departments(name)")
@@ -195,43 +296,54 @@ export function AbwesenheitenVerwaltung() {
           .order("start_date", { ascending: false }),
       ]);
 
-      setMitarbeiter(
-        (m ?? []).map((row) => {
-          const d = row.departments as
-            | { name?: string }
-            | { name?: string }[]
-            | null;
-          const dep = Array.isArray(d) ? d[0] : d;
-          return {
-            id: row.id as string,
-            name: row.name as string,
-            department: dep?.name as string | undefined,
-          };
-        })
-      );
-
-      if (a) {
-        const list: Abwesenheit[] = (a as Record<string, unknown>[]).map(
-          (row) => {
-            const e = row.employees;
-            const emp = Array.isArray(e) ? e[0] : e;
-            const quelle = row.quelle as string;
+      if (resM.error) {
+        toast.error(resM.error.message);
+        setMitarbeiter([]);
+      } else {
+        setMitarbeiter(
+          (resM.data ?? []).map((row) => {
+            const d = row.departments as
+              | { name?: string }
+              | { name?: string }[]
+              | null;
+            const dep = Array.isArray(d) ? d[0] : d;
             return {
               id: row.id as string,
-              employee_id: row.employee_id as string,
-              employee_name: (emp as { name?: string })?.name ?? "—",
-              type: normalisiereTyp(row.type as string),
-              start_date: row.start_date as string,
-              end_date: row.end_date as string,
-              status: normalisiereStatus(row.status as string),
-              notes: (row.notes as string | null) ?? null,
-              quelle: quelle === "personio" ? "personio" : "manuell",
-              created_at: (row.created_at as string) ?? "",
+              name: row.name as string,
+              department: dep?.name as string | undefined,
             };
-          }
+          })
         );
-        setAbwesenheiten(list);
-      } else setAbwesenheiten([]);
+      }
+
+      if (resA.error) {
+        toast.error(resA.error.message);
+        setAbwesenheiten([]);
+        return;
+      }
+
+      const list: Abwesenheit[] = (resA.data as Record<string, unknown>[]).map(
+        (row) => {
+          const e = row.employees;
+          const emp = Array.isArray(e) ? e[0] : e;
+          const quelle = row.quelle as string;
+          const rawType = String(row.type ?? "");
+          return {
+            id: row.id as string,
+            employee_id: row.employee_id as string,
+            employee_name: (emp as { name?: string })?.name ?? "—",
+            type_raw: rawType,
+            type: normalisiereTyp(rawType),
+            start_date: toDateKey(String(row.start_date ?? "")),
+            end_date: toDateKey(String(row.end_date ?? "")),
+            status: normalisiereStatus(String(row.status ?? "")),
+            notes: (row.notes as string | null) ?? null,
+            quelle: quelle === "personio" ? "personio" : "manuell",
+            created_at: (row.created_at as string) ?? "",
+          };
+        }
+      );
+      setAbwesenheiten(list);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Laden fehlgeschlagen.";
       toast.error(msg);
@@ -288,12 +400,14 @@ export function AbwesenheitenVerwaltung() {
     von: string,
     bis: string
   ): Promise<{ datum: string; projekt: string }[]> {
+    const vonK = toDateKey(von);
+    const bisK = toDateKey(bis);
     const { data, error } = await supabase
       .from("assignments")
       .select("date, projects(title), project_title")
       .eq("employee_id", employeeId)
-      .gte("date", von)
-      .lte("date", bis);
+      .gte("date", vonK)
+      .lte("date", bisK);
 
     if (error || !data?.length) return [];
 
@@ -308,7 +422,7 @@ export function AbwesenheitenVerwaltung() {
         (row.project_title as string | null)?.trim() ||
         "Projekt";
       return {
-        datum: formatDatum(row.date as string),
+        datum: formatDatum(String(row.date)),
         projekt: titel,
       };
     });
@@ -321,8 +435,8 @@ export function AbwesenheitenVerwaltung() {
       const payload = {
         employee_id: werte.employee_id,
         type: werte.type,
-        start_date: werte.start_date,
-        end_date: werte.end_date,
+        start_date: toDateKey(werte.start_date),
+        end_date: toDateKey(werte.end_date),
         status: werte.status,
         notes: werte.notes?.trim() || null,
         quelle: "manuell" as const,
@@ -363,6 +477,30 @@ export function AbwesenheitenVerwaltung() {
   function bearbeiten(abs: Abwesenheit) {
     setBearbeitenId(abs.id);
     setSheetOffen(true);
+  }
+
+  async function setStatus(
+    id: string,
+    status: "genehmigt" | "abgelehnt"
+  ) {
+    setStatusUpdate({ id, to: status });
+    try {
+      const { error } = await supabase
+        .from("absences")
+        .update({ status })
+        .eq("id", id);
+      if (error) throw error;
+      toast.success(
+        status === "genehmigt" ? "Genehmigt." : "Abgelehnt."
+      );
+      void ladenDaten();
+    } catch (e) {
+      const msg =
+        e instanceof Error ? e.message : "Status konnte nicht gesetzt werden.";
+      toast.error(msg);
+    } finally {
+      setStatusUpdate(null);
+    }
   }
 
   async function loeschenBestaetigt() {
@@ -418,11 +556,20 @@ export function AbwesenheitenVerwaltung() {
     return abwesenheiten.filter((a) => a.status === "beantragt").length;
   }, [abwesenheiten]);
 
+  const typFilterAktiv = filter.typ;
+
   const gefilterteAbwesenheiten = useMemo(() => {
     const q = filter.suche.trim().toLowerCase();
     return abwesenheiten.filter((a) => {
       if (q && !a.employee_name.toLowerCase().includes(q)) return false;
-      if (filter.typ !== "all" && a.type !== filter.typ) return false;
+      if (filter.typ === "urlaub" && a.type !== "urlaub") return false;
+      if (filter.typ === "krank" && a.type !== "krank") return false;
+      if (
+        filter.typ === "sonstige" &&
+        a.type !== "sonstiges" &&
+        a.type !== "fortbildung"
+      )
+        return false;
       if (filter.status !== "all" && a.status !== filter.status) return false;
       if (filter.monat !== "all") {
         const [y, m] = filter.monat.split("-").map(Number);
@@ -439,6 +586,18 @@ export function AbwesenheitenVerwaltung() {
     (m) => m.id === form.watch("employee_id")
   );
 
+  const typButtons: { label: string; value: FilterTyp }[] = [
+    { label: "Alle", value: "all" },
+    { label: "Urlaub", value: "urlaub" },
+    { label: "Krank", value: "krank" },
+    { label: "Sonstige", value: "sonstige" },
+  ];
+
+  function oeffneErfassen() {
+    setBearbeitenId(null);
+    setSheetOffen(true);
+  }
+
   return (
     <div>
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -450,103 +609,131 @@ export function AbwesenheitenVerwaltung() {
             Manuell erfassen oder mit Personio synchronisieren.
           </p>
         </div>
-        <Button
-          type="button"
-          onClick={() => {
-            setBearbeitenId(null);
-            setSheetOffen(true);
-          }}
-        >
+        <Button type="button" onClick={oeffneErfassen}>
           <Plus size={16} className="mr-2" />
           Abwesenheit erfassen
         </Button>
       </div>
 
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card className="rounded-xl border border-zinc-800 bg-zinc-900/50">
-          <CardContent className="flex items-center gap-3 p-4">
-            <Palmtree className="size-8 shrink-0 text-blue-400" />
-            <div>
-              <p className="text-2xl font-bold text-zinc-50">{statUrlaubWoche}</p>
-              <p className="text-xs text-zinc-500">Urlaub diese Woche</p>
+        {(
+          [
+            {
+              label: "URLAUB DIESE WOCHE",
+              wert: statUrlaubWoche,
+              subtext: "Im Zeitraum der aktuellen Kalenderwoche",
+              farbe: "#3b82f6",
+              Icon: Palmtree,
+            },
+            {
+              label: "KRANK HEUTE",
+              wert: statKrankHeute,
+              subtext: "Heute als krank geführt",
+              farbe: "#ef4444",
+              Icon: Thermometer,
+            },
+            {
+              label: "AUSSTEHEND",
+              wert: statAusstehend,
+              subtext: "Noch nicht genehmigt oder abgelehnt",
+              farbe: "#f59e0b",
+              Icon: Clock,
+            },
+          ] as const
+        ).map(({ label, wert, subtext, farbe, Icon }) => (
+          <div
+            key={label}
+            className="group relative overflow-hidden rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5 transition-colors hover:border-zinc-700"
+          >
+            <div
+              className="absolute -top-4 -left-4 h-16 w-16 rounded-full opacity-20 blur-xl transition-opacity group-hover:opacity-30"
+              style={{ background: farbe }}
+            />
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="mb-1 text-xs font-semibold tracking-wider text-zinc-500 uppercase">
+                  {label}
+                </p>
+                <p className="text-3xl font-bold tabular-nums text-zinc-100">
+                  {wert}
+                </p>
+              </div>
+              <div
+                className="rounded-xl p-2.5"
+                style={{ background: `${farbe}20` }}
+              >
+                <Icon size={18} style={{ color: farbe }} />
+              </div>
             </div>
-          </CardContent>
-        </Card>
-        <Card className="rounded-xl border border-zinc-800 bg-zinc-900/50">
-          <CardContent className="flex items-center gap-3 p-4">
-            <Thermometer className="size-8 shrink-0 text-red-400" />
-            <div>
-              <p className="text-2xl font-bold text-zinc-50">{statKrankHeute}</p>
-              <p className="text-xs text-zinc-500">Krank heute</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="rounded-xl border border-zinc-800 bg-zinc-900/50">
-          <CardContent className="flex items-center gap-3 p-4">
-            <Clock className="size-8 shrink-0 text-yellow-400" />
-            <div>
-              <p className="text-2xl font-bold text-zinc-50">{statAusstehend}</p>
-              <p className="text-xs text-zinc-500">Ausstehend</p>
-            </div>
-          </CardContent>
-        </Card>
+            <p className="mt-3 text-xs text-zinc-600">{subtext}</p>
+          </div>
+        ))}
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-3">
-        <Input
-          placeholder="Mitarbeiter suchen..."
-          className="w-full max-w-md border-zinc-800 bg-zinc-900 sm:w-48"
-          value={filter.suche}
-          onChange={(e) =>
-            setFilter((f) => ({ ...f, suche: e.target.value }))
-          }
-        />
-        <Select
-          value={filter.typ}
-          onValueChange={(v) =>
-            setFilter((f) => ({ ...f, typ: v ?? "all" }))
-          }
-        >
-          <SelectTrigger className="w-[160px] border-zinc-800 bg-zinc-900">
-            <SelectValue placeholder="Typ" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Alle Typen</SelectItem>
-            {ABWESENHEIT_TYPEN.map((t) => (
-              <SelectItem key={t.value} value={t.value}>
-                {t.emoji} {t.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Search
+            size={13}
+            className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-zinc-500"
+          />
+          <input
+            placeholder="Mitarbeiter suchen…"
+            className="w-44 rounded-lg border border-zinc-800 bg-zinc-900 py-2 pr-3 pl-8 text-sm text-zinc-200 transition-colors placeholder:text-zinc-600 focus:border-zinc-700 focus:outline-none"
+            value={filter.suche}
+            onChange={(e) =>
+              setFilter((f) => ({ ...f, suche: e.target.value }))
+            }
+          />
+        </div>
+
+        <div className="flex gap-1 rounded-lg border border-zinc-800 bg-zinc-900 p-1">
+          {typButtons.map((tb) => (
+            <button
+              key={tb.value}
+              type="button"
+              onClick={() => setFilter((f) => ({ ...f, typ: tb.value }))}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-xs font-medium transition-all",
+                typFilterAktiv === tb.value
+                  ? "bg-zinc-700 text-zinc-100"
+                  : "text-zinc-500 hover:text-zinc-300"
+              )}
+            >
+              {tb.label}
+            </button>
+          ))}
+        </div>
+
         <Select
           value={filter.status}
           onValueChange={(v) =>
-            setFilter((f) => ({ ...f, status: v ?? "all" }))
+            setFilter((f) => ({
+              ...f,
+              status: (v ?? "all") as "all" | AbwesenheitStatus,
+            }))
           }
         >
-          <SelectTrigger className="w-[160px] border-zinc-800 bg-zinc-900">
+          <SelectTrigger className="h-9 w-36 border-zinc-800 bg-zinc-900 text-sm text-zinc-300">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className="border-zinc-800 bg-zinc-900">
             <SelectItem value="all">Alle Status</SelectItem>
-            {ABWESENHEIT_STATUS.map((s) => (
-              <SelectItem key={s.value} value={s.value}>
-                {s.label}
-              </SelectItem>
-            ))}
+            <SelectItem value="beantragt">Ausstehend</SelectItem>
+            <SelectItem value="genehmigt">Genehmigt</SelectItem>
+            <SelectItem value="abgelehnt">Abgelehnt</SelectItem>
           </SelectContent>
         </Select>
+
         <Select
           value={filter.monat}
           onValueChange={(v) =>
             setFilter((f) => ({ ...f, monat: v ?? "all" }))
           }
         >
-          <SelectTrigger className="w-[180px] border-zinc-800 bg-zinc-900">
+          <SelectTrigger className="h-9 w-[180px] border-zinc-800 bg-zinc-900 text-sm text-zinc-300">
             <SelectValue placeholder="Monat" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className="border-zinc-800 bg-zinc-900">
             {monatOptionen.map((o) => (
               <SelectItem key={o.value} value={o.value}>
                 {o.label}
@@ -556,134 +743,164 @@ export function AbwesenheitenVerwaltung() {
         </Select>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-zinc-800">
+      <div className="overflow-hidden rounded-xl border border-zinc-800">
         {laden ? (
-          <Table>
-            <TableBody>
-              {Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={i} className="border-zinc-800">
-                  <TableCell colSpan={8}>
-                    <Skeleton className="h-10 w-full bg-zinc-800" />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <div className="divide-y divide-zinc-800 p-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="py-3">
+                <Skeleton className="h-14 w-full bg-zinc-800" />
+              </div>
+            ))}
+          </div>
         ) : gefilterteAbwesenheiten.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-zinc-600">
-            <CalendarOff size={40} className="mb-3" />
-            <p className="text-sm font-medium">Keine Abwesenheiten gefunden</p>
-            <p className="mt-1 text-xs">
-              {filter.suche ||
-              filter.typ !== "all" ||
-              filter.status !== "all" ||
-              filter.monat !== "all"
-                ? "Filter anpassen oder zurücksetzen"
-                : "Erfasse die erste Abwesenheit"}
-            </p>
+          <div className="flex flex-col items-center justify-center gap-4 py-16">
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+              <CalendarOff size={28} className="text-zinc-600" />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-semibold text-zinc-400">
+                Keine Abwesenheiten gefunden
+              </p>
+              <p className="mt-1 text-xs text-zinc-600">
+                {filter.suche ||
+                filter.typ !== "all" ||
+                filter.status !== "all" ||
+                filter.monat !== "all"
+                  ? "Filter anpassen oder zurücksetzen"
+                  : "Erfasse die erste Abwesenheit für dein Team"}
+              </p>
+            </div>
             {!filter.suche &&
               filter.typ === "all" &&
               filter.status === "all" &&
               filter.monat === "all" && (
-              <Button
-                size="sm"
-                className="mt-3"
-                type="button"
-                onClick={() => {
-                  setBearbeitenId(null);
-                  setSheetOffen(true);
-                }}
-              >
-                + Abwesenheit erfassen
-              </Button>
-            )}
+                <Button
+                  type="button"
+                  onClick={oeffneErfassen}
+                  className="border border-zinc-700 bg-zinc-800 text-sm text-zinc-200 hover:bg-zinc-700"
+                >
+                  <Plus size={14} className="mr-1.5" />
+                  Abwesenheit erfassen
+                </Button>
+              )}
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow className="border-zinc-800 hover:bg-transparent">
-                <TableHead>Mitarbeiter</TableHead>
-                <TableHead>Typ</TableHead>
-                <TableHead>Von</TableHead>
-                <TableHead>Bis</TableHead>
-                <TableHead>Dauer</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Notiz</TableHead>
-                <TableHead className="text-right">Aktionen</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {gefilterteAbwesenheiten.map((abs) => {
-                const typMeta = ABWESENHEIT_TYPEN.find((t) => t.value === abs.type);
-                const stMeta = ABWESENHEIT_STATUS.find((s) => s.value === abs.status);
-                return (
-                  <TableRow
-                    key={abs.id}
-                    className="border-zinc-800 hover:bg-zinc-900/50"
-                  >
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-700 text-xs font-medium text-zinc-200">
-                          {abs.employee_name.charAt(0).toUpperCase()}
-                        </div>
-                        <span className="text-sm">{abs.employee_name}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="secondary"
-                        className={cn("font-normal", typMeta?.farbe)}
-                      >
-                        {typMeta?.emoji} {typMeta?.label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-zinc-300">
-                      {formatDatum(abs.start_date)}
-                    </TableCell>
-                    <TableCell className="text-sm text-zinc-300">
-                      {formatDatum(abs.end_date)}
-                    </TableCell>
-                    <TableCell className="text-sm text-zinc-500">
-                      {berecheDauer(abs.start_date, abs.end_date)} Tage
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="secondary"
-                        className={cn("font-normal", stMeta?.farbe)}
-                      >
-                        {stMeta?.label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="max-w-[120px] truncate text-xs text-zinc-500">
-                      {abs.notes || "—"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
+          <div className="divide-y divide-zinc-800">
+            {gefilterteAbwesenheiten.map((abs) => {
+              const st = STATUS_STYLE[abs.status];
+              const typMeta = typBadgeMeta(abs.type_raw, abs.type);
+              const statusBusy =
+                statusUpdate?.id === abs.id ? statusUpdate : null;
+              return (
+                <div
+                  key={abs.id}
+                  className="flex flex-wrap items-center gap-4 p-4 transition-colors hover:bg-zinc-900/40"
+                >
+                  <div className="flex min-w-[200px] flex-1 items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-xs font-semibold text-zinc-200">
+                      {mitarbeiterInitialen(abs.employee_name)}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-zinc-100">
+                        {abs.employee_name}
+                      </p>
+                      <p className="text-xs text-zinc-500">
+                        {formatZeitraum(abs.start_date, abs.end_date)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={cn(
+                        "inline-flex rounded-md border px-2.5 py-0.5 text-xs font-medium",
+                        typMeta.className
+                      )}
+                    >
+                      {typMeta.label}
+                    </span>
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-0.5 text-xs font-medium",
+                        st.bg,
+                        st.text,
+                        st.border
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "size-1.5 shrink-0 rounded-full",
+                          abs.status === "beantragt" &&
+                            "animate-pulse bg-amber-400",
+                          abs.status === "genehmigt" && "bg-emerald-400",
+                          abs.status === "abgelehnt" && "bg-red-400"
+                        )}
+                      />
+                      {st.label}
+                    </span>
+                  </div>
+                  {abs.notes ? (
+                    <p className="max-w-[200px] truncate text-xs text-zinc-500">
+                      {abs.notes}
+                    </p>
+                  ) : null}
+                  <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
+                    {abs.status === "beantragt" ? (
+                      <>
                         <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
                           type="button"
-                          onClick={() => bearbeiten(abs)}
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 gap-1 text-xs text-emerald-400 hover:bg-emerald-950/40 hover:text-emerald-300"
+                          disabled={!!statusBusy}
+                          onClick={() => void setStatus(abs.id, "genehmigt")}
                         >
-                          <Pencil size={13} />
+                          {statusBusy?.to === "genehmigt" ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <Check size={14} />
+                          )}
+                          Genehmigen
                         </Button>
                         <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-destructive hover:text-destructive"
                           type="button"
-                          onClick={() => loeschen(abs.id)}
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 gap-1 text-xs text-red-400 hover:bg-red-950/40 hover:text-red-300"
+                          disabled={!!statusBusy}
+                          onClick={() => void setStatus(abs.id, "abgelehnt")}
                         >
-                          <Trash2 size={13} />
+                          {statusBusy?.to === "abgelehnt" ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <X size={14} />
+                          )}
+                          Ablehnen
                         </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                      </>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => bearbeiten(abs)}
+                    >
+                      <Pencil size={14} />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      onClick={() => loeschen(abs.id)}
+                    >
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
 
@@ -720,7 +937,10 @@ export function AbwesenheitenVerwaltung() {
                       )}
                       <ChevronsUpDown size={14} />
                     </PopoverTrigger>
-                    <PopoverContent className="w-[var(--anchor-width)] p-0" align="start">
+                    <PopoverContent
+                      className="w-[var(--anchor-width)] p-0"
+                      align="start"
+                    >
                       <Command>
                         <CommandInput placeholder="Suchen…" />
                         <CommandList>
@@ -778,7 +998,7 @@ export function AbwesenheitenVerwaltung() {
                     <SelectTrigger className="border-zinc-800 bg-zinc-900">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="border-zinc-800 bg-zinc-950">
                       {ABWESENHEIT_TYPEN.map((t) => (
                         <SelectItem key={t.value} value={t.value}>
                           {t.emoji} {t.label}
@@ -824,7 +1044,7 @@ export function AbwesenheitenVerwaltung() {
                     <SelectTrigger className="border-zinc-800 bg-zinc-900">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="border-zinc-800 bg-zinc-950">
                       {ABWESENHEIT_STATUS.map((s) => (
                         <SelectItem key={s.value} value={s.value}>
                           {s.label}
