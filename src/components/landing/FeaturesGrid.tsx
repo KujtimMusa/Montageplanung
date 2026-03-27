@@ -2,10 +2,10 @@
 
 import {
   AlertTriangle,
+  BarChart3,
+  Bell,
   Bot,
-  Calendar,
-  RefreshCw,
-  Smartphone,
+  CalendarDays,
   Zap,
 } from "lucide-react";
 import { motion } from "framer-motion";
@@ -13,48 +13,69 @@ import { cn } from "@/lib/utils";
 
 const features = [
   {
-    titel: "Kalender",
-    beschreibung: "Alle Monteure auf einen Blick. Drag & Drop.",
-    icon: Calendar,
-    glow: "shadow-[0_0_24px_rgba(59,130,246,0.35)] text-blue-400",
-    ring: "ring-blue-500/20",
+    titel: "Ressourcenplanung",
+    text: "Wer arbeitet wann wo. Auf einen Blick.",
+    icon: CalendarDays,
+    accent: "blue" as const,
   },
   {
-    titel: "Konflikte",
-    beschreibung: "Doppelbuchungen sofort erkannt.",
+    titel: "Konflikte erkennen",
+    text: "Doppelbuchungen und Engpässe — bevor sie passieren.",
     icon: AlertTriangle,
-    glow: "shadow-[0_0_24px_rgba(99,102,241,0.35)] text-indigo-400",
-    ring: "ring-indigo-500/20",
+    accent: "orange" as const,
   },
   {
-    titel: "Notfall",
-    beschreibung: "Krankmeldung? Ersatz in Minuten.",
+    titel: "Notfallmanagement",
+    text: "Krankmeldung heute. Ersatz in Minuten gefunden.",
     icon: Zap,
-    glow: "shadow-[0_0_24px_rgba(16,185,129,0.35)] text-emerald-400",
-    ring: "ring-emerald-500/20",
+    accent: "emerald" as const,
   },
   {
-    titel: "KI-Assistent",
-    beschreibung: "Frag per Chat wer verfügbar ist.",
+    titel: "KI-gestützte Planung",
+    text: "Optimale Teamzuweisung auf Knopfdruck.",
     icon: Bot,
-    glow: "shadow-[0_0_24px_rgba(139,92,246,0.35)] text-violet-400",
-    ring: "ring-violet-500/20",
+    accent: "violet" as const,
   },
   {
-    titel: "Personio-Sync",
-    beschreibung: "Urlaub direkt aus Personio.",
-    icon: RefreshCw,
-    glow: "shadow-[0_0_24px_rgba(249,115,22,0.35)] text-orange-400",
-    ring: "ring-orange-500/20",
+    titel: "Automatische Benachrichtigungen",
+    text: "Monteure erhalten Einsätze direkt aufs Handy.",
+    icon: Bell,
+    accent: "cyan" as const,
   },
   {
-    titel: "Mobile & PWA",
-    beschreibung: "Auf jedem Gerät, auch offline.",
-    icon: Smartphone,
-    glow: "shadow-[0_0_24px_rgba(34,211,238,0.35)] text-cyan-400",
-    ring: "ring-cyan-500/20",
+    titel: "Auslastung im Blick",
+    text: "Überlastung und Leerlauf auf einen Blick erkennen.",
+    icon: BarChart3,
+    accent: "indigo" as const,
   },
 ] as const;
+
+const accentStyles = {
+  blue: {
+    icon: "text-blue-400 drop-shadow-[0_0_14px_rgba(59,130,246,0.45)]",
+    hoverBorder: "hover:border-blue-500/30",
+  },
+  orange: {
+    icon: "text-orange-400 drop-shadow-[0_0_14px_rgba(249,115,22,0.45)]",
+    hoverBorder: "hover:border-orange-500/30",
+  },
+  emerald: {
+    icon: "text-emerald-400 drop-shadow-[0_0_14px_rgba(16,185,129,0.45)]",
+    hoverBorder: "hover:border-emerald-500/30",
+  },
+  violet: {
+    icon: "text-violet-400 drop-shadow-[0_0_14px_rgba(139,92,246,0.45)]",
+    hoverBorder: "hover:border-violet-500/30",
+  },
+  cyan: {
+    icon: "text-cyan-400 drop-shadow-[0_0_14px_rgba(34,211,238,0.45)]",
+    hoverBorder: "hover:border-cyan-500/30",
+  },
+  indigo: {
+    icon: "text-indigo-400 drop-shadow-[0_0_14px_rgba(99,102,241,0.45)]",
+    hoverBorder: "hover:border-indigo-500/30",
+  },
+} as const;
 
 const container = {
   hidden: { opacity: 0 },
@@ -81,16 +102,23 @@ export function FeaturesGrid() {
       aria-labelledby="features-heading"
     >
       <div className="mx-auto max-w-6xl">
-        <motion.h2
-          id="features-heading"
-          className="text-center font-sans text-3xl font-bold tracking-tight text-white md:text-4xl"
+        <motion.div
+          className="text-center"
           initial={{ opacity: 0, y: 16 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, amount: 0.15 }}
           transition={{ duration: 0.5 }}
         >
-          Alles was du brauchst
-        </motion.h2>
+          <h2
+            id="features-heading"
+            className="text-3xl font-bold tracking-tight text-white"
+          >
+            Gebaut für die Praxis
+          </h2>
+          <p className="mt-2 text-base text-muted-foreground">
+            Keine Zettelwirtschaft. Keine WhatsApp-Gruppen. Nur klare Planung.
+          </p>
+        </motion.div>
         <motion.ul
           className="mt-14 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
           variants={container}
@@ -100,33 +128,24 @@ export function FeaturesGrid() {
         >
           {features.map((f) => {
             const Icon = f.icon;
+            const a = accentStyles[f.accent];
             return (
               <motion.li key={f.titel} variants={item}>
                 <div
                   className={cn(
-                    "group h-full rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-md transition-[border-color,box-shadow] duration-200",
-                    "hover:border-blue-500/50 hover:shadow-[inset_0_0_0_1px_rgba(59,130,246,0.15),0_0_32px_rgba(59,130,246,0.12)]"
+                    "group h-full rounded-2xl border border-white/[0.08] bg-white/[0.03] p-6 transition-all duration-200",
+                    "hover:bg-white/[0.05]",
+                    a.hoverBorder
                   )}
                 >
-                  <div className="flex flex-col gap-4">
-                    <div
-                      className={cn(
-                        "flex size-12 items-center justify-center rounded-xl bg-white/[0.06] ring-1 backdrop-blur-sm transition-transform duration-200 group-hover:scale-105",
-                        f.ring,
-                        f.glow
-                      )}
-                    >
-                      <Icon className="size-6" strokeWidth={1.5} aria-hidden />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-bold tracking-tight text-white">
-                        {f.titel}
-                      </h3>
-                      <p className="mt-2 text-sm font-normal leading-relaxed text-zinc-400">
-                        {f.beschreibung}
-                      </p>
-                    </div>
-                  </div>
+                  <Icon
+                    className={cn("size-7 stroke-[1.5]", a.icon)}
+                    aria-hidden
+                  />
+                  <h3 className="mt-4 text-base font-semibold text-white">
+                    {f.titel}
+                  </h3>
+                  <p className="mt-2 text-sm text-muted-foreground">{f.text}</p>
                 </div>
               </motion.li>
             );

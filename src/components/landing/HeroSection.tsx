@@ -5,25 +5,6 @@ import { ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { AnimatedBadge } from "@/components/landing/AnimatedBadge";
 
-const wordGroup = (delayChildren: number) => ({
-  hidden: {},
-  show: {
-    transition: {
-      staggerChildren: 0.05,
-      delayChildren,
-    },
-  },
-});
-
-const word = {
-  hidden: { opacity: 0, y: 24 },
-  show: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] as const },
-  },
-};
-
 function HeroAppPreview() {
   return (
     <div className="relative w-full overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/80 shadow-2xl shadow-black/50 ring-1 ring-white/5">
@@ -79,18 +60,17 @@ function HeroAppPreview() {
 export function HeroSection() {
   return (
     <section
-      className="relative overflow-hidden px-4 pb-20 pt-12 sm:px-6 md:pb-28 md:pt-16"
+      className="relative overflow-hidden bg-[#0a0a0a] px-4 pb-20 pt-12 sm:px-6 md:pb-28 md:pt-16"
       aria-labelledby="hero-heading"
     >
       <div
-        className="pointer-events-none absolute inset-0 landing-grid-mask opacity-[0.85]"
+        className="pointer-events-none absolute inset-0 landing-grid-mask opacity-[0.5]"
         aria-hidden
       />
       <div
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_0%,rgba(59,130,246,0.12),transparent_60%)]"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_0%,rgba(59,130,246,0.12)_0%,transparent_70%)]"
         aria-hidden
       />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_50%_40%_at_80%_20%,rgba(99,102,241,0.08),transparent_55%)]" />
 
       <div className="relative mx-auto max-w-6xl">
         <div className="mx-auto max-w-4xl text-center">
@@ -105,53 +85,18 @@ export function HeroSection() {
 
           <motion.h1
             id="hero-heading"
-            className="flex flex-col items-center gap-0 font-sans text-[clamp(2.5rem,6vw,4.5rem)] font-extrabold leading-[1.08] tracking-tight text-white"
+            className="font-sans font-extrabold leading-[1.1] tracking-tight"
+            style={{ fontSize: "clamp(2.2rem, 5vw, 4rem)" }}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
           >
-            <motion.span
-              variants={wordGroup(0)}
-              initial="hidden"
-              animate="show"
-              className="flex flex-wrap justify-center gap-x-1.5"
-            >
-              {["Die", "smarte", "Einsatz-"].map((w) => (
-                <motion.span
-                  key={w}
-                  variants={word}
-                  className="inline-block"
-                >
-                  {w}
-                </motion.span>
-              ))}
-            </motion.span>
-            <motion.span
-              variants={wordGroup(0.15)}
-              initial="hidden"
-              animate="show"
-              className="mt-1 flex flex-wrap justify-center gap-x-1.5"
-            >
-              {["planung", "für"].map((w) => (
-                <motion.span
-                  key={w}
-                  variants={word}
-                  className="inline-block"
-                >
-                  {w}
-                </motion.span>
-              ))}
-            </motion.span>
-            <motion.span
-              variants={wordGroup(0.25)}
-              initial="hidden"
-              animate="show"
-              className="mt-1 flex flex-wrap justify-center"
-            >
-              <motion.span
-                variants={word}
-                className="inline-block bg-gradient-to-r from-blue-400 via-blue-500 to-indigo-500 bg-clip-text text-transparent"
-              >
-                Handwerksbetriebe
-              </motion.span>
-            </motion.span>
+            <span className="block text-white sm:whitespace-nowrap">
+              Die smarte Einsatzplanung
+            </span>
+            <span className="mt-1 block bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent">
+              für Handwerksbetriebe
+            </span>
           </motion.h1>
 
           <motion.p
@@ -189,22 +134,16 @@ export function HeroSection() {
             </motion.div>
           </motion.div>
 
-          <motion.p
-            className="mt-8 text-xs font-medium tracking-wide text-zinc-500"
+          <motion.div
+            className="mt-4 flex flex-wrap items-center justify-center gap-6 text-sm text-muted-foreground"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: 0.7 }}
+            transition={{ delay: 0.65, duration: 0.45 }}
           >
-            <span className="text-zinc-400">DSGVO-konform</span>
-            <span className="mx-2 text-zinc-600" aria-hidden>
-              ·
-            </span>
-            <span className="text-zinc-400">Frankfurt EU</span>
-            <span className="mx-2 text-zinc-600" aria-hidden>
-              ·
-            </span>
-            <span className="text-zinc-400">Kostenlos starten</span>
-          </motion.p>
+            <span>✓ DSGVO-konform</span>
+            <span>✓ Serverstandort Frankfurt</span>
+            <span>✓ Kostenlos starten</span>
+          </motion.div>
         </div>
 
         <motion.div

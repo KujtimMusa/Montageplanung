@@ -1,6 +1,5 @@
 import { Navbar } from "@/components/landing/Navbar";
 import { HeroSection } from "@/components/landing/HeroSection";
-import { SocialProofStrip } from "@/components/landing/SocialProofStrip";
 import { FeaturesGrid } from "@/components/landing/FeaturesGrid";
 import { FeatureSpotlight } from "@/components/landing/FeatureSpotlight";
 import { EchtzeitSection } from "@/components/landing/EchtzeitSection";
@@ -17,7 +16,6 @@ export default function Startseite() {
       <Navbar />
       <main>
         <HeroSection />
-        <SocialProofStrip />
         <FeaturesGrid />
         <FeatureSpotlight />
         <EchtzeitSection />
