@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { useSettings } from "@/lib/hooks/useSettings";
 
@@ -61,69 +62,73 @@ export function PersonioSyncPanel() {
   }
 
   return (
-    <div className="space-y-6">
-      <p className="text-sm text-muted-foreground">
-        API-Zugang aus dem Personio-Konto. Vollständiger Datenimport folgt mit
-        der nächsten Ausbaustufe.
-      </p>
-      <div className="grid gap-4 sm:max-w-md">
-        <div className="space-y-2">
-          <Label htmlFor="personio-sub">Subdomain</Label>
-          <Input
-            id="personio-sub"
-            placeholder="firma"
-            value={subdomain}
-            onChange={(e) => setSubdomain(e.target.value)}
-          />
-          <p className="text-xs text-muted-foreground">
-            z. B. <code className="rounded bg-zinc-800 px-1">firma</code> für
-            firma.personio.de
-          </p>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="personio-key">API-Key</Label>
-          <Input
-            id="personio-key"
-            type="password"
-            autoComplete="off"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-          />
-        </div>
-        <div className="flex items-start gap-3 rounded-lg border border-zinc-800 p-3">
-          <Checkbox
-            id="personio-auto"
-            checked={autoSync}
-            onCheckedChange={(v) => setAutoSync(v === true)}
-          />
-          <div>
-            <Label htmlFor="personio-auto" className="text-sm font-medium">
-              Täglicher Auto-Sync (06:00 Uhr)
-            </Label>
+    <Card className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+      <div className="space-y-6">
+        <p className="text-sm text-muted-foreground">
+          API-Zugang aus dem Personio-Konto. Vollständiger Datenimport folgt mit
+          der nächsten Ausbaustufe.
+        </p>
+        <div className="grid gap-4 sm:max-w-md">
+          <div className="space-y-2">
+            <Label htmlFor="personio-sub">Subdomain</Label>
+            <Input
+              id="personio-sub"
+              placeholder="firma"
+              className="border-zinc-800 bg-zinc-900"
+              value={subdomain}
+              onChange={(e) => setSubdomain(e.target.value)}
+            />
             <p className="text-xs text-muted-foreground">
-              Erfordert Cron / Edge Function auf der Serverseite.
+              z. B. <code className="rounded bg-zinc-800 px-1">firma</code> für
+              firma.personio.de
             </p>
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="personio-key">API-Key</Label>
+            <Input
+              id="personio-key"
+              type="password"
+              autoComplete="off"
+              className="border-zinc-800 bg-zinc-900"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+            />
+          </div>
+          <div className="flex items-start gap-3 rounded-lg border border-zinc-800 p-3">
+            <Checkbox
+              id="personio-auto"
+              checked={autoSync}
+              onCheckedChange={(v) => setAutoSync(v === true)}
+            />
+            <div>
+              <Label htmlFor="personio-auto" className="text-sm font-medium">
+                Täglicher Auto-Sync (06:00 Uhr)
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Erfordert Cron / Edge Function auf der Serverseite.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" onClick={() => void speichern()} disabled={loading}>
+              Speichern
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void synchronisieren()}
+              disabled={syncing}
+            >
+              {syncing ? "Synchronisiere…" : "Jetzt synchronisieren"}
+            </Button>
+          </div>
+          {lastSync && (
+            <p className="text-xs text-muted-foreground">
+              Letzter Sync: {new Date(lastSync).toLocaleString("de-DE")}
+            </p>
+          )}
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" onClick={() => void speichern()} disabled={loading}>
-            Speichern
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => void synchronisieren()}
-            disabled={syncing}
-          >
-            {syncing ? "Synchronisiere…" : "Jetzt synchronisieren"}
-          </Button>
-        </div>
-        {lastSync && (
-          <p className="text-xs text-muted-foreground">
-            Letzter Sync: {new Date(lastSync).toLocaleString("de-DE")}
-          </p>
-        )}
       </div>
-    </div>
+    </Card>
   );
 }
