@@ -1,16 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -28,30 +36,33 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import * as LucideIcons from "lucide-react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Building2, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 
 type Zeile = {
   id: string;
   name: string;
   color: string;
   icon: string | null;
+  anzahlTeams: number;
+  anzahlMitarbeiter: number;
 };
 
 const ICON_NAMEN = [
-  "Wrench",
-  "Hammer",
-  "Calendar",
   "Zap",
-  "Users",
+  "Wrench",
   "HardHat",
-  "Truck",
-  "Sun",
-  "Cloud",
-  "Home",
+  "Layers",
+  "Settings",
   "Building2",
-  "Briefcase",
+  "Hammer",
+  "Cable",
+  "Droplets",
+  "Wind",
+  "Sun",
+  "Grid3x3",
 ] as const;
 
 function IconVorschau({ name }: { name: string | null }) {
@@ -66,27 +77,71 @@ function IconVorschau({ name }: { name: string | null }) {
   return <Cmp className="size-5" aria-hidden />;
 }
 
+function IconOption({ name }: { name: string }) {
+  const Cmp = (
+    LucideIcons as unknown as Record<
+      string,
+      ComponentType<{ className?: string }>
+    >
+  )[name];
+  return (
+    <span className="flex items-center gap-2">
+      {Cmp ? <Cmp className="size-4" /> : null}
+      {name}
+    </span>
+  );
+}
+
 export function AbteilungenVerwaltung() {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [zeilen, setZeilen] = useState<Zeile[]>([]);
-  const [offen, setOffen] = useState(false);
+  const [sheetOffen, setSheetOffen] = useState(false);
   const [bearbeitenId, setBearbeitenId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [farbe, setFarbe] = useState("#3b82f6");
   const [icon, setIcon] = useState<string>("Wrench");
   const [lädt, setLädt] = useState(false);
+  const [listeLaedt, setListeLaedt] = useState(true);
+
+  const [loeschenDialog, setLoeschenDialog] = useState<Zeile | null>(null);
 
   const laden = useCallback(async () => {
+    setListeLaedt(true);
     try {
-      const { data, error } = await supabase
-        .from("departments")
-        .select("id,name,color,icon")
-        .order("name");
-      if (error) throw error;
-      setZeilen((data as Zeile[]) ?? []);
+      const [{ data: depts, error: e1 }, { data: teams }, { data: emps }] =
+        await Promise.all([
+          supabase.from("departments").select("id,name,color,icon").order("name"),
+          supabase.from("teams").select("id,department_id"),
+          supabase.from("employees").select("id,department_id"),
+        ]);
+      if (e1) throw e1;
+
+      const teamCount: Record<string, number> = {};
+      for (const t of teams ?? []) {
+        const d = (t as { department_id: string | null }).department_id;
+        if (d) teamCount[d] = (teamCount[d] ?? 0) + 1;
+      }
+      const empCount: Record<string, number> = {};
+      for (const e of emps ?? []) {
+        const d = (e as { department_id: string | null }).department_id;
+        if (d) empCount[d] = (empCount[d] ?? 0) + 1;
+      }
+
+      setZeilen(
+        (depts ?? []).map((z) => ({
+          id: z.id as string,
+          name: z.name as string,
+          color: z.color as string,
+          icon: (z.icon as string | null) ?? null,
+          anzahlTeams: teamCount[z.id as string] ?? 0,
+          anzahlMitarbeiter: empCount[z.id as string] ?? 0,
+        }))
+      );
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Laden fehlgeschlagen.";
       toast.error(msg);
+    } finally {
+      setListeLaedt(false);
     }
   }, [supabase]);
 
@@ -103,7 +158,7 @@ export function AbteilungenVerwaltung() {
 
   function oeffnenNeu() {
     leeren();
-    setOffen(true);
+    setSheetOffen(true);
   }
 
   function oeffnenBearbeiten(z: Zeile) {
@@ -115,7 +170,7 @@ export function AbteilungenVerwaltung() {
         ? z.icon
         : "Wrench"
     );
-    setOffen(true);
+    setSheetOffen(true);
   }
 
   async function speichern() {
@@ -138,7 +193,7 @@ export function AbteilungenVerwaltung() {
         if (error) throw error;
         toast.success("Abteilung angelegt.");
       }
-      setOffen(false);
+      setSheetOffen(false);
       leeren();
       void laden();
     } catch (e) {
@@ -149,14 +204,18 @@ export function AbteilungenVerwaltung() {
     }
   }
 
-  async function loeschen(id: string) {
-    if (!confirm("Abteilung wirklich löschen?")) return;
+  async function loeschenBestaetigt() {
+    if (!loeschenDialog) return;
     setLädt(true);
     try {
-      const { error } = await supabase.from("departments").delete().eq("id", id);
+      const { error } = await supabase
+        .from("departments")
+        .delete()
+        .eq("id", loeschenDialog.id);
       if (error) throw error;
       toast.success("Abteilung gelöscht.");
-      setOffen(false);
+      setLoeschenDialog(null);
+      setSheetOffen(false);
       leeren();
       void laden();
     } catch (e) {
@@ -167,46 +226,71 @@ export function AbteilungenVerwaltung() {
     }
   }
 
+  if (listeLaedt) {
+    return (
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Loader2 className="size-5 animate-spin" />
+        Lade Abteilungen…
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button type="button" size="sm" onClick={oeffnenNeu}>
-          <Plus className="mr-1 size-4" />
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-lg font-semibold tracking-tight text-zinc-50">
+          Abteilungen
+        </h2>
+        <Button type="button" size="sm" className="gap-1" onClick={oeffnenNeu}>
+          <Plus className="size-4" />
           Neue Abteilung
         </Button>
       </div>
-      <div className="overflow-x-auto rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Farbe</TableHead>
-              <TableHead>Icon</TableHead>
-              <TableHead className="w-[100px] text-right">Aktionen</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {zeilen.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={4} className="text-muted-foreground">
-                  Noch keine Abteilungen.
-                </TableCell>
+
+      {zeilen.length === 0 ? (
+        <Card className="border-dashed border-zinc-700 bg-zinc-900/40">
+          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+            <Building2 className="size-12 text-zinc-600" />
+            <p className="font-medium text-zinc-200">
+              Noch keine Abteilungen vorhanden
+            </p>
+            <p className="max-w-sm text-sm text-zinc-500">
+              Lege Abteilungen an, um Teams und Filter zu strukturieren.
+            </p>
+            <Button type="button" onClick={oeffnenNeu}>
+              <Plus className="mr-1 size-4" />
+              Abteilung hinzufügen
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="overflow-x-auto rounded-md border border-zinc-800">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-zinc-800 hover:bg-transparent">
+                <TableHead className="w-12">Farbe</TableHead>
+                <TableHead className="w-14">Icon</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Teams</TableHead>
+                <TableHead>Mitarbeiter</TableHead>
+                <TableHead className="text-right">Aktionen</TableHead>
               </TableRow>
-            ) : (
-              zeilen.map((z) => (
-                <TableRow key={z.id}>
-                  <TableCell className="font-medium">{z.name}</TableCell>
+            </TableHeader>
+            <TableBody>
+              {zeilen.map((z) => (
+                <TableRow key={z.id} className="border-zinc-800">
                   <TableCell>
-                    <span
-                      className="mr-2 inline-block h-4 w-4 rounded border align-middle"
+                    <div
+                      className="size-4 rounded-full ring-1 ring-zinc-700"
                       style={{ backgroundColor: z.color }}
-                      aria-hidden
                     />
-                    <code className="text-xs">{z.color}</code>
                   </TableCell>
                   <TableCell>
                     <IconVorschau name={z.icon} />
                   </TableCell>
+                  <TableCell className="font-medium">{z.name}</TableCell>
+                  <TableCell>{z.anzahlTeams}</TableCell>
+                  <TableCell>{z.anzahlMitarbeiter}</TableCell>
                   <TableCell className="text-right">
                     <Button
                       type="button"
@@ -222,45 +306,48 @@ export function AbteilungenVerwaltung() {
                       variant="ghost"
                       size="icon"
                       className="size-8 text-destructive"
-                      onClick={() => void loeschen(z.id)}
+                      onClick={() => setLoeschenDialog(z)}
                     >
                       <Trash2 className="size-4" />
                     </Button>
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
-      <Dialog
-        open={offen}
+      <Sheet
+        open={sheetOffen}
         onOpenChange={(o) => {
-          setOffen(o);
+          setSheetOffen(o);
           if (!o) leeren();
         }}
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
+        <SheetContent
+          side="right"
+          className="w-full border-zinc-800 bg-zinc-950 sm:max-w-md"
+        >
+          <SheetHeader>
+            <SheetTitle>
               {bearbeitenId ? "Abteilung bearbeiten" : "Neue Abteilung"}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-3 py-2">
+            </SheetTitle>
+          </SheetHeader>
+          <div className="flex flex-1 flex-col gap-4 overflow-y-auto py-4">
             <div className="space-y-2">
               <Label htmlFor="ab-name">Name *</Label>
               <Input
                 id="ab-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                className="border-zinc-700 bg-zinc-900"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="ab-farbe">Farbe</Label>
+              <Label>Farbe *</Label>
               <div className="flex items-center gap-2">
                 <Input
-                  id="ab-farbe"
                   type="color"
                   className="h-10 w-14 cursor-pointer p-1"
                   value={farbe}
@@ -269,48 +356,92 @@ export function AbteilungenVerwaltung() {
                 <Input
                   value={farbe}
                   onChange={(e) => setFarbe(e.target.value)}
-                  className="font-mono text-sm"
+                  className="border-zinc-700 bg-zinc-900 font-mono text-sm"
                 />
               </div>
             </div>
             <div className="space-y-2">
               <Label>Icon</Label>
-              <Select
-                value={icon}
-                onValueChange={(v) => setIcon(v ?? "Wrench")}
-              >
-                <SelectTrigger>
-                  <SelectValue />
+              <Select value={icon} onValueChange={(v) => setIcon(v ?? "Wrench")}>
+                <SelectTrigger className="border-zinc-700 bg-zinc-900">
+                  <SelectValue>
+                    <IconOption name={icon} />
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {ICON_NAMEN.map((n) => (
                     <SelectItem key={n} value={n}>
-                      {n}
+                      <IconOption name={n} />
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
           </div>
-          <DialogFooter className="gap-2 sm:justify-between">
+          <SheetFooter className="flex-col gap-2 border-t border-zinc-800 sm:flex-row sm:justify-between">
             {bearbeitenId && (
               <Button
                 type="button"
                 variant="destructive"
-                onClick={() => void loeschen(bearbeitenId)}
+                className="w-full sm:w-auto"
+                onClick={() => {
+                  const z = zeilen.find((x) => x.id === bearbeitenId);
+                  if (z) setLoeschenDialog(z);
+                }}
                 disabled={lädt}
               >
                 Löschen
               </Button>
             )}
-            <div className="flex gap-2">
-              <Button type="button" variant="secondary" onClick={() => setOffen(false)}>
+            <div className="flex w-full flex-col gap-2 sm:ml-auto sm:w-auto sm:flex-row">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setSheetOffen(false)}
+              >
                 Abbrechen
               </Button>
-              <Button type="button" onClick={() => void speichern()} disabled={lädt}>
+              <Button
+                type="button"
+                onClick={() => void speichern()}
+                disabled={lädt}
+              >
                 Speichern
               </Button>
             </div>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      <Dialog
+        open={!!loeschenDialog}
+        onOpenChange={(o) => !o && setLoeschenDialog(null)}
+      >
+        <DialogContent className="border-zinc-800 bg-zinc-950">
+          <DialogHeader>
+            <DialogTitle>Abteilung löschen?</DialogTitle>
+            <DialogDescription>
+              Diese Abteilung hat {loeschenDialog?.anzahlTeams ?? 0} Teams und{" "}
+              {loeschenDialog?.anzahlMitarbeiter ?? 0} Mitarbeiter. Teams und
+              Mitarbeiter werden keiner Abteilung mehr zugeordnet.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setLoeschenDialog(null)}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void loeschenBestaetigt()}
+              disabled={lädt}
+            >
+              Trotzdem löschen
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

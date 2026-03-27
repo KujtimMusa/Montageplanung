@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { darfMitarbeiterVerwalten } from "@/lib/auth/angestellter";
 
-const erlaubteRollen = ["monteur", "abteilungsleiter", "admin"] as const;
+const erlaubteRollen = [
+  "admin",
+  "abteilungsleiter",
+  "teamleiter",
+] as const;
 
 /**
  * Rolle und/oder Aktiv-Status eines Mitarbeiters ändern.

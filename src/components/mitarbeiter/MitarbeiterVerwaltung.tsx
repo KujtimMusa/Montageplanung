@@ -1,6 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { createClient } from "@/lib/supabase/client";
 import {
   Table,
@@ -22,15 +25,24 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Loader2, Pencil, Plus, Trash2, Users } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 
 type Zeile = {
   id: string;
@@ -38,57 +50,175 @@ type Zeile = {
   email: string | null;
   role: string;
   active: boolean;
+  department_id: string | null;
+  auth_user_id: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  team_id: string | null;
+  qualifikationen: string[] | null;
   abteilungsName: string | null;
+  teamName: string | null;
 };
 
-const rollen = [
-  { wert: "monteur", label: "Monteur" },
-  { wert: "abteilungsleiter", label: "Abteilungsleiter" },
-  { wert: "admin", label: "Admin" },
-];
+const monteurSchema = z.object({
+  name: z.string().min(2, "Name erforderlich"),
+  phone: z.string().optional(),
+  whatsapp: z.string().optional(),
+  department_id: z.string().optional(),
+  team_id: z.string().optional(),
+  qualifikationen: z.array(z.string()).optional(),
+});
 
-/**
- * Admin-Ansicht: Mitarbeiterliste, Rolle, Einladung, Deaktivieren.
- */
+type MonteurForm = z.infer<typeof monteurSchema>;
+
+const koordinatorRollen = [
+  { wert: "admin", label: "Admin" },
+  { wert: "abteilungsleiter", label: "Abteilungsleiter" },
+  { wert: "teamleiter", label: "Teamleiter" },
+] as const;
+
+function apiFehler(json: { error?: string; fehler?: string }): string {
+  return json.error ?? json.fehler ?? "Unbekannter Fehler.";
+}
+
 export function MitarbeiterVerwaltung() {
+  const supabase = useMemo(() => createClient(), []);
   const [zeilen, setZeilen] = useState<Zeile[]>([]);
+  const [abteilungen, setAbteilungen] = useState<{ id: string; name: string }[]>(
+    []
+  );
+  const [teams, setTeams] = useState<
+    { id: string; name: string; department_id: string | null }[]
+  >([]);
   const [laedt, setLaedt] = useState(true);
-  const [einladEmail, setEinladEmail] = useState("");
-  const [einladOffen, setEinladOffen] = useState(false);
-  const [einladLaedt, setEinladLaedt] = useState(false);
+
+  const [suche, setSuche] = useState("");
+  const [typFilter, setTypFilter] = useState<"alle" | "monteur" | "koordinator">(
+    "alle"
+  );
+  const [abteilungFilter, setAbteilungFilter] = useState<string>("alle");
+  const [teamFilter, setTeamFilter] = useState<string>("alle");
+
+  const [monteurSheetOffen, setMonteurSheetOffen] = useState(false);
+  const [bearbeitenId, setBearbeitenId] = useState<string | null>(null);
+
+  const [koordinatorOffen, setKoordinatorOffen] = useState(false);
+  const [koordinatorEmail, setKoordinatorEmail] = useState("");
+  const [koordinatorLaedt, setKoordinatorLaedt] = useState(false);
+
+  const [loeschenId, setLoeschenId] = useState<string | null>(null);
+  const [koorBearbeiten, setKoorBearbeiten] = useState<Zeile | null>(null);
+  const [koorAktiv, setKoorAktiv] = useState(true);
+  const [koorSpeichert, setKoorSpeichert] = useState(false);
+
+  const monteurF = useForm<MonteurForm>({
+    resolver: zodResolver(monteurSchema),
+    defaultValues: {
+      name: "",
+      phone: "",
+      whatsapp: "",
+      department_id: "",
+      team_id: "",
+      qualifikationen: [],
+    },
+  });
+
+  const [tagInput, setTagInput] = useState("");
 
   const laden = useCallback(async () => {
-    const supabase = createClient();
-    const [{ data: mitarbeiter }, { data: abteilungen }] = await Promise.all([
-      supabase
-        .from("employees")
-        .select("id,name,email,role,active,department_id")
-        .order("name"),
-      supabase.from("departments").select("id,name"),
-    ]);
+    setLaedt(true);
+    try {
+      const [{ data: mitarbeiter, error: e1 }, { data: ab }, { data: tm }] =
+        await Promise.all([
+          supabase
+            .from("employees")
+            .select(
+              "id,name,email,role,active,department_id,auth_user_id,phone,whatsapp,team_id,qualifikationen"
+            )
+            .order("name"),
+          supabase.from("departments").select("id,name").order("name"),
+          supabase.from("teams").select("id,name,department_id").order("name"),
+        ]);
+      if (e1) throw e1;
 
-    const abteilungNachId = Object.fromEntries(
-      (abteilungen ?? []).map((a) => [a.id, a.name])
-    );
+      const abMap = Object.fromEntries((ab ?? []).map((a) => [a.id, a.name]));
+      const teamList = (tm ?? []) as {
+        id: string;
+        name: string;
+        department_id: string | null;
+      }[];
+      const teamNameNachId = Object.fromEntries(
+        teamList.map((t) => [t.id, t.name])
+      );
 
-    setZeilen(
-      (mitarbeiter ?? []).map((m) => ({
-        id: m.id,
-        name: m.name,
-        email: m.email,
-        role: m.role,
-        active: m.active,
-        abteilungsName: m.department_id
-          ? abteilungNachId[m.department_id] ?? null
-          : null,
-      }))
-    );
-    setLaedt(false);
-  }, []);
+      setAbteilungen((ab ?? []) as { id: string; name: string }[]);
+      setTeams(teamList);
+
+      setZeilen(
+        (mitarbeiter ?? []).map((m) => {
+          const qual = Array.isArray(m.qualifikationen)
+            ? (m.qualifikationen as string[])
+            : [];
+          return {
+            id: m.id as string,
+            name: m.name as string,
+            email: (m.email as string | null) ?? null,
+            role: m.role as string,
+            active: m.active as boolean,
+            department_id: (m.department_id as string | null) ?? null,
+            auth_user_id: (m.auth_user_id as string | null) ?? null,
+            phone: (m.phone as string | null) ?? null,
+            whatsapp: (m.whatsapp as string | null) ?? null,
+            team_id: (m.team_id as string | null) ?? null,
+            qualifikationen: qual,
+            abteilungsName: m.department_id
+              ? abMap[m.department_id as string] ?? null
+              : null,
+            teamName: m.team_id
+              ? teamNameNachId[m.team_id as string] ?? null
+              : null,
+          };
+        })
+      );
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : "Mitarbeiter konnten nicht geladen werden."
+      );
+    } finally {
+      setLaedt(false);
+    }
+  }, [supabase]);
 
   useEffect(() => {
     void laden();
   }, [laden]);
+
+  const abteilungFuerTeam = useCallback(
+    (teamId: string | null) => {
+      if (!teamId) return null;
+      return teams.find((t) => t.id === teamId)?.department_id ?? null;
+    },
+    [teams]
+  );
+
+  const abteilungMonteur = monteurF.watch("department_id");
+  const teamsGefiltert = useMemo(() => {
+    if (!abteilungMonteur) return teams;
+    return teams.filter((t) => t.department_id === abteilungMonteur);
+  }, [teams, abteilungMonteur]);
+
+  const gefilterteZeilen = useMemo(() => {
+    const q = suche.trim().toLowerCase();
+    return zeilen.filter((z) => {
+      if (q && !z.name.toLowerCase().includes(q)) return false;
+      if (typFilter === "monteur" && z.auth_user_id !== null) return false;
+      if (typFilter === "koordinator" && z.auth_user_id === null) return false;
+      if (abteilungFilter !== "alle" && z.department_id !== abteilungFilter)
+        return false;
+      if (teamFilter !== "alle" && z.team_id !== teamFilter) return false;
+      return true;
+    });
+  }, [zeilen, suche, typFilter, abteilungFilter, teamFilter]);
 
   async function rolleAendern(id: string, neueRolle: string) {
     const res = await fetch(`/api/admin/mitarbeiter/${id}`, {
@@ -96,52 +226,191 @@ export function MitarbeiterVerwaltung() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ role: neueRolle }),
     });
-    const json = (await res.json()) as { fehler?: string };
+    const json = (await res.json()) as { fehler?: string; error?: string };
     if (!res.ok) {
-      toast.error(json.fehler ?? "Speichern fehlgeschlagen.");
+      toast.error(apiFehler(json));
       return;
     }
     toast.success("Rolle aktualisiert.");
     void laden();
   }
 
-  async function aktivitaetAendern(id: string, aktiv: boolean) {
-    const res = await fetch(`/api/admin/mitarbeiter/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ active: aktiv }),
-    });
-    const json = (await res.json()) as { fehler?: string };
-    if (!res.ok) {
-      toast.error(json.fehler ?? "Speichern fehlgeschlagen.");
+  function monteurSheetOeffnen(zeile?: Zeile) {
+    if (zeile) {
+      setBearbeitenId(zeile.id);
+      monteurF.reset({
+        name: zeile.name,
+        phone: zeile.phone ?? "",
+        whatsapp: zeile.whatsapp ?? "",
+        department_id: zeile.department_id ?? "",
+        team_id: zeile.team_id ?? "",
+        qualifikationen: zeile.qualifikationen ?? [],
+      });
+    } else {
+      setBearbeitenId(null);
+      monteurF.reset({
+        name: "",
+        phone: "",
+        whatsapp: "",
+        department_id: "",
+        team_id: "",
+        qualifikationen: [],
+      });
+    }
+    setTagInput("");
+    setMonteurSheetOffen(true);
+  }
+
+  async function monteurSpeichern(w: MonteurForm) {
+    const department_id = w.department_id || null;
+    const team_id = w.team_id || null;
+    if (
+      team_id &&
+      abteilungFuerTeam(team_id) &&
+      department_id &&
+      abteilungFuerTeam(team_id) !== department_id
+    ) {
+      toast.error("Team passt nicht zur gewählten Abteilung.");
       return;
     }
-    toast.success(aktiv ? "Mitarbeiter aktiviert." : "Mitarbeiter deaktiviert.");
+    const payload = {
+      name: w.name.trim(),
+      phone: w.phone?.trim() || null,
+      whatsapp: w.whatsapp?.trim() || null,
+      department_id,
+      team_id,
+      qualifikationen: w.qualifikationen?.length ? w.qualifikationen : [],
+      role: "monteur" as const,
+      auth_user_id: null as null,
+      active: true,
+    };
+
+    try {
+      if (bearbeitenId) {
+        const { error } = await supabase
+          .from("employees")
+          .update(payload)
+          .eq("id", bearbeitenId);
+        if (error) throw error;
+        await supabase.from("team_members").delete().eq("employee_id", bearbeitenId);
+        if (team_id) {
+          const { error: e2 } = await supabase.from("team_members").insert({
+            team_id,
+            employee_id: bearbeitenId,
+            team_role: "mitglied",
+          });
+          if (e2) throw e2;
+        }
+        toast.success("Monteur gespeichert.");
+      } else {
+        const { data: neu, error } = await supabase
+          .from("employees")
+          .insert(payload)
+          .select("id")
+          .single();
+        if (error) throw error;
+        if (neu?.id && team_id) {
+          const { error: e2 } = await supabase.from("team_members").insert({
+            team_id,
+            employee_id: neu.id as string,
+            team_role: "mitglied",
+          });
+          if (e2) throw e2;
+        }
+        toast.success("Monteur angelegt.");
+      }
+      setMonteurSheetOffen(false);
+      void laden();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Speichern fehlgeschlagen.");
+    }
+  }
+
+  async function mitarbeiterLoeschen() {
+    if (!loeschenId) return;
+    const { error } = await supabase.from("employees").delete().eq("id", loeschenId);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("Eintrag gelöscht.");
+    setLoeschenId(null);
     void laden();
   }
 
-  async function einladen() {
-    const email = einladEmail.trim().toLowerCase();
+  async function koorAktivSpeichern() {
+    if (!koorBearbeiten) return;
+    setKoorSpeichert(true);
+    try {
+      const res = await fetch(`/api/admin/mitarbeiter/${koorBearbeiten.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: koorAktiv }),
+      });
+      const json = (await res.json()) as { fehler?: string; error?: string };
+      if (!res.ok) {
+        toast.error(apiFehler(json));
+        return;
+      }
+      toast.success("Gespeichert.");
+      setKoorBearbeiten(null);
+      void laden();
+    } finally {
+      setKoorSpeichert(false);
+    }
+  }
+
+  async function koordinatorEinladen() {
+    const email = koordinatorEmail.trim().toLowerCase();
     if (!email) {
       toast.error("E-Mail eingeben.");
       return;
     }
-    setEinladLaedt(true);
-    const res = await fetch("/api/admin/mitarbeiter/einladen", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
-    });
-    const json = (await res.json()) as { fehler?: string };
-    setEinladLaedt(false);
-    if (!res.ok) {
-      toast.error(json.fehler ?? "Einladung fehlgeschlagen.");
+    setKoordinatorLaedt(true);
+    try {
+      const res = await fetch("/api/admin/mitarbeiter/einladen", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const json = (await res.json()) as {
+        ok?: boolean;
+        fehler?: string;
+        error?: string;
+      };
+      if (!res.ok) {
+        toast.error(apiFehler(json));
+        return;
+      }
+      toast.success(`Einladung gesendet an ${email}`);
+      setKoordinatorEmail("");
+      setKoordinatorOffen(false);
+    } finally {
+      setKoordinatorLaedt(false);
+    }
+  }
+
+  function qualifikationHinzufuegen() {
+    const t = tagInput.trim();
+    if (!t) return;
+    const cur = monteurF.getValues("qualifikationen") ?? [];
+    if (cur.includes(t)) {
+      setTagInput("");
       return;
     }
-    toast.success("Einladung wurde versendet.");
-    setEinladEmail("");
-    setEinladOffen(false);
+    monteurF.setValue("qualifikationen", [...cur, t]);
+    setTagInput("");
   }
+
+  function qualifikationEntfernen(q: string) {
+    const cur = monteurF.getValues("qualifikationen") ?? [];
+    monteurF.setValue(
+      "qualifikationen",
+      cur.filter((x) => x !== q)
+    );
+  }
+
+  const qualifikationen = monteurF.watch("qualifikationen") ?? [];
 
   if (laedt) {
     return (
@@ -153,121 +422,461 @@ export function MitarbeiterVerwaltung() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Mitarbeiter</h1>
-          <p className="text-muted-foreground">
-            Rollen vergeben, Konten einladen, Zugänge sperren.
-          </p>
+        <h2 className="text-lg font-semibold tracking-tight text-zinc-50">
+          Mitarbeiter
+        </h2>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1"
+            onClick={() => monteurSheetOeffnen()}
+          >
+            <Plus className="size-4" />
+            Monteur hinzufügen
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            className="gap-1"
+            onClick={() => setKoordinatorOffen(true)}
+          >
+            Koordinator einladen
+          </Button>
         </div>
-        <Dialog open={einladOffen} onOpenChange={setEinladOffen}>
-          <DialogTrigger render={<Button type="button" />}>
-            Per E-Mail einladen
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Mitarbeiter einladen</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-2 py-2">
-              <Label htmlFor="einlad-email">E-Mail</Label>
-              <Input
-                id="einlad-email"
-                type="email"
-                value={einladEmail}
-                onChange={(e) => setEinladEmail(e.target.value)}
-                placeholder="kollege@firma.de"
-              />
-            </div>
-            <DialogFooter>
-              <Button
-                type="button"
-                onClick={() => void einladen()}
-                disabled={einladLaedt}
-              >
-                {einladLaedt ? "Senden…" : "Einladung senden"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
 
-      <div className="overflow-x-auto rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>E-Mail</TableHead>
-              <TableHead>Abteilung</TableHead>
-              <TableHead>Rolle</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Aktion</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {zeilen.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-muted-foreground">
-                  Keine Einträge.
-                </TableCell>
+      <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
+        <Input
+          placeholder="Suche nach Name…"
+          value={suche}
+          onChange={(e) => setSuche(e.target.value)}
+          className="max-w-sm border-zinc-700 bg-zinc-950"
+        />
+        <Select
+          value={typFilter}
+          onValueChange={(v) =>
+            setTypFilter((v ?? "alle") as "alle" | "monteur" | "koordinator")
+          }
+        >
+          <SelectTrigger className="w-full md:w-[180px] border-zinc-700 bg-zinc-950">
+            <SelectValue placeholder="Typ" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="alle">Alle Typen</SelectItem>
+            <SelectItem value="monteur">Monteure</SelectItem>
+            <SelectItem value="koordinator">Koordinatoren</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={abteilungFilter}
+          onValueChange={(v) => setAbteilungFilter(v ?? "alle")}
+        >
+          <SelectTrigger className="w-full md:w-[200px] border-zinc-700 bg-zinc-950">
+            <SelectValue placeholder="Abteilung" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="alle">Alle Abteilungen</SelectItem>
+            {abteilungen.map((a) => (
+              <SelectItem key={a.id} value={a.id}>
+                {a.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={teamFilter}
+          onValueChange={(v) => setTeamFilter(v ?? "alle")}
+        >
+          <SelectTrigger className="w-full md:w-[200px] border-zinc-700 bg-zinc-950">
+            <SelectValue placeholder="Team" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="alle">Alle Teams</SelectItem>
+            {teams.map((t) => (
+              <SelectItem key={t.id} value={t.id}>
+                {t.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {zeilen.length === 0 ? (
+        <Card className="border-dashed border-zinc-700 bg-zinc-900/40">
+          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+            <Users className="size-12 text-zinc-600" />
+            <p className="font-medium text-zinc-200">
+              Noch keine Mitarbeiter vorhanden
+            </p>
+            <p className="max-w-sm text-sm text-zinc-500">
+              Lege Monteure an oder lade Koordinatoren per E-Mail ein.
+            </p>
+            <Button type="button" onClick={() => monteurSheetOeffnen()}>
+              <Plus className="mr-1 size-4" />
+              Monteur hinzufügen
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="overflow-x-auto rounded-md border border-zinc-800">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-zinc-800 hover:bg-transparent">
+                <TableHead>Name</TableHead>
+                <TableHead>Typ</TableHead>
+                <TableHead>Abteilung</TableHead>
+                <TableHead>Team</TableHead>
+                <TableHead>Telefon</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Rolle</TableHead>
+                <TableHead className="text-right">Aktionen</TableHead>
               </TableRow>
-            ) : (
-              zeilen.map((z) => (
-                <TableRow key={z.id}>
-                  <TableCell className="font-medium">{z.name}</TableCell>
-                  <TableCell>{z.email ?? "—"}</TableCell>
-                  <TableCell>{z.abteilungsName ?? "—"}</TableCell>
-                  <TableCell>
-                    <Select
-                      value={z.role}
-                      onValueChange={(v) => {
-                        if (v) void rolleAendern(z.id, v);
-                      }}
-                    >
-                      <SelectTrigger className="w-[180px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {rollen.map((r) => (
-                          <SelectItem key={r.wert} value={r.wert}>
-                            {r.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={z.active ? "default" : "secondary"}>
-                      {z.active ? "aktiv" : "inaktiv"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {z.active ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => void aktivitaetAendern(z.id, false)}
-                      >
-                        Deaktivieren
-                      </Button>
-                    ) : (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => void aktivitaetAendern(z.id, true)}
-                      >
-                        Aktivieren
-                      </Button>
-                    )}
+            </TableHeader>
+            <TableBody>
+              {gefilterteZeilen.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={8}
+                    className="text-center text-muted-foreground"
+                  >
+                    Keine Treffer für die Filter.
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+              ) : (
+                gefilterteZeilen.map((z) => {
+                  const istKoordinator = z.auth_user_id !== null;
+                  return (
+                    <TableRow key={z.id} className="border-zinc-800">
+                      <TableCell className="font-medium">{z.name}</TableCell>
+                      <TableCell>
+                        {istKoordinator ? (
+                          <Badge>Koordinator</Badge>
+                        ) : (
+                          <Badge variant="secondary">Monteur</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>{z.abteilungsName ?? "—"}</TableCell>
+                      <TableCell>{z.teamName ?? "—"}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {z.phone ?? "—"}
+                      </TableCell>
+                      <TableCell>
+                        {z.active ? (
+                          <Badge className="bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/25">
+                            Aktiv
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary">Inaktiv</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {istKoordinator ? (
+                          <Select
+                            value={z.role}
+                            onValueChange={(v) => {
+                              if (v) void rolleAendern(z.id, v);
+                            }}
+                          >
+                            <SelectTrigger className="h-8 w-[190px] border-zinc-600">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {koordinatorRollen.map((r) => (
+                                <SelectItem key={r.wert} value={r.wert}>
+                                  {r.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-8"
+                          onClick={() => {
+                            if (istKoordinator) {
+                              setKoorBearbeiten(z);
+                              setKoorAktiv(z.active);
+                            } else {
+                              monteurSheetOeffnen(z);
+                            }
+                          }}
+                          title="Bearbeiten"
+                        >
+                          <Pencil className="size-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 text-destructive"
+                          onClick={() => setLoeschenId(z.id)}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      <Sheet open={monteurSheetOffen} onOpenChange={setMonteurSheetOffen}>
+        <SheetContent
+          side="right"
+          className="w-full border-zinc-800 bg-zinc-950 sm:max-w-md"
+        >
+          <form
+            onSubmit={monteurF.handleSubmit((d) => void monteurSpeichern(d))}
+            className="flex h-full flex-col"
+          >
+            <SheetHeader>
+              <SheetTitle>
+                {bearbeitenId ? "Monteur bearbeiten" : "Monteur hinzufügen"}
+              </SheetTitle>
+            </SheetHeader>
+            <div className="flex-1 space-y-4 overflow-y-auto py-4">
+              <div className="space-y-2">
+                <Label htmlFor="m-name">Name *</Label>
+                <Input
+                  id="m-name"
+                  {...monteurF.register("name")}
+                  className="border-zinc-700 bg-zinc-900"
+                />
+                {monteurF.formState.errors.name && (
+                  <p className="text-xs text-destructive">
+                    {monteurF.formState.errors.name.message}
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="m-phone">Telefon</Label>
+                <Input
+                  id="m-phone"
+                  placeholder="+49 151…"
+                  {...monteurF.register("phone")}
+                  className="border-zinc-700 bg-zinc-900"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="m-wa">WhatsApp</Label>
+                <Input
+                  id="m-wa"
+                  placeholder="+49 151…"
+                  {...monteurF.register("whatsapp")}
+                  className="border-zinc-700 bg-zinc-900"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Für Einsatz-Benachrichtigungen
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>Abteilung</Label>
+                <Select
+                  value={monteurF.watch("department_id") || "__none__"}
+                  onValueChange={(v) => {
+                    const val = v === "__none__" || v == null ? "" : v;
+                    monteurF.setValue("department_id", val);
+                    monteurF.setValue("team_id", "");
+                  }}
+                >
+                  <SelectTrigger className="border-zinc-700 bg-zinc-900">
+                    <SelectValue placeholder="Optional" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">—</SelectItem>
+                    {abteilungen.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Team</Label>
+                <Select
+                  value={monteurF.watch("team_id") || "__none__"}
+                  onValueChange={(v) =>
+                    monteurF.setValue(
+                      "team_id",
+                      v === "__none__" || v == null ? "" : v
+                    )
+                  }
+                >
+                  <SelectTrigger className="border-zinc-700 bg-zinc-900">
+                    <SelectValue placeholder="Optional" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">—</SelectItem>
+                    {teamsGefiltert.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Qualifikationen</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        qualifikationHinzufuegen();
+                      }
+                    }}
+                    placeholder="Eingabe + Enter"
+                    className="border-zinc-700 bg-zinc-900"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {qualifikationen.map((q) => (
+                    <Badge
+                      key={q}
+                      variant="secondary"
+                      className="cursor-pointer gap-1 pr-1"
+                      onClick={() => qualifikationEntfernen(q)}
+                    >
+                      {q}
+                      <span className="text-xs">×</span>
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <SheetFooter className="border-t border-zinc-800 pt-4">
+              <Button type="submit">Speichern</Button>
+            </SheetFooter>
+          </form>
+        </SheetContent>
+      </Sheet>
+
+      <Dialog
+        open={!!koorBearbeiten}
+        onOpenChange={(o) => !o && setKoorBearbeiten(null)}
+      >
+        <DialogContent className="border-zinc-800 bg-zinc-950">
+          <DialogHeader>
+            <DialogTitle>Koordinator</DialogTitle>
+            <DialogDescription>
+              Status für {koorBearbeiten?.name ?? ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1">
+              <Label>E-Mail</Label>
+              <p className="text-sm text-muted-foreground">
+                {koorBearbeiten?.email ?? "—"}
+              </p>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <Label htmlFor="koor-aktiv">Aktiv</Label>
+              <Switch
+                id="koor-aktiv"
+                checked={koorAktiv}
+                onCheckedChange={setKoorAktiv}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setKoorBearbeiten(null)}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void koorAktivSpeichern()}
+              disabled={koorSpeichert}
+            >
+              {koorSpeichert ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                "Speichern"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={koordinatorOffen} onOpenChange={setKoordinatorOffen}>
+        <DialogContent className="border-zinc-800 bg-zinc-950">
+          <DialogHeader>
+            <DialogTitle>Koordinator einladen</DialogTitle>
+            <DialogDescription>
+              Der Eingeladene erhält eine E-Mail und kann sich dann einloggen.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="k-email">E-Mail *</Label>
+            <Input
+              id="k-email"
+              type="email"
+              value={koordinatorEmail}
+              onChange={(e) => setKoordinatorEmail(e.target.value)}
+              className="border-zinc-700 bg-zinc-900"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              onClick={() => void koordinatorEinladen()}
+              disabled={koordinatorLaedt}
+            >
+              {koordinatorLaedt ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                "Einladung senden"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!loeschenId} onOpenChange={(o) => !o && setLoeschenId(null)}>
+        <DialogContent className="border-zinc-800 bg-zinc-950">
+          <DialogHeader>
+            <DialogTitle>Eintrag löschen?</DialogTitle>
+            <DialogDescription>
+              Diese Aktion kann nicht rückgängig gemacht werden.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setLoeschenId(null)}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void mitarbeiterLoeschen()}
+            >
+              Löschen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
