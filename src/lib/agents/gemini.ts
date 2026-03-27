@@ -56,3 +56,41 @@ export async function rufeGeminiOptional(
     return null;
   }
 }
+
+/**
+ * Streaming-Antwort (z. B. Notfall JSON) — Chunk für Chunk als UTF-8-Text.
+ */
+export async function streamGeminiText(
+  systemPrompt: string,
+  nutzerPrompt: string
+): Promise<ReadableStream<Uint8Array>> {
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error(
+      "GEMINI_API_KEY ist nicht gesetzt — bitte in den Umgebungsvariablen hinterlegen."
+    );
+  }
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const modell = genAI.getGenerativeModel({
+    model: modellId(),
+    systemInstruction: systemPrompt,
+  });
+
+  const result = await modell.generateContentStream(nutzerPrompt);
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const enc = new TextEncoder();
+      try {
+        for await (const chunk of result.stream) {
+          const t = chunk.text();
+          if (t) controller.enqueue(enc.encode(t));
+        }
+        controller.close();
+      } catch (e) {
+        controller.error(e);
+      }
+    },
+  });
+}
