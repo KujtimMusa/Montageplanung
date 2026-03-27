@@ -9,6 +9,7 @@ export type SyncfusionEvent = {
   EndTime: Date;
   ProjectId: string;
   TeamId: string | null;
+  /** Balken-/Akzentfarbe (Projektfarbe) */
   TeamFarbe: string;
   Prioritaet: string;
   ZeitLabel: string;
@@ -21,6 +22,8 @@ export type SyncfusionEvent = {
   OrtLabel: string;
   HatKonflikt: boolean;
   Kritisch: boolean;
+  /** Monatsansicht: nur Pill mit Projektname */
+  KompaktMonat: boolean;
   IsBlock: boolean;
   OriginalZuweisung: EinsatzEvent;
 };
@@ -28,7 +31,8 @@ export type SyncfusionEvent = {
 export function transformiereEinsatz(
   z: EinsatzEvent,
   hatKonflikt: boolean,
-  teamFarbe: string
+  balkenFarbe: string,
+  kompaktMonat: boolean
 ): SyncfusionEvent {
   const datumStr = z.date;
   const startStr = z.start_time?.slice(0, 5) ?? "07:00";
@@ -58,7 +62,7 @@ export function transformiereEinsatz(
     EndTime: end,
     ProjectId: z.project_id ?? "",
     TeamId: z.team_id ?? null,
-    TeamFarbe: teamFarbe,
+    TeamFarbe: balkenFarbe,
     Prioritaet: z.prioritaet ?? "normal",
     ZeitLabel: `${startStr} – ${endStr}`,
     ProjektTitel: projektTitel,
@@ -67,6 +71,7 @@ export function transformiereEinsatz(
     OrtLabel: (z.ortLabel ?? "").trim(),
     HatKonflikt: hatKonflikt,
     Kritisch: istKritischUi(z.prioritaet, z.projects?.priority),
+    KompaktMonat: kompaktMonat,
     IsBlock: false,
     OriginalZuweisung: z,
   };

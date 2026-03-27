@@ -2,6 +2,11 @@
 
 export type EinsatzPrioritaetUi = "niedrig" | "mittel" | "hoch" | "kritisch";
 
+export type EinsatzTeamMitglied = {
+  id: string;
+  name: string;
+};
+
 export type EinsatzEvent = {
   id: string;
   employee_id: string;
@@ -16,17 +21,29 @@ export type EinsatzEvent = {
   prioritaet: string | null;
   /** Berechnet für Kalenderkarte & Tooltip */
   ortLabel: string | null;
+  /** Abwesenheit im Team (Kalender) */
+  hatKonflikt?: boolean;
   projects: {
     title: string;
     priority?: string | null;
     notes?: string | null;
+    /** Hex, optional — Kalender-Pill */
+    farbe?: string | null;
+    /** Optional: Baustelle */
+    adresse?: string | null;
+    status?: string | null;
     customers?: {
       address?: string | null;
       city?: string | null;
       company_name?: string | null;
     } | null;
   } | null;
-  teams: { name: string; farbe?: string | null } | null;
+  teams: {
+    id?: string;
+    name: string;
+    farbe?: string | null;
+    mitglieder?: EinsatzTeamMitglied[];
+  } | null;
   dienstleister: { company_name: string } | null;
 };
 

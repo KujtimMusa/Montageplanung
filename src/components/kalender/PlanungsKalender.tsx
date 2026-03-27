@@ -147,10 +147,41 @@ function prioRangUngeplant(prio: string): number {
   }
 }
 
+function hexMitAlpha(hex: string, alphaHex: string): string {
+  const h = hex.trim();
+  if (/^#[0-9A-Fa-f]{6}$/.test(h)) return `${h}${alphaHex}`;
+  return "#3b82f615";
+}
+
+function projektBalkenFarbe(z: EinsatzEvent): string {
+  const pf = z.projects?.farbe?.trim();
+  if (pf) return pf;
+  const prio = z.projects?.priority ?? "normal";
+  return PRIORITAET_FARBEN[prio] ?? "#3b82f6";
+}
+
+function parseTeamMitglieder(team: unknown): { id: string; name: string }[] {
+  const t = team as
+    | { team_members?: Array<{ employees?: unknown }> }
+    | null
+    | undefined;
+  if (!t?.team_members?.length) return [];
+  const out: { id: string; name: string }[] = [];
+  for (const tm of t.team_members) {
+    const e = tm.employees;
+    const emp = Array.isArray(e) ? e[0] : e;
+    const id = (emp as { id?: string })?.id;
+    const name = (emp as { name?: string })?.name;
+    if (id && name) out.push({ id, name });
+  }
+  return out;
+}
+
 function EinsatzTemplate(props: Record<string, unknown>) {
   const farbe = (props.TeamFarbe as string) ?? "#3b82f6";
   const kritisch = Boolean(props.Kritisch);
   const konflikt = Boolean(props.HatKonflikt);
+  const kompaktMonat = Boolean(props.KompaktMonat);
   const projekt = String(props.ProjektTitel ?? "").trim();
   const ort = String(props.OrtLabel ?? "").trim();
   const rolleTag = (props.RolleTag as "Team" | "Partner") ?? "Team";
@@ -164,6 +195,52 @@ function EinsatzTemplate(props: Record<string, unknown>) {
     rolleTag === "Partner"
       ? "border-violet-500/40 bg-violet-500/15 text-violet-200"
       : "border-blue-500/40 bg-blue-500/15 text-blue-200";
+
+  if (kompaktMonat) {
+    const projektName = hauptTitel;
+    return (
+      <div
+        className="planung-sf-event-pill--kompakt flex h-full w-full cursor-pointer items-center overflow-hidden rounded-[5px]"
+        style={{
+          alignItems: "center",
+          gap: 6,
+          background: hexMitAlpha(farbe, "15"),
+          borderRadius: 5,
+          padding: "2px 6px 2px 0",
+          overflow: "hidden",
+          cursor: "pointer",
+          border: "none",
+          width: "100%",
+        }}
+        title={projektName}
+      >
+        <div
+          style={{
+            width: 3,
+            minHeight: 18,
+            background: farbe,
+            borderRadius: "2px 0 0 2px",
+            flexShrink: 0,
+            alignSelf: "stretch",
+          }}
+        />
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 500,
+            color: "#e4e4e7",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            flex: 1,
+          }}
+        >
+          {projektName}
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div
       className="planung-sf-event-inner flex h-full min-h-[52px] w-full flex-col justify-center gap-0.5 overflow-hidden rounded-md border border-white/10 px-1.5 py-1 shadow-sm"
@@ -231,9 +308,6 @@ export function PlanungsKalender() {
   const [teamsListe, setTeamsListe] = useState<TeamOption[]>([]);
   const [zuweisungen, setZuweisungen] = useState<EinsatzEvent[]>([]);
   const [abwesenheiten, setAbwesenheiten] = useState<AbwesenheitRow[]>([]);
-  const [membersByTeam, setMembersByTeam] = useState<Map<string, Set<string>>>(
-    () => new Map()
-  );
   const [projekteAktiv, setProjekteAktiv] = useState<ProjektOption[]>([]);
   const [ungeplanteProjekte, setUngeplanteProjekte] = useState<
     UngeplantesProjekt[]
@@ -362,12 +436,35 @@ export function PlanungsKalender() {
           mitgliederMap.get(tid)!.push({ id: emp.id, name: emp.name });
         }
       }
-      setMembersByTeam(map);
       setMitgliederByTeam(mitgliederMap);
 
       const memberIds = Array.from(
         new Set((tmRows ?? []).map((r) => r.employee_id as string))
       );
+
+      let abwesenheitenListe: AbwesenheitRow[] = [];
+      if (memberIds.length > 0) {
+        const { data: abw, error: abwErr } = await supabase
+          .from("absences")
+          .select("employee_id,start_date,end_date,type,employees(name)")
+          .in("employee_id", memberIds);
+        if (!abwErr && abw) {
+          abwesenheitenListe = (abw ?? []).map((row) => {
+            const e = row.employees as
+              | { name?: string }
+              | { name?: string }[]
+              | null;
+            const name = Array.isArray(e) ? e[0]?.name : e?.name;
+            return {
+              employee_id: row.employee_id as string,
+              employee_name: (name as string) ?? "Mitarbeiter",
+              start_date: row.start_date as string,
+              end_date: row.end_date as string,
+              type: (row.type as string) ?? "sonstiges",
+            };
+          });
+        }
+      }
 
       const projektSelect =
         "id,title,status,priority,planned_start,planned_end,notes,customers(company_name,address,city)";
@@ -452,9 +549,9 @@ export function PlanungsKalender() {
       }
 
       const selectMitPrioritaet =
-        "id,employee_id,project_id,project_title,team_id,dienstleister_id,date,start_time,end_time,notes,prioritaet, projects(title,priority,notes, customers(address,city,company_name)), teams(name,farbe), subcontractors(company_name)";
+        "id,employee_id,project_id,project_title,team_id,dienstleister_id,date,start_time,end_time,notes,prioritaet, projects(id,title,farbe,adresse,priority,status,notes, customers(address,city,company_name)), teams(id,name,farbe,team_members(employees(id,name))), subcontractors(company_name)";
       const selectOhnePrioritaet =
-        "id,employee_id,project_id,project_title,team_id,dienstleister_id,date,start_time,end_time,notes, projects(title,priority,notes, customers(address,city,company_name)), teams(name,farbe), subcontractors(company_name)";
+        "id,employee_id,project_id,project_title,team_id,dienstleister_id,date,start_time,end_time,notes, projects(id,title,farbe,adresse,priority,status,notes, customers(address,city,company_name)), teams(id,name,farbe,team_members(employees(id,name))), subcontractors(company_name)";
 
       const zuQuery = await supabase
         .from("assignments")
@@ -480,15 +577,23 @@ export function PlanungsKalender() {
         const normalisiert: EinsatzEvent[] = (zu ?? []).map((row) => {
           const p = row.projects as
             | {
+                id?: string;
                 title?: string;
-                priority?: string | null;
+                farbe?: string | null;
+                adresse?: string | null;
                 notes?: string | null;
+                priority?: string | null;
+                status?: string | null;
                 customers?: unknown;
               }
             | {
+                id?: string;
                 title?: string;
-                priority?: string | null;
+                farbe?: string | null;
+                adresse?: string | null;
                 notes?: string | null;
+                priority?: string | null;
+                status?: string | null;
                 customers?: unknown;
               }[]
             | null;
@@ -499,10 +604,11 @@ export function PlanungsKalender() {
             | null;
           const cust = Array.isArray(custRaw) ? custRaw[0] : custRaw;
           const t = row.teams as
-            | { name?: string; farbe?: string }
-            | { name?: string; farbe?: string }[]
+            | { id?: string; name?: string; farbe?: string; team_members?: unknown }
+            | { id?: string; name?: string; farbe?: string; team_members?: unknown }[]
             | null;
           const team = Array.isArray(t) ? t[0] : t;
+          const mitglieder = team ? parseTeamMitglieder(team) : [];
           const subEmb = row.subcontractors as
             | { company_name?: string }
             | { company_name?: string }[]
@@ -513,6 +619,9 @@ export function PlanungsKalender() {
                 title: projekt.title as string,
                 priority: projekt.priority as string | undefined,
                 notes: projekt.notes as string | null | undefined,
+                farbe: projekt.farbe ?? null,
+                adresse: projekt.adresse ?? null,
+                status: projekt.status ?? null,
                 customers: cust
                   ? {
                       address: cust.address,
@@ -530,12 +639,16 @@ export function PlanungsKalender() {
                 }
               : null
           );
+          const tid = row.team_id as string | null;
+          const hatKonflikt = tid
+            ? teamHatKonflikt(tid, row.date as string, map, abwesenheitenListe)
+            : false;
           return {
             id: row.id as string,
             employee_id: row.employee_id as string,
             project_id: (row.project_id as string | null) ?? null,
             project_title: (row.project_title as string | null) ?? null,
-            team_id: (row.team_id as string | null) ?? null,
+            team_id: tid,
             dienstleister_id: (row.dienstleister_id as string | null) ?? null,
             date: row.date as string,
             start_time: row.start_time as string,
@@ -543,9 +656,15 @@ export function PlanungsKalender() {
             notes: (row.notes as string | null) ?? null,
             prioritaet: (row as { prioritaet?: string | null }).prioritaet ?? null,
             ortLabel: ortLabel || null,
+            hatKonflikt,
             projects: projectsNested,
             teams: team?.name
-              ? { name: team.name as string, farbe: team.farbe as string | undefined }
+              ? {
+                  id: team.id as string | undefined,
+                  name: team.name as string,
+                  farbe: team.farbe as string | undefined,
+                  mitglieder,
+                }
               : null,
             dienstleister: subcontractor?.company_name
               ? { company_name: subcontractor.company_name as string }
@@ -555,34 +674,7 @@ export function PlanungsKalender() {
         setZuweisungen(normalisiert);
       }
 
-      if (memberIds.length === 0) {
-        setAbwesenheiten([]);
-      } else {
-        const { data: abw, error: abwErr } = await supabase
-          .from("absences")
-          .select("employee_id,start_date,end_date,type,employees(name)")
-          .in("employee_id", memberIds);
-
-        if (abwErr) {
-          setAbwesenheiten([]);
-        } else {
-          const list: AbwesenheitRow[] = (abw ?? []).map((row) => {
-            const e = row.employees as
-              | { name?: string }
-              | { name?: string }[]
-              | null;
-            const name = Array.isArray(e) ? e[0]?.name : e?.name;
-            return {
-              employee_id: row.employee_id as string,
-              employee_name: (name as string) ?? "Mitarbeiter",
-              start_date: row.start_date as string,
-              end_date: row.end_date as string,
-              type: (row.type as string) ?? "sonstiges",
-            };
-          });
-          setAbwesenheiten(list);
-        }
-      }
+      setAbwesenheiten(abwesenheitenListe);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Unbekannter Fehler";
       toast.error(`Kalenderdaten konnten nicht geladen werden: ${msg}`);
@@ -751,29 +843,16 @@ export function PlanungsKalender() {
     return ids.size;
   }, [abwesenheiten]);
 
-  const teamFarbe = useCallback(
-    (teamId: string | null) => {
-      if (!teamId) return "#3b82f6";
-      return teamsListe.find((t) => t.id === teamId)?.farbe ?? "#3b82f6";
-    },
-    [teamsListe]
-  );
-
   const syncfusionEvents: SyncfusionEvent[] = useMemo(() => {
+    const kompakt = kalenderAnsicht === "month";
     return zuweisungen
       .filter((z) => z.project_id)
       .map((z) => {
-        const tid = z.team_id as string | null;
-        const dlName = z.dienstleister?.company_name;
-        const farbe =
-          z.teams?.farbe?.trim() ||
-          (dlName ? "#a855f7" : teamFarbe(tid ?? ""));
-        const hatKonflikt = tid
-          ? teamHatKonflikt(tid, z.date, membersByTeam, abwesenheiten)
-          : false;
-        return transformiereEinsatz(z, hatKonflikt, farbe);
+        const barFarbe = projektBalkenFarbe(z);
+        const hatKonflikt = z.hatKonflikt ?? false;
+        return transformiereEinsatz(z, hatKonflikt, barFarbe, kompakt);
       });
-  }, [zuweisungen, membersByTeam, abwesenheiten, teamFarbe]);
+  }, [zuweisungen, kalenderAnsicht]);
 
   const dialogNeuOeffnen = useCallback(
     (v: {
@@ -1079,23 +1158,24 @@ export function PlanungsKalender() {
         <div
           className={cn(
             "flex min-w-[3rem] flex-col items-center gap-1 py-2.5",
-            isMonth && "min-w-[3.25rem] py-3",
-            heute && "rounded-lg bg-blue-500/20 ring-1 ring-blue-500/40"
+            isMonth && "min-w-[3.25rem] py-3"
           )}
         >
           <span
             className={cn(
-              "font-semibold uppercase tracking-wider text-zinc-400",
-              isMonth ? "text-[11px]" : "text-[10px] text-zinc-500"
+              "font-semibold uppercase tracking-wider text-[#52525b]",
+              isMonth ? "text-[11px]" : "text-[10px]"
             )}
           >
             {format(d, "EEE", { locale: de })}
           </span>
           <span
             className={cn(
-              "font-bold tabular-nums leading-none",
+              "flex items-center justify-center font-bold tabular-nums leading-none",
               isMonth ? "text-lg" : "text-base",
-              heute ? "text-blue-300" : "text-zinc-50"
+              heute
+                ? "size-6 rounded-full bg-white text-black"
+                : "text-[#f4f4f5]"
             )}
           >
             {format(d, "d.", { locale: de })}

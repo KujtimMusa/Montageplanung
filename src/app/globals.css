@@ -141,10 +141,11 @@
   }
 }
 
-/* ═══ SYNCFUSION DARK OVERRIDE ═══ */
-.planung-sf .e-schedule {
-  background: transparent !important;
-  border: 1px solid #27272a !important;
+/* ═══ SYNCFUSION — Referenz-Dark (#0f0f0f / #141414) ═══ */
+.planung-sf .e-schedule,
+.planung-fc {
+  background: #0f0f0f !important;
+  border: 1px solid #1f1f1f !important;
   border-radius: 12px !important;
   overflow: hidden;
   font-family: inherit !important;
@@ -153,8 +154,8 @@
 /* Header / Toolbar */
 .planung-sf .e-schedule .e-schedule-toolbar,
 .planung-sf .e-toolbar {
-  background: #18181b !important;
-  border-bottom: 1px solid #27272a !important;
+  background: #0f0f0f !important;
+  border-bottom: 1px solid #1f1f1f !important;
 }
 .planung-sf .e-schedule .e-toolbar .e-tbar-btn {
   background: transparent !important;
@@ -167,42 +168,58 @@
   color: #e4e4e7 !important;
 }
 
-/* Timeline Zellen */
+/* Timeline-Zellen */
 .planung-sf .e-schedule .e-timeline-view .e-work-cells,
 .planung-sf .e-schedule .e-timeline-month-view .e-work-cells {
-  background: transparent !important;
-  border-color: #27272a !important;
+  background: #0f0f0f !important;
+  border-color: #1f1f1f !important;
 }
 
-/* Heute — blaue Spalte */
+.planung-sf .e-work-cells {
+  background: #0f0f0f !important;
+  border-color: #1f1f1f !important;
+}
+
+/* Heute-Spalte (dezent) */
 .planung-sf .e-schedule .e-timeline-view .e-current-day,
 .planung-sf .e-schedule .e-timeline-month-view .e-current-day {
-  background: rgba(59, 130, 246, 0.06) !important;
+  background: #141414 !important;
 }
 
 /* Datum-Header */
 .planung-sf .e-schedule .e-date-header-wrap table td {
-  background: #18181b !important;
-  border-color: #27272a !important;
+  background: #0f0f0f !important;
+  border-color: #1f1f1f !important;
   color: #71717a !important;
   font-size: 0.78rem !important;
   font-weight: 600 !important;
 }
 .planung-sf .e-schedule .e-date-header-wrap table td.e-current-day {
-  color: #3b82f6 !important;
+  color: #f4f4f5 !important;
   font-weight: 700 !important;
+}
+
+.planung-sf .e-schedule .e-header-cells,
+.planung-sf .e-schedule .e-date-header-container table td {
+  background: #0f0f0f !important;
+  border-color: #1f1f1f !important;
+  color: #52525b !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.08em !important;
 }
 
 /* Resource Area (linke Spalte) */
 .planung-sf .e-schedule .e-resource-left-td {
-  background: #18181b !important;
-  border-right: 1px solid #27272a !important;
+  background: #0f0f0f !important;
+  border-right: 1px solid #1f1f1f !important;
   width: 220px !important;
 }
 .planung-sf .e-schedule .e-resource-cells {
-  background: #18181b !important;
-  border-bottom: 1px solid #27272a !important;
-  border-right: 1px solid #27272a !important;
+  background: #0f0f0f !important;
+  border-bottom: 1px solid #1f1f1f !important;
+  border-right: 1px solid #1f1f1f !important;
 }
 
 /* Event-Pills */
@@ -216,10 +233,10 @@
   box-shadow: 0 0 0 2px #f97316 !important;
 }
 
-/* Wochenende dezent */
+/* Wochenende */
 .planung-sf .e-schedule .e-timeline-view .e-work-cells.e-weekend,
 .planung-sf .e-schedule .e-timeline-month-view .e-work-cells.e-weekend {
-  background: rgba(0, 0, 0, 0.12) !important;
+  background: #141414 !important;
 }
 
 /* Scrollbar */
@@ -251,7 +268,7 @@
   pointer-events: none !important;
 }
 
-/* Raster & Zeilen: bessere Lesbarkeit */
+/* Zeilenhöhe */
 .planung-sf .e-schedule .e-timeline-view .e-work-cells,
 .planung-sf .e-schedule .e-timeline-month-view .e-work-cells {
   min-height: 5rem !important;
@@ -278,16 +295,23 @@
   border-left: 1px solid rgba(255, 255, 255, 0.06) !important;
 }
 
-/* Event-Höhe: Karten nicht „quetscht“ */
-.planung-sf .e-schedule .e-appointment {
+/* Event-Höhe: Woche = Karten, Monat = kompakte Pills */
+.planung-sf .e-schedule .e-timeline-view:not(.e-timeline-month-view) .e-appointment {
   min-height: 52px !important;
+}
+
+.planung-sf .e-schedule .e-timeline-month-view .e-appointment {
+  min-height: 22px !important;
 }
 
 .planung-sf .e-schedule .e-appointment .e-subject {
   display: none !important;
 }
 
-/* Template-Inhalt füllt die Zelle */
 .planung-sf-event-inner {
   min-height: 52px;
+}
+
+.planung-sf-event-pill--kompakt {
+  min-height: 18px !important;
 }
