@@ -2,6 +2,8 @@ import {
   AlertTriangle,
   Bot,
   CalendarDays,
+  CalendarOff,
+  FolderKanban,
   LayoutDashboard,
   Settings,
   Truck,
@@ -12,35 +14,48 @@ import type { LucideIcon } from "lucide-react";
 export type NavEintrag = {
   href: string;
   label: string;
+  /** Kurzlabel für die mobile Bottom-Navigation */
+  labelKurz: string;
   icon: LucideIcon;
 };
 
-/** Desktop-Sidebar — Planung & Steuerung für Führungskräfte */
+/** Desktop-Sidebar & gemeinsame Reihenfolge */
 export const sidebarNavigation: NavEintrag[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/planung", label: "Planung", icon: CalendarDays },
-  { href: "/teams", label: "Teams & Mitarbeiter", icon: Users },
-  { href: "/notfall", label: "Notfall", icon: AlertTriangle },
-  { href: "/ki-assistent", label: "KI-Assistent", icon: Bot },
-  { href: "/dienstleister", label: "Dienstleister", icon: Truck },
-  { href: "/einstellungen", label: "Einstellungen", icon: Settings },
+  { href: "/dashboard", label: "Dashboard", labelKurz: "Home", icon: LayoutDashboard },
+  { href: "/teams", label: "Teams", labelKurz: "Teams", icon: Users },
+  {
+    href: "/abwesenheiten",
+    label: "Abwesenheiten",
+    labelKurz: "Abwes.",
+    icon: CalendarOff,
+  },
+  { href: "/projekte", label: "Projekte", labelKurz: "Proj.", icon: FolderKanban },
+  { href: "/planung", label: "Planung", labelKurz: "Plan", icon: CalendarDays },
+  {
+    href: "/notfall",
+    label: "Notfallplan",
+    labelKurz: "Notfall",
+    icon: AlertTriangle,
+  },
+  {
+    href: "/dienstleister",
+    label: "Dienstleister",
+    labelKurz: "DL",
+    icon: Truck,
+  },
+  {
+    href: "/ki-assistent",
+    label: "KI-Assistent",
+    labelKurz: "KI",
+    icon: Bot,
+  },
+  {
+    href: "/einstellungen",
+    label: "Einstellungen",
+    labelKurz: "Mehr",
+    icon: Settings,
+  },
 ];
 
-/** Mobil: gleiche Kernpunkte (scrollbar/kompakt) */
-export const bottomNavigation: NavEintrag[] = [
-  { href: "/dashboard", label: "KPIs", icon: LayoutDashboard },
-  { href: "/planung", label: "Planung", icon: CalendarDays },
-  { href: "/teams", label: "Teams", icon: Users },
-  { href: "/notfall", label: "Notfall", icon: AlertTriangle },
-  { href: "/ki-assistent", label: "KI", icon: Bot },
-  { href: "/dienstleister", label: "DL", icon: Truck },
-  { href: "/einstellungen", label: "Mehr", icon: Settings },
-];
-
-export function sidebarEinträgeFiltern(
-  einträge: NavEintrag[],
-  darfTeamsSeite: boolean
-): NavEintrag[] {
-  if (darfTeamsSeite) return einträge;
-  return einträge.filter((e) => e.href !== "/teams");
-}
+/** Mobil: gleiche Routen, kompakte Beschriftung */
+export const bottomNavigation: NavEintrag[] = sidebarNavigation;
