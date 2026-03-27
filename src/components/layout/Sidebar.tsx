@@ -27,9 +27,9 @@ export function Sidebar({ abteilungen, darfMitarbeiterSeite }: SidebarProps) {
   );
 
   return (
-    <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r bg-card md:flex">
-      <div className="flex h-14 items-center border-b px-4">
-        <Link href="/dashboard" className="font-semibold text-primary">
+    <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950 md:flex">
+      <div className="flex h-14 items-center border-b border-zinc-800 px-4">
+        <Link href="/dashboard" className="font-semibold text-zinc-100">
           Monteurplanung
         </Link>
       </div>
@@ -45,8 +45,8 @@ export function Sidebar({ abteilungen, darfMitarbeiterSeite }: SidebarProps) {
               className={cn(
                 "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                 aktiv
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  ? "bg-blue-600 text-white"
+                  : "text-zinc-400 hover:bg-zinc-800/80 hover:text-zinc-100"
               )}
             >
               <Icon className="size-4 shrink-0" aria-hidden />
@@ -57,19 +57,19 @@ export function Sidebar({ abteilungen, darfMitarbeiterSeite }: SidebarProps) {
       </nav>
       <Separator />
       <div className="p-3">
-        <p className="mb-2 px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <p className="mb-2 px-1 text-xs font-medium uppercase tracking-wide text-zinc-500">
           Abteilungen
         </p>
         <ul className="space-y-1" aria-label="Abteilungen">
           {abteilungen.length === 0 ? (
-            <li className="px-2 py-1 text-xs text-muted-foreground">
+            <li className="px-2 py-1 text-xs text-zinc-500">
               Keine Abteilungen geladen
             </li>
           ) : (
             abteilungen.map((a) => (
               <li
                 key={a.id}
-                className="rounded-md border-l-4 bg-muted/40 py-2 pl-3 text-sm"
+                className="rounded-md border-l-4 bg-zinc-900/80 py-2 pl-3 text-sm text-zinc-300"
                 style={{ borderLeftColor: a.color }}
               >
                 {a.name}
@@ -80,7 +80,7 @@ export function Sidebar({ abteilungen, darfMitarbeiterSeite }: SidebarProps) {
       </div>
       <Separator />
       <div className="p-3">
-        <LogoutButton className="w-full text-muted-foreground hover:text-foreground" />
+        <LogoutButton className="w-full text-zinc-400 hover:bg-zinc-800/80 hover:text-zinc-100" />
       </div>
     </aside>
   );

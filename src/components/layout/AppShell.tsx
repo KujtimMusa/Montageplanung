@@ -27,13 +27,13 @@ export function AppShell({
   darfMitarbeiterSeite,
 }: AppShellProps) {
   return (
-    <div className="flex min-h-dvh w-full bg-background">
+    <div className="flex min-h-dvh w-full bg-zinc-950">
       <Sidebar
         abteilungen={abteilungen}
         darfMitarbeiterSeite={darfMitarbeiterSeite}
       />
       <div className="flex min-h-dvh flex-1 flex-col">
-        <main className="flex-1 overflow-x-hidden px-4 pb-24 pt-4 md:px-8 md:pb-8 md:pt-8">
+        <main className="flex-1 overflow-x-hidden bg-zinc-950 px-4 pb-24 pt-4 md:px-8 md:pb-8 md:pt-8">
           {children}
         </main>
       </div>

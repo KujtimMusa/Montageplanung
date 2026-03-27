@@ -36,11 +36,13 @@ export default async function AppBereichLayout({
   }
 
   return (
-    <AppShell
-      abteilungen={abteilungen}
-      darfMitarbeiterSeite={darfMitarbeiterSeite}
-    >
-      {children}
-    </AppShell>
+    <div className="dark min-h-dvh bg-zinc-950 text-zinc-100">
+      <AppShell
+        abteilungen={abteilungen}
+        darfMitarbeiterSeite={darfMitarbeiterSeite}
+      >
+        {children}
+      </AppShell>
+    </div>
   );
 }
