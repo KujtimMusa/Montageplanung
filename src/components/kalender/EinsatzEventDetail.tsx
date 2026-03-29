@@ -14,7 +14,7 @@ import type { EinsatzEvent } from "@/types/planung";
 
 type Props = {
   offen: boolean;
-  zuweisung: EinsatzEvent | null;
+  einsaetze: EinsatzEvent[] | null;
   position: { top: number; left: number } | null;
   onClose: () => void;
   onBearbeiten: () => void;
@@ -25,7 +25,7 @@ type Props = {
 
 export function EinsatzEventDetailFloating({
   offen,
-  zuweisung,
+  einsaetze,
   position,
   onClose,
   onBearbeiten,
@@ -33,12 +33,12 @@ export function EinsatzEventDetailFloating({
   loeschenOffen,
   setLoeschenOffen,
 }: Props) {
-  if (!offen || !zuweisung || !position) return null;
+  if (!offen || !einsaetze?.length || !position) return null;
 
   return (
     <>
       <EinsatzDetailPopover
-        einsatz={zuweisung}
+        einsaetze={einsaetze}
         position={{ x: position.left, y: position.top }}
         onClose={onClose}
         onBearbeiten={onBearbeiten}
@@ -50,7 +50,9 @@ export function EinsatzEventDetailFloating({
           <DialogHeader>
             <DialogTitle className="text-zinc-50">Einsatz löschen?</DialogTitle>
             <DialogDescription>
-              Dieser Einsatz wird unwiderruflich entfernt.
+              {einsaetze.length > 1
+                ? `Alle ${einsaetze.length} Zuweisungen dieser Kachel (gleiches Projekt, gleicher Tag) werden unwiderruflich entfernt.`
+                : "Dieser Einsatz wird unwiderruflich entfernt."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">

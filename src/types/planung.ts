@@ -91,6 +91,12 @@ export type BearbeitenZuweisung = {
   end_time: string;
   notes: string | null;
   prioritaet: string | null;
+  /** Weitere IDs am selben Tag, selbes Projekt (zusammengefasste Kachel) */
+  gruppe_weitere_assignment_ids?: string[];
+  /** Alle Team-IDs der Gruppe (Mehrfachauswahl im Formular) */
+  gruppe_team_ids?: string[];
+  /** Alle Partner-IDs der Gruppe */
+  gruppe_dienstleister_ids?: string[];
 };
 
 export type DienstleisterOption = {

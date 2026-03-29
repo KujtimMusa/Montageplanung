@@ -11,10 +11,10 @@ type Props = {
   zuweisungen: EinsatzEvent[];
   projekteById: Map<string, ProjektOption>;
   abwesenheitCountProTag: Record<string, number>;
-  onEinsatzBearbeiten: (z: EinsatzEvent) => void;
-  onEinsatzLoeschen: (z: EinsatzEvent) => void;
-  onEinsatzDragStart: (e: React.DragEvent, z: EinsatzEvent) => void;
-  onEinsatzDetail?: (z: EinsatzEvent, anchor: HTMLElement) => void;
+  onEinsatzBearbeiten: (gruppe: EinsatzEvent[]) => void;
+  onEinsatzLoeschen: (gruppe: EinsatzEvent[]) => void;
+  onEinsatzDragStart: (e: React.DragEvent, gruppe: EinsatzEvent[]) => void;
+  onEinsatzDetail?: (gruppe: EinsatzEvent[], anchor: HTMLElement) => void;
 };
 
 export function PlanungWochenRaster({

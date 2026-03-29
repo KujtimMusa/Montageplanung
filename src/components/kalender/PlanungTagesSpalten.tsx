@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { addDays, endOfWeek, format, isSameDay } from "date-fns";
 import { cn } from "@/lib/utils";
 import { PRIORITAET_FARBEN } from "@/lib/constants/planung-farben";
+import { gruppiereEinsaetzeNachProjektImTag } from "@/lib/planung/einsatz-gruppe";
 import { EinsatzChip } from "@/components/kalender/EinsatzChip";
 import type { EinsatzEvent } from "@/types/planung";
 import type { ProjektOption } from "@/types/planung";
@@ -20,29 +21,16 @@ function projektBalkenFarbe(z: EinsatzEvent, fallbackHex: string): string {
   return PRIORITAET_FARBEN[prio] ?? fallbackHex;
 }
 
-/** Reihenfolge im Tag: Uhrzeit, dann Projektname — ohne Gruppenköpfe, jeder Einsatz eine Karte */
-function sortEinsaetzeImTag(list: EinsatzEvent[]): EinsatzEvent[] {
-  return [...list].sort((a, b) => {
-    const ta = a.start_time ?? "";
-    const tb = b.start_time ?? "";
-    if (ta !== tb) return ta.localeCompare(tb);
-    const pa = a.projects?.title ?? a.project_id ?? "";
-    const pb = b.projects?.title ?? b.project_id ?? "";
-    if (pa !== pb) return pa.localeCompare(pb, "de");
-    return a.id.localeCompare(b.id);
-  });
-}
-
 export type PlanungTagesSpaltenProps = {
   wocheStart: Date;
   zuweisungen: EinsatzEvent[];
   projekteById: Map<string, ProjektOption>;
   abwesenheitCountProTag: Record<string, number>;
-  onEinsatzBearbeiten: (z: EinsatzEvent) => void;
-  onEinsatzLoeschen: (z: EinsatzEvent) => void;
-  onEinsatzDragStart: (e: React.DragEvent, z: EinsatzEvent) => void;
+  onEinsatzBearbeiten: (gruppe: EinsatzEvent[]) => void;
+  onEinsatzLoeschen: (gruppe: EinsatzEvent[]) => void;
+  onEinsatzDragStart: (e: React.DragEvent, gruppe: EinsatzEvent[]) => void;
   /** Schnellansicht (Floating-Panel) */
-  onEinsatzDetail?: (z: EinsatzEvent, anchor: HTMLElement) => void;
+  onEinsatzDetail?: (gruppe: EinsatzEvent[], anchor: HTMLElement) => void;
   /** Monatsmodus: kompaktere Typo */
   kompakt?: boolean;
 };
@@ -86,7 +74,7 @@ export function PlanungTagesSpalten({
       {tage.map((datum, i) => {
         const iso = format(datum, "yyyy-MM-dd");
         const heute = isSameDay(datum, new Date());
-        const list = sortEinsaetzeImTag(einsaetzeProTag[iso] ?? []);
+        const gruppen = gruppiereEinsaetzeNachProjektImTag(einsaetzeProTag[iso] ?? []);
         const abw = abwesenheitCountProTag[iso] ?? 0;
 
         return (
@@ -139,7 +127,7 @@ export function PlanungTagesSpalten({
             </div>
 
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-1.5">
-              {list.length === 0 ? (
+              {gruppen.length === 0 ? (
                 <p
                   className={cn(
                     "py-6 text-center text-zinc-600",
@@ -150,8 +138,9 @@ export function PlanungTagesSpalten({
                 </p>
               ) : (
                 <div className="flex flex-col gap-1">
-                  {list.map((einsatz) => {
-                    const projektId = einsatz.project_id!;
+                  {gruppen.map((gruppe) => {
+                    const lead = gruppe[0]!;
+                    const projektId = lead.project_id!;
                     const proj = projekteById.get(projektId);
                     const farbe =
                       proj?.farbe?.trim() ||
@@ -161,24 +150,24 @@ export function PlanungTagesSpalten({
 
                     return (
                       <div
-                        key={einsatz.id}
+                        key={`${iso}-${projektId}`}
                         data-planung-drop
                         data-datum={iso}
                         data-projekt-id={projektId}
                         onClick={(e) => {
                           if (!onEinsatzDetail) return;
                           if ((e.target as HTMLElement).closest("button")) return;
-                          onEinsatzDetail(einsatz, e.currentTarget);
+                          onEinsatzDetail(gruppe, e.currentTarget);
                         }}
                       >
                         <EinsatzChip
-                          einsatz={einsatz}
+                          einsaetzeImTag={gruppe}
                           projektTitel={titel}
-                          projektFarbe={projektBalkenFarbe(einsatz, farbe)}
-                          onBearbeiten={() => onEinsatzBearbeiten(einsatz)}
-                          onLoeschen={() => onEinsatzLoeschen(einsatz)}
+                          projektFarbe={projektBalkenFarbe(lead, farbe)}
+                          onBearbeiten={() => onEinsatzBearbeiten(gruppe)}
+                          onLoeschen={() => onEinsatzLoeschen(gruppe)}
                           onDragStartNative={(ev) =>
-                            onEinsatzDragStart(ev, einsatz)
+                            onEinsatzDragStart(ev, gruppe)
                           }
                         />
                       </div>

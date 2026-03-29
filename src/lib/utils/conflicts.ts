@@ -17,10 +17,21 @@ export async function pruefeEinsatzKonflikt(
     startZeit: string;
     endZeit: string;
     ausserhalbEinsatzId?: string;
+    /** Alle IDs, die bei der Prüfung ignoriert werden (z. B. verschobene Gruppe) */
+    ausserhalbEinsatzIds?: string[];
   }
 ): Promise<KonfliktErgebnis> {
-  const { mitarbeiterId, datum, startZeit, endZeit, ausserhalbEinsatzId } =
-    parameter;
+  const {
+    mitarbeiterId,
+    datum,
+    startZeit,
+    endZeit,
+    ausserhalbEinsatzId,
+    ausserhalbEinsatzIds,
+  } = parameter;
+
+  const ausserhalb = new Set<string>(ausserhalbEinsatzIds ?? []);
+  if (ausserhalbEinsatzId) ausserhalb.add(ausserhalbEinsatzId);
 
   if (!mitarbeiterId) {
     return {
@@ -48,7 +59,7 @@ export async function pruefeEinsatzKonflikt(
   const endMin = zeitZuMinuten(endZeit);
 
   const kollisionen = (bestehend ?? []).filter((row) => {
-    if (ausserhalbEinsatzId && row.id === ausserhalbEinsatzId) return false;
+    if (ausserhalb.has(row.id as string)) return false;
     const a = zeitZuMinuten(row.start_time as string);
     const b = zeitZuMinuten(row.end_time as string);
     return startMin < b && endMin > a;

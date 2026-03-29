@@ -235,10 +235,18 @@ export function EinsatzNeuDialog({
       );
       form.reset({
         projekt_id: bearbeiten.project_id ?? "",
-        team_ids: bearbeiten.team_id ? [bearbeiten.team_id] : [],
-        dienstleister_ids: bearbeiten.dienstleister_id
-          ? [bearbeiten.dienstleister_id]
-          : [],
+        team_ids:
+          bearbeiten.gruppe_team_ids?.length
+            ? [...bearbeiten.gruppe_team_ids]
+            : bearbeiten.team_id
+              ? [bearbeiten.team_id]
+              : [],
+        dienstleister_ids:
+          bearbeiten.gruppe_dienstleister_ids?.length
+            ? [...bearbeiten.gruppe_dienstleister_ids]
+            : bearbeiten.dienstleister_id
+              ? [bearbeiten.dienstleister_id]
+              : [],
         date_von: bearbeiten.date,
         date_bis: bearbeiten.date,
         start_time: bearbeiten.start_time.slice(0, 5),
@@ -355,7 +363,12 @@ export function EinsatzNeuDialog({
       return null;
     }
 
-    const ausserhalbEinsatzId = bearbeiten?.id;
+    const ausserhalbGruppe = bearbeiten
+      ? [
+          bearbeiten.id,
+          ...(bearbeiten.gruppe_weitere_assignment_ids ?? []),
+        ]
+      : undefined;
 
     for (const { team: einTeam, dl: einDl } of kombos) {
       const empId = empFuerKombo(einTeam, einDl);
@@ -379,7 +392,7 @@ export function EinsatzNeuDialog({
           datum: d,
           startZeit: startNorm,
           endZeit: endNorm,
-          ausserhalbEinsatzId,
+          ausserhalbEinsatzIds: ausserhalbGruppe,
         });
         if (k.hatKonflikt) {
           setKonfliktText(`${k.nachricht} (Datum ${format(tag, "dd.MM.yyyy")})`);
@@ -389,10 +402,14 @@ export function EinsatzNeuDialog({
     }
 
     if (bearbeiten) {
+      const zuLoeschen = [
+        bearbeiten.id,
+        ...(bearbeiten.gruppe_weitere_assignment_ids ?? []),
+      ];
       const { error: delErr } = await supabase
         .from("assignments")
         .delete()
-        .eq("id", bearbeiten.id);
+        .in("id", zuLoeschen);
       if (delErr) {
         toast.error(delErr.message);
         return;
@@ -483,17 +500,32 @@ export function EinsatzNeuDialog({
 
   async function loeschen() {
     if (!bearbeiten) return;
-    const { error } = await supabase.from("assignments").delete().eq("id", bearbeiten.id);
+    const ids = [
+      bearbeiten.id,
+      ...(bearbeiten.gruppe_weitere_assignment_ids ?? []),
+    ];
+    const { error } = await supabase.from("assignments").delete().in("id", ids);
     if (error) {
       toast.error(error.message);
       return;
     }
-    toast.success("Einsatz gelöscht.");
+    toast.success(
+      ids.length > 1
+        ? `${ids.length} Zuweisungen gelöscht.`
+        : "Einsatz gelöscht."
+    );
     onOpenChange(false);
     onGespeichert();
   }
 
-  const titel = bearbeiten ? "Einsatz bearbeiten" : "Neuer Einsatz";
+  const bearbeitenGruppenAnzahl = bearbeiten
+    ? 1 + (bearbeiten.gruppe_weitere_assignment_ids?.length ?? 0)
+    : 0;
+  const titel = bearbeiten
+    ? bearbeitenGruppenAnzahl > 1
+      ? `Einsatz bearbeiten (${bearbeitenGruppenAnzahl} Zuweisungen)`
+      : "Einsatz bearbeiten"
+    : "Neuer Einsatz";
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>

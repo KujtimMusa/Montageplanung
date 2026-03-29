@@ -25,6 +25,7 @@ import { ortLabelFromProjektJoin } from "@/lib/planung/ort-label";
 import { pruefeEinsatzKonflikt } from "@/lib/utils/conflicts";
 import { getRepresentativeEmployeeId } from "@/lib/planung/team-representative";
 import { bumpProjektGeplantWennNeu } from "@/lib/planung/bump-projekt-geplant";
+import { bearbeitenPayloadFromGruppe } from "@/lib/planung/einsatz-gruppe";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import {
@@ -144,9 +145,7 @@ export function PlanungsKalender() {
     "week"
   );
 
-  const [detailZuweisung, setDetailZuweisung] = useState<EinsatzEvent | null>(
-    null
-  );
+  const [detailGruppe, setDetailGruppe] = useState<EinsatzEvent[] | null>(null);
   const [detailPosition, setDetailPosition] = useState<{
     top: number;
     left: number;
@@ -768,60 +767,82 @@ export function PlanungsKalender() {
 
   const beiDragOderResize = useCallback(
     async (
-      id: string,
+      ids: string[],
       newProjectId: string,
       start: Date,
       ende: Date
     ): Promise<boolean> => {
-      if (newProjectId === "_leer") return false;
-      const z = zuweisungen.find((x) => x.id === id);
-      if (!z || (!z.team_id && !z.dienstleister_id)) return false;
+      if (!ids.length || newProjectId === "_leer") return false;
+
+      for (const id of ids) {
+        const z = zuweisungen.find((x) => x.id === id);
+        if (!z || (!z.team_id && !z.dienstleister_id)) return false;
+      }
 
       const datum = format(start, "yyyy-MM-dd");
       const startZeit = format(start, "HH:mm:ss");
       const endZeit = format(ende, "HH:mm:ss");
 
-      let empId: string | null = null;
-      if (z.team_id) {
-        empId = await getRepresentativeEmployeeId(supabase, z.team_id);
-        if (!empId) {
-          toast.error("Kein Mitarbeiter für dieses Team hinterlegt.");
+      for (const id of ids) {
+        const z = zuweisungen.find((x) => x.id === id)!;
+        let empId: string | null = null;
+        if (z.team_id) {
+          empId = await getRepresentativeEmployeeId(supabase, z.team_id);
+          if (!empId) {
+            toast.error("Kein Mitarbeiter für dieses Team hinterlegt.");
+            return false;
+          }
+        } else {
+          empId = z.employee_id;
+        }
+
+        const k = await pruefeEinsatzKonflikt(supabase, {
+          mitarbeiterId: empId ?? null,
+          datum,
+          startZeit,
+          endZeit,
+          ausserhalbEinsatzIds: ids,
+        });
+        if (k.hatKonflikt) {
+          toast.warning(k.nachricht);
           return false;
         }
-      } else {
-        empId = z.employee_id;
       }
 
-      const k = await pruefeEinsatzKonflikt(supabase, {
-        mitarbeiterId: empId ?? null,
-        datum,
-        startZeit,
-        endZeit,
-        ausserhalbEinsatzId: id,
-      });
-      if (k.hatKonflikt) {
-        toast.warning(k.nachricht);
-        return false;
+      for (const id of ids) {
+        const z = zuweisungen.find((x) => x.id === id)!;
+        let empId: string | null = null;
+        if (z.team_id) {
+          empId = await getRepresentativeEmployeeId(supabase, z.team_id);
+          if (!empId) return false;
+        } else {
+          empId = z.employee_id;
+        }
+
+        const { error } = await supabase
+          .from("assignments")
+          .update({
+            project_id: newProjectId,
+            team_id: z.team_id,
+            dienstleister_id: z.dienstleister_id,
+            employee_id: empId,
+            date: datum,
+            start_time: startZeit,
+            end_time: endZeit,
+          })
+          .eq("id", id);
+
+        if (error) {
+          toast.error("Fehler beim Verschieben");
+          return false;
+        }
       }
 
-      const { error } = await supabase
-        .from("assignments")
-        .update({
-          project_id: newProjectId,
-          team_id: z.team_id,
-          dienstleister_id: z.dienstleister_id,
-          employee_id: empId,
-          date: datum,
-          start_time: startZeit,
-          end_time: endZeit,
-        })
-        .eq("id", id);
-
-      if (error) {
-        toast.error("Fehler beim Verschieben");
-        return false;
-      }
-      toast.success("Einsatz verschoben.");
+      toast.success(
+        ids.length > 1
+          ? `${ids.length} Zuweisungen verschoben.`
+          : "Einsatz verschoben."
+      );
       void laden();
       return true;
     },
@@ -829,77 +850,69 @@ export function PlanungsKalender() {
   );
 
   function bearbeitenAusDetail() {
-    if (!detailZuweisung) return;
-    const z = detailZuweisung;
+    if (!detailGruppe?.length) return;
+    const payload = bearbeitenPayloadFromGruppe(detailGruppe);
+    if (!payload || (!payload.team_id && !payload.dienstleister_id)) return;
     setVorgaben(null);
-    setBearbeiten({
-      id: z.id,
-      employee_id: z.employee_id,
-      project_id: z.project_id,
-      team_id: z.team_id,
-      dienstleister_id: z.dienstleister_id,
-      date: z.date,
-      start_time: z.start_time,
-      end_time: z.end_time,
-      notes: z.notes,
-      prioritaet: z.prioritaet,
-    });
+    setBearbeiten(payload);
     setFormularSchluessel((k) => k + 1);
     setDialogOffen(true);
   }
 
   async function loeschenAusDetail() {
-    if (!detailZuweisung) return;
-    const { error } = await supabase
-      .from("assignments")
-      .delete()
-      .eq("id", detailZuweisung.id);
+    if (!detailGruppe?.length) return;
+    const ids = detailGruppe.map((z) => z.id);
+    const { error } = await supabase.from("assignments").delete().in("id", ids);
     if (error) {
       toast.error(error.message);
       return;
     }
-    toast.success("Einsatz gelöscht.");
+    toast.success(
+      ids.length > 1 ? `${ids.length} Zuweisungen gelöscht.` : "Einsatz gelöscht."
+    );
     void laden();
   }
 
-  const oeffneBearbeitenEinsatz = useCallback((z: EinsatzEvent) => {
-    if (!z.team_id && !z.dienstleister_id) return;
+  const oeffneBearbeitenEinsatz = useCallback((gruppe: EinsatzEvent[]) => {
+    const payload = bearbeitenPayloadFromGruppe(gruppe);
+    if (!payload || (!payload.team_id && !payload.dienstleister_id)) return;
     setVorgaben(null);
-    setBearbeiten({
-      id: z.id,
-      employee_id: z.employee_id,
-      project_id: z.project_id,
-      team_id: z.team_id,
-      dienstleister_id: z.dienstleister_id,
-      date: z.date,
-      start_time: z.start_time,
-      end_time: z.end_time,
-      notes: z.notes,
-      prioritaet: z.prioritaet,
-    });
+    setBearbeiten(payload);
     setFormularSchluessel((k) => k + 1);
     setDialogOffen(true);
   }, []);
 
   const loeschenEinsatzSchnell = useCallback(
-    async (z: EinsatzEvent) => {
-      if (!globalThis.confirm("Einsatz wirklich löschen?")) return;
-      const { error } = await supabase.from("assignments").delete().eq("id", z.id);
+    async (gruppe: EinsatzEvent[]) => {
+      const n = gruppe.length;
+      if (
+        !globalThis.confirm(
+          n > 1
+            ? `${n} Zuweisungen am selben Projekt/Tag wirklich löschen?`
+            : "Einsatz wirklich löschen?"
+        )
+      )
+        return;
+      const ids = gruppe.map((z) => z.id);
+      const { error } = await supabase.from("assignments").delete().in("id", ids);
       if (error) {
         toast.error(error.message);
         return;
       }
-      toast.success("Einsatz gelöscht.");
+      toast.success(
+        n > 1 ? `${n} Zuweisungen gelöscht.` : "Einsatz gelöscht."
+      );
       void laden();
     },
     [supabase, laden]
   );
 
   const onEinsatzDragStartHandler = useCallback(
-    (e: ReactDragEvent, z: EinsatzEvent) => {
+    (e: ReactDragEvent, gruppe: EinsatzEvent[]) => {
+      const ids = gruppe.map((z) => z.id);
       e.dataTransfer.setData(
         "application/x-planung-einsatz",
-        JSON.stringify({ id: z.id })
+        JSON.stringify({ ids })
       );
       e.dataTransfer.effectAllowed = "move";
     },
@@ -907,10 +920,10 @@ export function PlanungsKalender() {
   );
 
   const oeffneEinsatzDetail = useCallback(
-    (z: EinsatzEvent, anchor: HTMLElement) => {
-      if (!z.team_id && !z.dienstleister_id) return;
+    (gruppe: EinsatzEvent[], anchor: HTMLElement) => {
+      if (!gruppe.some((z) => z.team_id || z.dienstleister_id)) return;
       const rect = anchor.getBoundingClientRect();
-      setDetailZuweisung(z);
+      setDetailGruppe(gruppe);
       setDetailPosition({ top: rect.bottom + 4, left: rect.left });
       setDetailOffen(true);
     },
@@ -954,14 +967,21 @@ export function PlanungsKalender() {
 
         const rawEinsatz = e.dataTransfer?.getData("application/x-planung-einsatz");
         if (rawEinsatz) {
-          let einsatzId: string;
+          let ids: string[];
           try {
-            einsatzId = (JSON.parse(rawEinsatz) as { id: string }).id;
+            const parsed = JSON.parse(rawEinsatz) as {
+              id?: string;
+              ids?: string[];
+            };
+            if (parsed.ids?.length) ids = parsed.ids;
+            else if (parsed.id) ids = [parsed.id];
+            else return;
           } catch {
             return;
           }
-          const z = zuweisungen.find((x) => x.id === einsatzId);
-          if (!z) return;
+          const z = zuweisungen.find((x) => x.id === ids[0]);
+          if (!z || ids.some((id) => !zuweisungen.some((x) => x.id === id)))
+            return;
           const newProjectId = emptyRow
             ? (z.project_id ?? "")
             : (rowProjektId ?? z.project_id ?? "");
@@ -977,7 +997,7 @@ export function PlanungsKalender() {
           const end = parseISO(
             `${datum}T${tEnd.length === 5 ? `${tEnd}:00` : tEnd.slice(0, 8)}`
           );
-          void beiDragOderResize(einsatzId, newProjectId, start, end);
+          void beiDragOderResize(ids, newProjectId, start, end);
           return;
         }
 
@@ -1173,7 +1193,7 @@ export function PlanungsKalender() {
 
       <EinsatzEventDetailFloating
         offen={detailOffen}
-        zuweisung={detailZuweisung}
+        einsaetze={detailGruppe}
         position={detailPosition}
         onClose={() => setDetailOffen(false)}
         onBearbeiten={bearbeitenAusDetail}

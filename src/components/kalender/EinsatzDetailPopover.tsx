@@ -40,7 +40,8 @@ function hexWithAlpha(hex: string, alphaHex: string): string {
 }
 
 type EinsatzDetailPopoverProps = {
-  einsatz: EinsatzEvent;
+  /** Mindestens eine Zeile; bei mehreren: gleiches Projekt, gleicher Kalendertag */
+  einsaetze: EinsatzEvent[];
   position: { x: number; y: number };
   onClose: () => void;
   onBearbeiten: () => void;
@@ -48,12 +49,13 @@ type EinsatzDetailPopoverProps = {
 };
 
 export function EinsatzDetailPopover({
-  einsatz,
+  einsaetze,
   position,
   onClose,
   onBearbeiten,
   onDeleteMenu,
 }: EinsatzDetailPopoverProps) {
+  const einsatz = einsaetze[0]!;
   const ref = useRef<HTMLDivElement>(null);
   const [coords, setCoords] = useState({ left: position.x, top: position.y });
 
@@ -95,6 +97,7 @@ export function EinsatzDetailPopover({
     }[priUi] ?? { bg: "#166534", text: "#4ade80", label: "Normal" };
 
   const tageAnzahl = 1;
+  const gruppenGroesse = einsaetze.length;
 
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
@@ -142,6 +145,11 @@ export function EinsatzDetailPopover({
           />
           <span className="truncate text-sm font-semibold text-[#f4f4f5]">
             {projektName}
+            {gruppenGroesse > 1 ? (
+              <span className="ml-1.5 text-[11px] font-normal text-[#71717a]">
+                ({gruppenGroesse} Zuweis.)
+              </span>
+            ) : null}
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
@@ -201,23 +209,59 @@ export function EinsatzDetailPopover({
           </span>
         </Row>
 
-        <Row icon={<Users size={13} className="text-[#52525b]" />} label="Team">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span
-              className="flex size-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold"
-              style={{
-                background: hexWithAlpha(teamFarbe, "33"),
-                border: `1px solid ${teamFarbe}`,
-                color: teamFarbe,
-              }}
-            >
-              {teamName.slice(0, 2).toUpperCase()}
-            </span>
-            <span className="truncate text-xs font-medium text-[#e4e4e7]">
-              {teamName}
-            </span>
-          </div>
-        </Row>
+        {gruppenGroesse > 1 ? (
+          <Row
+            icon={<Users size={13} className="mt-0.5 text-[#52525b]" />}
+            label="Zeilen"
+            alignStart
+          >
+            <ul className="flex max-h-[140px] flex-col gap-1 overflow-y-auto text-[11px] text-[#e4e4e7]">
+              {einsaetze.map((z) => {
+                const tn = z.teams?.name?.trim() || "—";
+                const dl = z.dienstleister?.company_name?.trim();
+                const tf =
+                  z.teams?.farbe?.trim() ||
+                  (dl ? "#a855f7" : "#3b82f6");
+                const label = dl ? dl : tn;
+                const st = z.start_time?.slice(0, 5) ?? "–";
+                const en = z.end_time?.slice(0, 5) ?? "–";
+                return (
+                  <li
+                    key={z.id}
+                    className="flex items-center gap-1.5 rounded bg-[#27272a]/80 px-1.5 py-0.5"
+                  >
+                    <span
+                      className="size-1.5 shrink-0 rounded-full"
+                      style={{ background: tf }}
+                    />
+                    <span className="min-w-0 flex-1 truncate">{label}</span>
+                    <span className="shrink-0 tabular-nums text-[#71717a]">
+                      {st}–{en}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </Row>
+        ) : (
+          <Row icon={<Users size={13} className="text-[#52525b]" />} label="Team">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span
+                className="flex size-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold"
+                style={{
+                  background: hexWithAlpha(teamFarbe, "33"),
+                  border: `1px solid ${teamFarbe}`,
+                  color: teamFarbe,
+                }}
+              >
+                {teamName.slice(0, 2).toUpperCase()}
+              </span>
+              <span className="truncate text-xs font-medium text-[#e4e4e7]">
+                {teamName}
+              </span>
+            </div>
+          </Row>
+        )}
 
         <Row
           icon={<Calendar size={13} className="text-[#52525b]" />}
@@ -322,7 +366,7 @@ export function EinsatzDetailPopover({
             {projektName}
           </span>
         </div>
-        {einsatz.hatKonflikt ? (
+        {einsaetze.some((z) => z.hatKonflikt) ? (
           <span className="flex shrink-0 items-center gap-1 text-[11px] text-orange-400">
             <AlertTriangle size={12} aria-hidden />
             Konflikt
