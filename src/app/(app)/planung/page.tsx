@@ -16,7 +16,7 @@ const PlanungsKalender = dynamic(
 
 export default function PlanungSeite() {
   return (
-    <div className="-mx-4 -mt-2 flex min-h-0 flex-1 flex-col md:-mx-8">
+    <div className="flex min-h-0 flex-1 flex-col">
       <h1 className="mb-3 shrink-0 text-2xl font-bold tracking-tight text-zinc-50">
         Planung
       </h1>

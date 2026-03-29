@@ -1128,7 +1128,7 @@ export function PlanungsKalender() {
   return (
     <div className="flex h-[calc(100vh-60px)] min-h-[480px] max-h-[calc(100dvh-4rem)] flex-col gap-0 md:max-h-[calc(100dvh-5rem)]">
       <div className="flex min-h-0 flex-1 gap-0 overflow-hidden rounded-xl border border-zinc-800/60 bg-zinc-950">
-        <aside className="flex w-56 shrink-0 flex-col border-r border-zinc-800/60 bg-zinc-950">
+        <aside className="flex w-56 shrink-0 flex-col border-r border-zinc-800/60 bg-zinc-950 md:w-60">
           <ProjekteSidebar
             projekteAlle={projekteAktiv}
             einsatzCountByProjektImRaster={einsatzCountByProjektImRaster}

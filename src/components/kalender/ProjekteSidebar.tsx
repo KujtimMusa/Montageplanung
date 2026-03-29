@@ -187,7 +187,7 @@ export function ProjekteSidebar({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-zinc-950">
-      <div className="flex h-[52px] shrink-0 items-center justify-between border-b border-zinc-800/60 px-4">
+      <div className="flex h-[52px] shrink-0 items-center justify-between border-b border-zinc-800/60 pl-5 pr-4">
         <h2 className="text-xs font-semibold tracking-wider text-zinc-400 uppercase">
           Projekte
         </h2>
@@ -201,7 +201,7 @@ export function ProjekteSidebar({
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-1 px-3 py-3">
+        <div className="space-y-1 py-3 pl-5 pr-3">
           {GRUPPEN.map((gruppe) => {
             const liste = projekteProGruppe[gruppe.id];
             const expanded = offen[gruppe.id] ?? true;

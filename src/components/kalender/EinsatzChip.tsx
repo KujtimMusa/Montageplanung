@@ -29,6 +29,7 @@ export function EinsatzChip({
   const istKonflikt = Boolean(einsatz.hatKonflikt);
   const team = einsatz.teams;
   const mitglieder = team?.mitglieder ?? [];
+  const partnerName = einsatz.dienstleister?.company_name?.trim() ?? null;
 
   const updatePos = useCallback(() => {
     const el = anchorRef.current;
@@ -74,12 +75,7 @@ export function EinsatzChip({
           className="h-1.5 w-1.5 shrink-0 rounded-full"
           style={{ background: projektFarbe }}
         />
-        <span className="max-w-[80px] truncate">{projektTitel}</span>
-        {team?.name ? (
-          <div className="ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-zinc-700 text-[8px] font-bold text-zinc-400">
-            {team.name.slice(0, 1).toUpperCase()}
-          </div>
-        ) : null}
+        <span className="min-w-0 flex-1 truncate">{projektTitel}</span>
       </div>
 
       {hovered ? (
@@ -119,6 +115,15 @@ export function EinsatzChip({
                   />
                   <span className="text-xs font-semibold text-zinc-300">{team.name}</span>
                 </div>
+              </div>
+            ) : partnerName ? (
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] tracking-wider text-zinc-600 uppercase">
+                  Partner
+                </span>
+                <span className="max-w-[10rem] truncate text-xs font-semibold text-zinc-300">
+                  {partnerName}
+                </span>
               </div>
             ) : null}
 
