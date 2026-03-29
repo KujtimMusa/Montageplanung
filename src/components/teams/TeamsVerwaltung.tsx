@@ -120,11 +120,14 @@ export function TeamsVerwaltung({
   const [abteilungen, setAbteilungen] = useState<{ id: string; name: string }[]>(
     []
   );
-  const [koordinatoren, setKoordinatoren] = useState<
-    { id: string; name: string }[]
-  >([]);
   const [alleMitarbeiter, setAlleMitarbeiter] = useState<
-    { id: string; name: string; department_id: string | null }[]
+    {
+      id: string;
+      name: string;
+      department_id: string | null;
+      auth_user_id: string | null;
+      role: string;
+    }[]
   >([]);
   const [laedt, setLaedt] = useState(true);
 
@@ -170,7 +173,7 @@ export function TeamsVerwaltung({
         supabase.from("departments").select("id,name").order("name"),
         supabase
           .from("employees")
-          .select("id,name,department_id,auth_user_id")
+          .select("id,name,department_id,auth_user_id,role")
           .eq("active", true)
           .order("name"),
       ]);
@@ -224,19 +227,9 @@ export function TeamsVerwaltung({
         name: string;
         department_id: string | null;
         auth_user_id: string | null;
+        role: string;
       }[];
-      setAlleMitarbeiter(
-        emList.map((e) => ({
-          id: e.id,
-          name: e.name,
-          department_id: e.department_id,
-        }))
-      );
-      setKoordinatoren(
-        emList
-          .filter((e) => e.auth_user_id !== null)
-          .map((e) => ({ id: e.id, name: e.name }))
-      );
+      setAlleMitarbeiter(emList);
     } catch (e) {
       toast.error(
         nachrichtAusUnbekannt(e, "Teams konnten nicht geladen werden.")
@@ -250,6 +243,30 @@ export function TeamsVerwaltung({
   useEffect(() => {
     void laden();
   }, [laden]);
+
+  const teamleiterOptionen = useMemo(() => {
+    const erlaubt = new Set([
+      "admin",
+      "abteilungsleiter",
+      "teamleiter",
+      "geschaeftsfuehrer",
+      "koordinator",
+    ]);
+    return alleMitarbeiter.filter((e) =>
+      erlaubt.has((e.role ?? "").toLowerCase().trim())
+    );
+  }, [alleMitarbeiter]);
+
+  const leaderIdWatch = teamF.watch("leader_id");
+
+  const leaderAuswahl = useMemo(() => {
+    const o = [...teamleiterOptionen];
+    if (leaderIdWatch && !o.some((m) => m.id === leaderIdWatch)) {
+      const extra = alleMitarbeiter.find((m) => m.id === leaderIdWatch);
+      if (extra) o.push(extra);
+    }
+    return o;
+  }, [teamleiterOptionen, alleMitarbeiter, leaderIdWatch]);
 
   const teamsGefiltert = useMemo(() => {
     const q = sucheTeam.trim().toLowerCase();
@@ -441,7 +458,7 @@ export function TeamsVerwaltung({
     >
       <StammdatenFilterBar>
         <Input
-          placeholder="Teams / Abteilung suchen…"
+          placeholder="Teams suchen…"
           value={sucheTeam}
           onChange={(e) => setSucheTeam(e.target.value)}
           className={STAMMDATEN_FILTER_INPUT}
@@ -606,10 +623,18 @@ export function TeamsVerwaltung({
                     )
                   }
                 >
-                  <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-900/80">
-                    <SelectValue placeholder="Abteilung wählen" />
+                  <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-900/80 text-zinc-100">
+                    <SelectValue placeholder="Abteilung wählen…">
+                      {(() => {
+                        const id = teamF.watch("department_id");
+                        if (!id) return null;
+                        return (
+                          abteilungen.find((a) => a.id === id)?.name ?? id
+                        );
+                      })()}
+                    </SelectValue>
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="border-zinc-800 bg-zinc-900">
                     <SelectItem value="__none__">Bitte Abteilung wählen</SelectItem>
                     {abteilungen.map((a) => (
                       <SelectItem key={a.id} value={a.id}>
@@ -651,14 +676,29 @@ export function TeamsVerwaltung({
                     )
                   }
                 >
-                  <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-900/80">
-                    <SelectValue placeholder="Optional" />
+                  <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-900/80 text-zinc-100">
+                    <SelectValue placeholder="Teamleiter wählen…">
+                      {(() => {
+                        const id = teamF.watch("leader_id");
+                        if (!id) return null;
+                        return (
+                          teamleiterOptionen.find((m) => m.id === id)?.name ??
+                          alleMitarbeiter.find((m) => m.id === id)?.name ??
+                          id
+                        );
+                      })()}
+                    </SelectValue>
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="border-zinc-800 bg-zinc-900">
                     <SelectItem value="__none__">Kein Teamleiter</SelectItem>
-                    {koordinatoren.map((k) => (
-                      <SelectItem key={k.id} value={k.id}>
-                        {k.name}
+                    {leaderAuswahl.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        <span className="flex items-center gap-2">
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-zinc-700 text-xs font-bold text-zinc-300">
+                            {initialen(m.name)}
+                          </span>
+                          {m.name}
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>

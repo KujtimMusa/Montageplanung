@@ -42,7 +42,9 @@ import * as LucideIcons from "lucide-react";
 import { Building2, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { nachrichtAusUnbekannt } from "@/lib/fehler";
 import { StammdatenSection } from "@/components/stammdaten/StammdatenSection";
+import { StammdatenFilterBar } from "@/components/stammdaten/StammdatenFilterBar";
 import {
+  STAMMDATEN_FILTER_INPUT,
   STAMMDATEN_HEADER_BUTTON,
   STAMMDATEN_TABLE,
   STAMMDATEN_TH,
@@ -119,6 +121,7 @@ export function AbteilungenVerwaltung({
   const [listeLaedt, setListeLaedt] = useState(true);
 
   const [loeschenDialog, setLoeschenDialog] = useState<Zeile | null>(null);
+  const [sucheAbteilung, setSucheAbteilung] = useState("");
 
   const laden = useCallback(async () => {
     setListeLaedt(true);
@@ -163,6 +166,16 @@ export function AbteilungenVerwaltung({
   useEffect(() => {
     void laden();
   }, [laden]);
+
+  const zeilenGefiltert = useMemo(() => {
+    const q = sucheAbteilung.trim().toLowerCase();
+    if (!q) return zeilen;
+    return zeilen.filter(
+      (z) =>
+        z.name.toLowerCase().includes(q) ||
+        (z.icon ?? "").toLowerCase().includes(q)
+    );
+  }, [zeilen, sucheAbteilung]);
 
   function leeren() {
     setBearbeitenId(null);
@@ -264,6 +277,15 @@ export function AbteilungenVerwaltung({
         </Button>
       }
     >
+      <StammdatenFilterBar>
+        <Input
+          placeholder="Abteilungen suchen…"
+          value={sucheAbteilung}
+          onChange={(e) => setSucheAbteilung(e.target.value)}
+          className={STAMMDATEN_FILTER_INPUT}
+        />
+      </StammdatenFilterBar>
+
       {zeilen.length === 0 ? (
         <Card className="border-dashed border-zinc-700 bg-zinc-900/40">
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
@@ -302,7 +324,17 @@ export function AbteilungenVerwaltung({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {zeilen.map((z) => (
+              {zeilenGefiltert.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={6}
+                    className="text-center text-muted-foreground"
+                  >
+                    Keine Treffer für die Suche.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                zeilenGefiltert.map((z) => (
                 <TableRow key={z.id} className="border-zinc-800">
                   <TableCell>
                     <div
@@ -341,7 +373,8 @@ export function AbteilungenVerwaltung({
                     </Button>
                   </TableCell>
                 </TableRow>
-              ))}
+                ))
+              )}
             </TableBody>
           </Table>
         </div>
