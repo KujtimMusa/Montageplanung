@@ -15,3 +15,10 @@ export const STAMMDATEN_TH = "text-left font-medium text-zinc-400";
 /** Primär-Aktion in Stammdaten-Köpfen (mit Mitarbeiter abgestimmt) */
 export const STAMMDATEN_HEADER_BUTTON =
   "h-10 min-h-10 gap-1.5 px-4 text-sm font-medium";
+
+/** Einheitliche Formular-Eingaben (dunkel) */
+export const STAMMDATEN_FORM_INPUT =
+  "w-full px-3 py-2.5 text-sm bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600/50 transition-all";
+
+export const STAMMDATEN_FORM_SELECT_TRIGGER =
+  "w-full bg-zinc-900 border-zinc-800 text-zinc-100 focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600/50 hover:bg-zinc-800/50 transition-colors";
