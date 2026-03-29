@@ -58,7 +58,9 @@ async function kontextLaden(supabase: SupabaseClient) {
       .limit(20),
     supabase
       .from("absences")
-      .select("type,start_date,end_date, employees(name)")
+      .select(
+        "type,start_date,end_date,employee:employees!employee_id(name)"
+      )
       .gte("end_date", heute)
       .limit(20),
   ]);

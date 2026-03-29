@@ -103,7 +103,9 @@ export async function pruefeAbwesenheitKonfliktText(
 
   const { data: rows, error } = await supabase
     .from("absences")
-    .select("start_date,end_date,type,employees(name)")
+    .select(
+      "start_date,end_date,type,employee:employees!employee_id(name)"
+    )
     .eq("employee_id", mitarbeiterId)
     .lte("start_date", bis)
     .gte("end_date", von);
@@ -111,7 +113,7 @@ export async function pruefeAbwesenheitKonfliktText(
   if (error || !rows?.length) return null;
 
   const row = rows[0];
-  const e = row.employees as
+  const e = row.employee as
     | { name?: string }
     | { name?: string }[]
     | null;

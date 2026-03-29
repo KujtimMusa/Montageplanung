@@ -24,8 +24,6 @@ import {
   endOfMonth,
   format,
   parseISO,
-  startOfWeek,
-  endOfWeek,
 } from "date-fns";
 import { de } from "date-fns/locale";
 import { createClient } from "@/lib/supabase/client";
@@ -173,6 +171,42 @@ function mitarbeiterInitialen(name: string): string {
   return name.slice(0, 2).toUpperCase() || "—";
 }
 
+/** Kalenderwoche Montag 00:00 lokal */
+function wocheStartDatum(): Date {
+  const d = new Date();
+  const diff = d.getDay() === 0 ? -6 : 1 - d.getDay();
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function wocheStartStr(): string {
+  return format(wocheStartDatum(), "yyyy-MM-dd");
+}
+
+function wocheEndeStr(): string {
+  const e = new Date(wocheStartDatum());
+  e.setDate(e.getDate() + 6);
+  e.setHours(0, 0, 0, 0);
+  return format(e, "yyyy-MM-dd");
+}
+
+function istUrlaubStat(a: Abwesenheit): boolean {
+  const r = a.type_raw.toLowerCase().trim();
+  return (
+    a.type === "urlaub" ||
+    ["urlaub", "bezahlter_urlaub", "urlaubstag"].includes(r)
+  );
+}
+
+function istKrankStat(a: Abwesenheit): boolean {
+  const r = a.type_raw.toLowerCase().trim();
+  return (
+    a.type === "krank" ||
+    ["krank", "krankheit", "krankmeldung"].includes(r)
+  );
+}
+
 const STATUS_STYLE: Record<
   AbwesenheitStatus,
   {
@@ -291,7 +325,23 @@ export function AbwesenheitenVerwaltung() {
         supabase
           .from("absences")
           .select(
-            "id,employee_id,type,start_date,end_date,status,notes,quelle,created_at,employees(name)"
+            `
+            id,
+            type,
+            status,
+            start_date,
+            end_date,
+            notes,
+            quelle,
+            created_at,
+            employee_id,
+            employee:employees!employee_id(
+              id,
+              name,
+              teams(id, name, farbe),
+              departments(id, name)
+            )
+          `
           )
           .order("start_date", { ascending: false }),
       ]);
@@ -317,14 +367,18 @@ export function AbwesenheitenVerwaltung() {
       }
 
       if (resA.error) {
-        toast.error(resA.error.message);
+        console.error("Absences Query Error:", resA.error);
+        toast.error(
+          resA.error.message ||
+            "Abwesenheiten konnten nicht geladen werden."
+        );
         setAbwesenheiten([]);
         return;
       }
 
       const list: Abwesenheit[] = (resA.data as Record<string, unknown>[]).map(
         (row) => {
-          const e = row.employees;
+          const e = row.employee;
           const emp = Array.isArray(e) ? e[0] : e;
           const quelle = row.quelle as string;
           const rawType = String(row.type ?? "");
@@ -527,33 +581,33 @@ export function AbwesenheitenVerwaltung() {
   }
 
   const heuteStr = format(new Date(), "yyyy-MM-dd");
-  const wocheStart = format(
-    startOfWeek(new Date(), { weekStartsOn: 1 }),
-    "yyyy-MM-dd"
-  );
-  const wocheEnde = format(
-    endOfWeek(new Date(), { weekStartsOn: 1 }),
-    "yyyy-MM-dd"
-  );
+  const wVon = wocheStartStr();
+  const wBis = wocheEndeStr();
 
   const statUrlaubWoche = useMemo(() => {
     return abwesenheiten.filter(
       (a) =>
-        a.type === "urlaub" &&
-        intervalleUeberlappen(a.start_date, a.end_date, wocheStart, wocheEnde)
+        istUrlaubStat(a) &&
+        intervalleUeberlappen(a.start_date, a.end_date, wVon, wBis)
     ).length;
-  }, [abwesenheiten, wocheStart, wocheEnde]);
+  }, [abwesenheiten, wVon, wBis]);
 
   const statKrankHeute = useMemo(() => {
     return abwesenheiten.filter(
       (a) =>
-        a.type === "krank" &&
+        istKrankStat(a) &&
         intervalleUeberlappen(a.start_date, a.end_date, heuteStr, heuteStr)
     ).length;
   }, [abwesenheiten, heuteStr]);
 
   const statAusstehend = useMemo(() => {
-    return abwesenheiten.filter((a) => a.status === "beantragt").length;
+    return abwesenheiten.filter(
+      (a) =>
+        a.status === "beantragt" ||
+        ["ausstehend", "pending", "offen"].includes(
+          String(a.status ?? "").toLowerCase().trim()
+        )
+    ).length;
   }, [abwesenheiten]);
 
   const typFilterAktiv = filter.typ;
@@ -606,7 +660,7 @@ export function AbwesenheitenVerwaltung() {
             Abwesenheiten
           </h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Manuell erfassen oder mit Personio synchronisieren.
+            Erfassen, filtern und Status setzen für dein Team.
           </p>
         </div>
         <Button type="button" onClick={oeffneErfassen}>

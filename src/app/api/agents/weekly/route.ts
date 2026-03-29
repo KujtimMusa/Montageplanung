@@ -34,7 +34,9 @@ export async function POST() {
       .limit(400),
     supabase
       .from("absences")
-      .select("type,start_date,end_date, employees(name)")
+      .select(
+        "type,start_date,end_date,employee:employees!employee_id(name)"
+      )
       .lte("start_date", bis)
       .gte("end_date", von)
       .limit(100),

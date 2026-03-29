@@ -595,11 +595,13 @@ export function PlanungsKalender() {
       if (memberIds.length > 0) {
         const { data: abw, error: abwErr } = await supabase
           .from("absences")
-          .select("employee_id,start_date,end_date,type,employees(name)")
+          .select(
+            "employee_id,start_date,end_date,type,employee:employees!employee_id(name)"
+          )
           .in("employee_id", memberIds);
         if (!abwErr && abw) {
           abwesenheitenListe = (abw ?? []).map((row) => {
-            const e = row.employees as
+            const e = row.employee as
               | { name?: string }
               | { name?: string }[]
               | null;
