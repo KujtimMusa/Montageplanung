@@ -15,6 +15,12 @@ export type Abwesenheit = {
   notes: string | null;
   quelle: "manuell" | "personio";
   created_at: string;
+  /** Kalendertage im Zeitraum */
+  tage: number;
+  /** Erste Zeile unter dem Namen (Abteilung) */
+  mitarbeiter_abteilung_label: string | null;
+  /** Für Abteilungs-Filter */
+  mitarbeiter_abteilung_ids: string[];
 };
 
 export type AbwesenheitFormWerte = {
