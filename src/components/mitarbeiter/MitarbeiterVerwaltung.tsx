@@ -36,6 +36,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Loader2, Pencil, Plus, Trash2, Users } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { nachrichtAusUnbekannt } from "@/lib/fehler";
 import { cn } from "@/lib/utils";
 import { StammdatenSection } from "@/components/stammdaten/StammdatenSection";
@@ -145,11 +146,6 @@ export function MitarbeiterVerwaltung({
   const [laedt, setLaedt] = useState(true);
 
   const [suche, setSuche] = useState("");
-  const [typFilter, setTypFilter] = useState<"alle" | "monteur" | "koordinator">(
-    "alle"
-  );
-  const [abteilungFilter, setAbteilungFilter] = useState<string>("alle");
-  const [teamFilter, setTeamFilter] = useState<string>("alle");
 
   const [monteurSheetOffen, setMonteurSheetOffen] = useState(false);
   const [bearbeitenId, setBearbeitenId] = useState<string | null>(null);
@@ -164,7 +160,7 @@ export function MitarbeiterVerwaltung({
   const [koorAktiv, setKoorAktiv] = useState(true);
   const [koorSpeichert, setKoorSpeichert] = useState(false);
   const [koorDepartmentId, setKoorDepartmentId] = useState("");
-  const [koorTeamId, setKoorTeamId] = useState("");
+  const [koorTeamIds, setKoorTeamIds] = useState<string[]>([]);
 
   const monteurF = useForm<MonteurForm>({
     resolver: zodResolver(monteurSchema),
@@ -201,7 +197,7 @@ export function MitarbeiterVerwaltung({
           supabase
             .from("employees")
             .select(
-              "id,name,email,role,active,department_id,auth_user_id,phone,whatsapp,team_id, departments(name), teams!team_id(name,farbe)"
+              "id,name,email,role,active,department_id,auth_user_id,phone,whatsapp,team_id, departments!department_id(name), teams!team_id(name,farbe)"
             )
             .order("name"),
           supabase.from("departments").select("id,name").order("name"),
@@ -230,9 +226,43 @@ export function MitarbeiterVerwaltung({
       setAbteilungen((ab ?? []) as { id: string; name: string }[]);
       setTeams(teamListNormalisiert);
 
-      let zeilenNeu = (mitarbeiter ?? []).map((m) =>
-        zeileAusSupabase(m as Record<string, unknown>, abMap, teamNameNachId)
-      );
+      const empIds = (mitarbeiter ?? []).map((m) => m.id as string).filter(Boolean);
+      const teamLabelByEmp = new Map<string, string>();
+      if (empIds.length > 0) {
+        const { data: tmem } = await supabase
+          .from("team_members")
+          .select("employee_id, teams(name)")
+          .in("employee_id", empIds);
+        const byE: Record<string, string[]> = {};
+        for (const row of tmem ?? []) {
+          const eid = row.employee_id as string;
+          const rawT = row.teams as { name?: string } | { name?: string }[] | null;
+          const one = Array.isArray(rawT) ? rawT[0] : rawT;
+          const n = (one as { name?: string })?.name;
+          if (!n) continue;
+          if (!byE[eid]) byE[eid] = [];
+          byE[eid].push(n);
+        }
+        for (const [eid, names] of Object.entries(byE)) {
+          const u = Array.from(new Set(names));
+          teamLabelByEmp.set(
+            eid,
+            u.length > 2
+              ? `${u[0]}, ${u[1]} (+${u.length - 2})`
+              : u.join(", ")
+          );
+        }
+      }
+
+      let zeilenNeu = (mitarbeiter ?? []).map((m) => {
+        const z = zeileAusSupabase(
+          m as Record<string, unknown>,
+          abMap,
+          teamNameNachId
+        );
+        const ausMitglied = teamLabelByEmp.get(z.id);
+        return ausMitglied ? { ...z, teamName: ausMitglied } : z;
+      });
 
       const {
         data: { user: authUser },
@@ -296,7 +326,7 @@ export function MitarbeiterVerwaltung({
     return teams.filter((t) => t.department_id === abteilungMonteur);
   }, [teams, abteilungMonteur]);
 
-  const teamsGefiltertKoor = useMemo(() => {
+  const teamsFuerKoorDialog = useMemo(() => {
     if (!koorDepartmentId) return teams;
     return teams.filter((t) => t.department_id === koorDepartmentId);
   }, [teams, koorDepartmentId]);
@@ -305,11 +335,6 @@ export function MitarbeiterVerwaltung({
     const q = suche.trim().toLowerCase();
     const filtered = zeilen.filter((z) => {
       if (q && !z.name.toLowerCase().includes(q)) return false;
-      if (typFilter === "monteur" && z.auth_user_id !== null) return false;
-      if (typFilter === "koordinator" && z.auth_user_id === null) return false;
-      if (abteilungFilter !== "alle" && z.department_id !== abteilungFilter)
-        return false;
-      if (teamFilter !== "alle" && z.team_id !== teamFilter) return false;
       return true;
     });
     if (!authUserId) return filtered;
@@ -319,14 +344,7 @@ export function MitarbeiterVerwaltung({
       if (aSel !== bSel) return aSel - bSel;
       return a.name.localeCompare(b.name, "de");
     });
-  }, [
-    zeilen,
-    suche,
-    typFilter,
-    abteilungFilter,
-    teamFilter,
-    authUserId,
-  ]);
+  }, [zeilen, suche, authUserId]);
 
   async function rolleAendern(id: string, neueRolle: string) {
     const res = await fetch(`/api/admin/mitarbeiter/${id}`, {
@@ -448,15 +466,23 @@ export function MitarbeiterVerwaltung({
   async function koorProfilSpeichern() {
     if (!koorBearbeiten) return;
     const department_id = koorDepartmentId || null;
-    const team_id = koorTeamId || null;
     if (
-      team_id &&
-      abteilungFuerTeam(team_id) &&
-      department_id &&
-      abteilungFuerTeam(team_id) !== department_id
+      !department_id &&
+      koorTeamIds.some((tid) => abteilungFuerTeam(tid))
     ) {
-      toast.error("Team passt nicht zur gewählten Abteilung.");
+      toast.error(
+        "Mindestens ein Team gehört zu einer Abteilung — bitte Abteilung wählen."
+      );
       return;
+    }
+    if (department_id) {
+      for (const tid of koorTeamIds) {
+        const tdep = abteilungFuerTeam(tid);
+        if (tdep && tdep !== department_id) {
+          toast.error("Ein gewähltes Team passt nicht zur Abteilung.");
+          return;
+        }
+      }
     }
     setKoorSpeichert(true);
     try {
@@ -466,7 +492,7 @@ export function MitarbeiterVerwaltung({
         body: JSON.stringify({
           active: koorAktiv,
           department_id,
-          team_id,
+          team_ids: koorTeamIds,
         }),
       });
       const json = (await res.json()) as { fehler?: string; error?: string };
@@ -547,64 +573,11 @@ export function MitarbeiterVerwaltung({
     >
       <StammdatenFilterBar>
         <Input
-          placeholder="Suche nach Name…"
+          placeholder="Mitarbeiter suchen…"
           value={suche}
           onChange={(e) => setSuche(e.target.value)}
           className={cn(STAMMDATEN_FILTER_INPUT)}
         />
-        <Select
-          value={typFilter}
-          onValueChange={(v) =>
-            setTypFilter((v ?? "alle") as "alle" | "monteur" | "koordinator")
-          }
-        >
-          <SelectTrigger
-            className={cn(STAMMDATEN_FILTER_INPUT, "!h-10 py-0 leading-none")}
-          >
-            <SelectValue placeholder="Typ" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="alle">Alle Typen</SelectItem>
-            <SelectItem value="monteur">Nur ohne App-Konto</SelectItem>
-            <SelectItem value="koordinator">Koordinatoren</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select
-          value={abteilungFilter}
-          onValueChange={(v) => setAbteilungFilter(v ?? "alle")}
-        >
-          <SelectTrigger
-            className={cn(STAMMDATEN_FILTER_INPUT, "!h-10 py-0 leading-none")}
-          >
-            <SelectValue placeholder="Abteilung" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="alle">Alle Abteilungen</SelectItem>
-            {abteilungen.map((a) => (
-              <SelectItem key={a.id} value={a.id}>
-                {a.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={teamFilter}
-          onValueChange={(v) => setTeamFilter(v ?? "alle")}
-        >
-          <SelectTrigger
-            className={cn(STAMMDATEN_FILTER_INPUT, "!h-10 py-0 leading-none")}
-          >
-            <SelectValue placeholder="Team" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="alle">Alle Teams</SelectItem>
-            {teams.map((t) => (
-              <SelectItem key={t.id} value={t.id}>
-                {t.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
       </StammdatenFilterBar>
 
       {zeilen.length === 0 ? (
@@ -661,7 +634,9 @@ export function MitarbeiterVerwaltung({
                     colSpan={8}
                     className="text-center text-muted-foreground"
                   >
-                    Keine Treffer für die Filter.
+                    {suche.trim()
+                      ? `Keine Treffer für „${suche.trim()}“.`
+                      : "Keine Treffer."}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -771,10 +746,23 @@ export function MitarbeiterVerwaltung({
                           className="size-8 rounded-md text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
                           onClick={() => {
                             if (istKoordinator) {
-                              setKoorBearbeiten(z);
-                              setKoorAktiv(z.active);
-                              setKoorDepartmentId(z.department_id ?? "");
-                              setKoorTeamId(z.team_id ?? "");
+                              void (async () => {
+                                setKoorBearbeiten(z);
+                                setKoorAktiv(z.active);
+                                setKoorDepartmentId(z.department_id ?? "");
+                                const { data } = await supabase
+                                  .from("team_members")
+                                  .select("team_id")
+                                  .eq("employee_id", z.id);
+                                const ids = (data ?? []).map(
+                                  (r) => r.team_id as string
+                                );
+                                const uniq = Array.from(new Set(ids));
+                                if (uniq.length === 0 && z.team_id) {
+                                  uniq.push(z.team_id);
+                                }
+                                setKoorTeamIds(uniq);
+                              })();
                             } else {
                               monteurSheetOeffnen(z);
                             }
@@ -865,7 +853,15 @@ export function MitarbeiterVerwaltung({
                   <SelectTrigger
                     className={cn(STAMMDATEN_FORM_SELECT_TRIGGER, "h-10 rounded-lg")}
                   >
-                    <SelectValue placeholder="Abteilung wählen" />
+                    <SelectValue placeholder="Abteilung wählen">
+                      {(() => {
+                        const id = monteurF.watch("department_id");
+                        if (!id) return null;
+                        return (
+                          abteilungen.find((a) => a.id === id)?.name ?? null
+                        );
+                      })()}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent className="border-zinc-800 bg-zinc-900">
                     <SelectItem value="__none__">Keine Abteilung</SelectItem>
@@ -890,7 +886,15 @@ export function MitarbeiterVerwaltung({
                   <SelectTrigger
                     className={cn(STAMMDATEN_FORM_SELECT_TRIGGER, "h-10 rounded-lg")}
                   >
-                    <SelectValue placeholder="Team wählen" />
+                    <SelectValue placeholder="Team wählen">
+                      {(() => {
+                        const id = monteurF.watch("team_id");
+                        if (!id) return null;
+                        const t = teamsGefiltert.find((x) => x.id === id) ??
+                          teams.find((x) => x.id === id);
+                        return t?.name ?? null;
+                      })()}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent className="border-zinc-800 bg-zinc-900">
                     <SelectItem value="__none__">Kein Team</SelectItem>
@@ -938,19 +942,35 @@ export function MitarbeiterVerwaltung({
                 {koorBearbeiten?.email ?? "—"}
               </p>
             </StammdatenFormField>
-            <StammdatenFormField label="Abteilung">
+            <StammdatenFormField
+              label="Abteilung"
+              hint="Im System ist pro Mitarbeiter genau eine Haupt-Abteilung (Feld department_id) vorgesehen."
+            >
               <Select
                 value={koorDepartmentId || "__none__"}
                 onValueChange={(v) => {
                   const val = v === "__none__" || v == null ? "" : v;
                   setKoorDepartmentId(val);
-                  setKoorTeamId("");
+                  setKoorTeamIds((prev) =>
+                    val
+                      ? prev.filter(
+                          (tid) =>
+                            teams.find((t) => t.id === tid)?.department_id ===
+                            val
+                        )
+                      : prev
+                  );
                 }}
               >
                 <SelectTrigger
                   className={cn(STAMMDATEN_FORM_SELECT_TRIGGER, "h-10 rounded-lg")}
                 >
-                  <SelectValue placeholder="Keine Abteilung" />
+                  <SelectValue placeholder="Keine Abteilung">
+                    {koorDepartmentId
+                      ? abteilungen.find((a) => a.id === koorDepartmentId)
+                          ?.name ?? null
+                      : null}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent className="border-zinc-800 bg-zinc-900">
                   <SelectItem value="__none__">Keine Abteilung</SelectItem>
@@ -962,33 +982,42 @@ export function MitarbeiterVerwaltung({
                 </SelectContent>
               </Select>
             </StammdatenFormField>
-            <StammdatenFormField label="Team">
-              <Select
-                value={koorTeamId || "__none__"}
-                onValueChange={(v) =>
-                  setKoorTeamId(v === "__none__" || v == null ? "" : v)
-                }
-              >
-                <SelectTrigger
-                  className={cn(STAMMDATEN_FORM_SELECT_TRIGGER, "h-10 rounded-lg")}
-                >
-                  <SelectValue placeholder="Kein Team" />
-                </SelectTrigger>
-                <SelectContent className="border-zinc-800 bg-zinc-900">
-                  <SelectItem value="__none__">Kein Team</SelectItem>
-                  {teamsGefiltertKoor.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      <span className="flex items-center gap-2">
-                        <span
-                          className="size-2 shrink-0 rounded-full"
-                          style={{ background: t.farbe ?? "#3b82f6" }}
-                        />
-                        {t.name}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <StammdatenFormField
+              label="Teams"
+              hint="Mehrfach wählbar. Erstes gewähltes Team ist das Primärteam (employees.team_id). Alle Zuordnungen liegen in team_members."
+            >
+              <div className="max-h-52 space-y-1.5 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-900/60 p-2">
+                {teamsFuerKoorDialog.length === 0 ? (
+                  <p className="px-1 text-xs text-zinc-500">
+                    Keine Teams in dieser Abteilung — Abteilung wählen oder es
+                    sind noch keine Teams angelegt.
+                  </p>
+                ) : (
+                  teamsFuerKoorDialog.map((t) => (
+                    <label
+                      key={t.id}
+                      className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-sm text-zinc-200 hover:bg-zinc-800/80"
+                    >
+                      <Checkbox
+                        checked={koorTeamIds.includes(t.id)}
+                        onCheckedChange={(c) => {
+                          setKoorTeamIds((prev) =>
+                            c === true
+                              ? [...prev, t.id]
+                              : prev.filter((x) => x !== t.id)
+                          );
+                        }}
+                      />
+                      <span
+                        className="size-2.5 shrink-0 rounded-full"
+                        style={{ background: t.farbe ?? "#3b82f6" }}
+                        aria-hidden
+                      />
+                      <span className="flex-1">{t.name}</span>
+                    </label>
+                  ))
+                )}
+              </div>
             </StammdatenFormField>
             <div className="flex items-center justify-between gap-4">
               <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">

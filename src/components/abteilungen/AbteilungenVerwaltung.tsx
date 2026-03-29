@@ -140,9 +140,7 @@ export function AbteilungenVerwaltung({
       ] = await Promise.all([
         supabase
           .from("departments")
-          .select(
-            "id,name,color,icon,leader_id, leader:employees!leader_id(id,name)"
-          )
+          .select("id,name,color,icon,leader_id")
           .order("name"),
         supabase.from("teams").select("id,department_id"),
         supabase.from("employees").select("id,department_id"),
@@ -172,14 +170,12 @@ export function AbteilungenVerwaltung({
         if (d) empCount[d] = (empCount[d] ?? 0) + 1;
       }
 
+      const nameById = Object.fromEntries(
+        (maOpt ?? []).map((m) => [m.id as string, String(m.name ?? "")])
+      );
       setZeilen(
         (depts ?? []).map((z) => {
-          const lr = z.leader as
-            | { name?: string }
-            | { name?: string }[]
-            | null
-            | undefined;
-          const leaderOne = Array.isArray(lr) ? lr[0] : lr;
+          const lid = (z.leader_id as string | null) ?? null;
           return {
             id: z.id as string,
             name: z.name as string,
@@ -187,8 +183,8 @@ export function AbteilungenVerwaltung({
             icon: (z.icon as string | null) ?? null,
             anzahlTeams: teamCount[z.id as string] ?? 0,
             anzahlMitarbeiter: empCount[z.id as string] ?? 0,
-            leader_id: (z.leader_id as string | null) ?? null,
-            leaderName: leaderOne?.name ?? null,
+            leader_id: lid,
+            leaderName: lid ? nameById[lid] ?? null : null,
           };
         })
       );
