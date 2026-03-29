@@ -557,7 +557,9 @@ export function PlanungsKalender() {
         teamIds.length > 0
           ? await supabase
               .from("team_members")
-              .select("team_id,employee_id,employees(id,name)")
+              .select(
+                "team_id,employee_id,employees!employee_id(id,name)"
+              )
               .in("team_id", teamIds)
           : {
               data: [] as {
@@ -653,9 +655,9 @@ export function PlanungsKalender() {
       }
 
       const selectMitPrioritaet =
-        "id,employee_id,project_id,project_title,team_id,dienstleister_id,date,start_time,end_time,notes,prioritaet, projects(id,title,farbe,adresse,priority,status,notes, customers(address,city,company_name)), teams(id,name,farbe,team_members(employees(id,name))), subcontractors(company_name)";
+        "id,employee_id,project_id,project_title,team_id,dienstleister_id,date,start_time,end_time,notes,prioritaet, projects(id,title,farbe,adresse,priority,status,notes, customers(address,city,company_name)), teams!team_id(id,name,farbe,team_members(employees!employee_id(id,name))), subcontractors(company_name)";
       const selectOhnePrioritaet =
-        "id,employee_id,project_id,project_title,team_id,dienstleister_id,date,start_time,end_time,notes, projects(id,title,farbe,adresse,priority,status,notes, customers(address,city,company_name)), teams(id,name,farbe,team_members(employees(id,name))), subcontractors(company_name)";
+        "id,employee_id,project_id,project_title,team_id,dienstleister_id,date,start_time,end_time,notes, projects(id,title,farbe,adresse,priority,status,notes, customers(address,city,company_name)), teams!team_id(id,name,farbe,team_members(employees!employee_id(id,name))), subcontractors(company_name)";
 
       const zuQuery = await supabase
         .from("assignments")

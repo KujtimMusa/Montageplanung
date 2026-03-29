@@ -201,7 +201,7 @@ export function MitarbeiterVerwaltung({
           supabase
             .from("employees")
             .select(
-              "id,name,email,role,active,department_id,auth_user_id,phone,whatsapp,team_id, departments(name), teams(name,farbe)"
+              "id,name,email,role,active,department_id,auth_user_id,phone,whatsapp,team_id, departments(name), teams!team_id(name,farbe)"
             )
             .order("name"),
           supabase.from("departments").select("id,name").order("name"),

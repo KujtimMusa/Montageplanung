@@ -263,7 +263,7 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
     let qZuHeuteListe = supabase
       .from("assignments")
       .select(
-        "id,start_time,end_time,status,project_title, employees(name), projects(title)"
+        "id,start_time,end_time,status,project_title, employees!employee_id(name), projects(title)"
       )
       .eq("date", heuteStr)
       .order("start_time")

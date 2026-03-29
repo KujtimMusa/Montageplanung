@@ -338,7 +338,7 @@ export function AbwesenheitenVerwaltung() {
             employee:employees!employee_id(
               id,
               name,
-              teams(id, name, farbe),
+              teams!team_id(id, name, farbe),
               departments(id, name)
             )
           `

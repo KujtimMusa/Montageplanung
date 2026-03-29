@@ -59,6 +59,8 @@ type Zeile = {
   icon: string | null;
   anzahlTeams: number;
   anzahlMitarbeiter: number;
+  leader_id: string | null;
+  leaderName: string | null;
 };
 
 const ICON_NAMEN = [
@@ -122,17 +124,42 @@ export function AbteilungenVerwaltung({
 
   const [loeschenDialog, setLoeschenDialog] = useState<Zeile | null>(null);
   const [sucheAbteilung, setSucheAbteilung] = useState("");
+  const [mitarbeiterOptionen, setMitarbeiterOptionen] = useState<
+    { id: string; name: string }[]
+  >([]);
+  const [leaderId, setLeaderId] = useState<string>("__none__");
 
   const laden = useCallback(async () => {
     setListeLaedt(true);
     try {
-      const [{ data: depts, error: e1 }, { data: teams }, { data: emps }] =
-        await Promise.all([
-          supabase.from("departments").select("id,name,color,icon").order("name"),
-          supabase.from("teams").select("id,department_id"),
-          supabase.from("employees").select("id,department_id"),
-        ]);
+      const [
+        { data: depts, error: e1 },
+        { data: teams },
+        { data: emps },
+        { data: maOpt, error: eMa },
+      ] = await Promise.all([
+        supabase
+          .from("departments")
+          .select(
+            "id,name,color,icon,leader_id, leader:employees!leader_id(id,name)"
+          )
+          .order("name"),
+        supabase.from("teams").select("id,department_id"),
+        supabase.from("employees").select("id,department_id"),
+        supabase
+          .from("employees")
+          .select("id,name")
+          .eq("active", true)
+          .order("name"),
+      ]);
       if (e1) throw e1;
+      if (eMa) throw eMa;
+      setMitarbeiterOptionen(
+        (maOpt ?? []).map((m) => ({
+          id: m.id as string,
+          name: String(m.name ?? ""),
+        }))
+      );
 
       const teamCount: Record<string, number> = {};
       for (const t of teams ?? []) {
@@ -146,14 +173,24 @@ export function AbteilungenVerwaltung({
       }
 
       setZeilen(
-        (depts ?? []).map((z) => ({
-          id: z.id as string,
-          name: z.name as string,
-          color: z.color as string,
-          icon: (z.icon as string | null) ?? null,
-          anzahlTeams: teamCount[z.id as string] ?? 0,
-          anzahlMitarbeiter: empCount[z.id as string] ?? 0,
-        }))
+        (depts ?? []).map((z) => {
+          const lr = z.leader as
+            | { name?: string }
+            | { name?: string }[]
+            | null
+            | undefined;
+          const leaderOne = Array.isArray(lr) ? lr[0] : lr;
+          return {
+            id: z.id as string,
+            name: z.name as string,
+            color: z.color as string,
+            icon: (z.icon as string | null) ?? null,
+            anzahlTeams: teamCount[z.id as string] ?? 0,
+            anzahlMitarbeiter: empCount[z.id as string] ?? 0,
+            leader_id: (z.leader_id as string | null) ?? null,
+            leaderName: leaderOne?.name ?? null,
+          };
+        })
       );
     } catch (e) {
       toast.error(nachrichtAusUnbekannt(e, "Laden fehlgeschlagen."));
@@ -173,7 +210,8 @@ export function AbteilungenVerwaltung({
     return zeilen.filter(
       (z) =>
         z.name.toLowerCase().includes(q) ||
-        (z.icon ?? "").toLowerCase().includes(q)
+        (z.icon ?? "").toLowerCase().includes(q) ||
+        (z.leaderName ?? "").toLowerCase().includes(q)
     );
   }, [zeilen, sucheAbteilung]);
 
@@ -182,6 +220,7 @@ export function AbteilungenVerwaltung({
     setName("");
     setFarbe("#3b82f6");
     setIcon("Wrench");
+    setLeaderId("__none__");
   }
 
   function oeffnenNeu() {
@@ -198,6 +237,7 @@ export function AbteilungenVerwaltung({
         ? z.icon
         : "Wrench"
     );
+    setLeaderId(z.leader_id ?? "__none__");
     setSheetOffen(true);
   }
 
@@ -208,7 +248,13 @@ export function AbteilungenVerwaltung({
     }
     setLädt(true);
     try {
-      const payload = { name: name.trim(), color: farbe, icon };
+      const payload = {
+        name: name.trim(),
+        color: farbe,
+        icon,
+        leader_id:
+          leaderId && leaderId !== "__none__" ? leaderId : null,
+      };
       if (bearbeitenId) {
         const { error } = await supabase
           .from("departments")
@@ -309,8 +355,11 @@ export function AbteilungenVerwaltung({
               <TableRow className="border-zinc-800 hover:bg-transparent">
                 <TableHead className={cn("w-12", STAMMDATEN_TH)}>Farbe</TableHead>
                 <TableHead className={cn("w-14", STAMMDATEN_TH)}>Icon</TableHead>
-                <TableHead className={cn("min-w-[10rem] w-[26%]", STAMMDATEN_TH)}>
+                <TableHead className={cn("min-w-[10rem] w-[22%]", STAMMDATEN_TH)}>
                   Name
+                </TableHead>
+                <TableHead className={cn("min-w-[8rem] w-[18%]", STAMMDATEN_TH)}>
+                  Leitung
                 </TableHead>
                 <TableHead className={cn("w-24 text-right", STAMMDATEN_TH)}>
                   Teams
@@ -327,7 +376,7 @@ export function AbteilungenVerwaltung({
               {zeilenGefiltert.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={6}
+                    colSpan={7}
                     className="text-center text-muted-foreground"
                   >
                     Keine Treffer für die Suche.
@@ -346,6 +395,9 @@ export function AbteilungenVerwaltung({
                     <IconVorschau name={z.icon} />
                   </TableCell>
                   <TableCell className="font-medium text-zinc-50">{z.name}</TableCell>
+                  <TableCell className="max-w-[12rem] truncate text-sm text-muted-foreground">
+                    {z.leaderName ?? "—"}
+                  </TableCell>
                   <TableCell className="text-right tabular-nums text-muted-foreground">
                     {z.anzahlTeams}
                   </TableCell>
@@ -421,6 +473,25 @@ export function AbteilungenVerwaltung({
                   className="h-10 min-w-0 flex-1 border-zinc-700/90 bg-zinc-900/80 font-mono text-sm"
                 />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Abteilungsleitung</Label>
+              <Select
+                value={leaderId}
+                onValueChange={(v) => setLeaderId(v ?? "__none__")}
+              >
+                <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-900/80">
+                  <SelectValue placeholder="Optional wählen…" />
+                </SelectTrigger>
+                <SelectContent className="border-zinc-800 bg-zinc-900">
+                  <SelectItem value="__none__">Keine Leitung</SelectItem>
+                  {mitarbeiterOptionen.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Icon</Label>

@@ -168,7 +168,7 @@ export function TeamsVerwaltung({
           .order("name"),
         supabase.from("team_members").select(
           `team_id, employee_id, team_role,
-           employees ( id, name, department_id )`
+           employees!employee_id ( id, name, department_id )`
         ),
         supabase.from("departments").select("id,name").order("name"),
         supabase
