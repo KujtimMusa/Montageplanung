@@ -2,20 +2,18 @@
 
 import { useMemo, useState } from "react";
 import {
-  AlertTriangle,
-  Calendar,
+  ArrowRight,
   Check,
-  CheckCircle,
+  CheckCircle2,
   CheckIcon,
   ChevronDown,
   ChevronsUpDownIcon,
-  Loader2,
-  User,
+  Search,
+  UserX,
   Zap,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { format } from "date-fns";
+import { de } from "date-fns/locale";
 import {
   Command,
   CommandEmpty,
@@ -36,22 +34,65 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { formatDatum } from "@/lib/utils/datum";
-import type { NotfallSteuerungProps } from "@/components/notfall/types";
+import type {
+  NotfallErsatzVorschlag,
+  NotfallSteuerungProps,
+} from "@/components/notfall/types";
 
 function projektLabel(e: NotfallSteuerungProps["einsätze"][0]): string {
   if (e.projects?.title) return e.projects.title;
   if (e.project_title?.trim()) return e.project_title.trim();
   return "Einsatz";
+}
+
+function projektFarbe(e: NotfallSteuerungProps["einsätze"][0]): string {
+  const f = e.projects?.farbe?.trim();
+  if (f) return f;
+  return "#3b82f6";
+}
+
+function vorschlaegeFuerEinsatz(
+  e: NotfallSteuerungProps["einsätze"][0],
+  ki: NotfallSteuerungProps["kiErsatz"][string] | undefined,
+  kandidaten: { id: string; name: string }[]
+): NotfallErsatzVorschlag[] {
+  const seen = new Set<string>();
+  const out: NotfallErsatzVorschlag[] = [];
+  if (ki) {
+    out.push({
+      id: ki.employeeId,
+      name: ki.name,
+      kiGrund: ki.grund || "KI-Empfehlung",
+      score: 92,
+      quelle: "ki",
+    });
+    seen.add(ki.employeeId);
+  }
+  let score = 85;
+  for (const k of kandidaten) {
+    if (seen.has(k.id)) continue;
+    out.push({
+      id: k.id,
+      name: k.name,
+      kiGrund: "Gleiche Abteilung · Zeitfenster frei",
+      score: Math.max(58, score),
+      quelle: "pool",
+    });
+    score -= 8;
+    if (out.length >= 5) break;
+  }
+  return out;
+}
+
+function effektivErsatzId(
+  einsatzId: string,
+  manuell: Record<string, string>,
+  ki: NotfallSteuerungProps["kiErsatz"]
+): string | undefined {
+  const m = manuell[einsatzId];
+  if (m) return m;
+  return ki[einsatzId]?.employeeId;
 }
 
 export function NotfallSteuerung({
@@ -60,7 +101,9 @@ export function NotfallSteuerung({
   setAusfallId,
   datum,
   setDatum,
-  schritt,
+  aktiverSchritt,
+  setAktiverSchritt,
+  betroffeneGeladen,
   kiLaed,
   onNotfallAnalysieren,
   einsätze,
@@ -68,8 +111,8 @@ export function NotfallSteuerung({
   kiErsatz,
   manuellerErsatz,
   ersatzManuellSetzen,
-  ersatzBestaetigen,
-  alleKiErsatzBestaetigen,
+  onAlleErsatzBestaetigen,
+  onResetNotfall,
   lädt,
 }: NotfallSteuerungProps) {
   const [comboOffen, setComboOffen] = useState(false);
@@ -79,145 +122,213 @@ export function NotfallSteuerung({
     [mitarbeiter, ausfallId]
   );
 
-  const kiErsatzVorhanden = useMemo(
-    () => Object.keys(kiErsatz).length > 0,
-    [kiErsatz]
+  const heuteIso = useMemo(
+    () => new Date().toISOString().slice(0, 10),
+    []
   );
 
-  const schritte = [
-    { nr: 1, titel: "Wer fällt aus?", icon: User },
-    { nr: 2, titel: "Einsätze laden", icon: Calendar },
-    { nr: 3, titel: "Ersatz bestätigen", icon: CheckCircle },
-  ];
+  const schritte = useMemo(
+    () => [
+      { nr: 1, label: "Wer fällt aus?", icon: UserX },
+      { nr: 2, label: "Ersatz suchen", icon: Search },
+      { nr: 3, label: "Ersatz bestätigen", icon: CheckCircle2 },
+    ],
+    []
+  );
+
+  function geheZuSchritt(nr: number) {
+    if (nr === 1) {
+      setAktiverSchritt(1);
+      return;
+    }
+    if (nr === 2) {
+      if (!ausfallId || !betroffeneGeladen) return;
+      setAktiverSchritt(2);
+      return;
+    }
+    if (nr === 3) {
+      if (einsätze.length === 0) return;
+      setAktiverSchritt(3);
+    }
+  }
+
+  const alleEinsaetzeMitErsatz =
+    einsätze.length > 0 &&
+    einsätze.every((e) => effektivErsatzId(e.id, manuellerErsatz, kiErsatz));
+
+  const vorschlaegeProEinsatz = useMemo(() => {
+    const m: Record<string, NotfallErsatzVorschlag[]> = {};
+    for (const e of einsätze) {
+      m[e.id] = vorschlaegeFuerEinsatz(
+        e,
+        kiErsatz[e.id],
+        kandidatenProEinsatz[e.id] ?? []
+      );
+    }
+    return m;
+  }, [einsätze, kiErsatz, kandidatenProEinsatz]);
+
+  if (aktiverSchritt === 4) {
+    return (
+      <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-2xl border border-zinc-800/60 bg-zinc-900 py-12">
+        <div className="flex size-14 items-center justify-center rounded-full border border-emerald-800/60 bg-emerald-950/60">
+          <CheckCircle2 size={28} className="text-emerald-400" />
+        </div>
+        <p className="text-base font-bold text-zinc-200">Notfall gelöst</p>
+        <p className="text-xs text-zinc-600">
+          Die Einsätze wurden in der Planung aktualisiert.
+        </p>
+        <button
+          type="button"
+          onClick={onResetNotfall}
+          className="mt-2 rounded-xl bg-zinc-800 px-4 py-2 text-sm font-semibold text-zinc-300 transition-colors hover:bg-zinc-700"
+        >
+          Neuen Notfall anlegen
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-w-0 space-y-6 text-zinc-100">
-      <div className="mb-6 flex flex-wrap items-center gap-3 rounded-2xl border border-red-900/40 bg-red-950/30 p-5">
-        <div className="rounded-xl bg-red-500/20 p-3">
-          <AlertTriangle size={24} className="text-red-400" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-bold text-red-100">Notfallplan</h1>
-          <p className="text-sm text-red-300/60">
+    <div className="min-w-0 space-y-4 text-zinc-100">
+      <div className="mb-2 flex items-start justify-between">
+        <div>
+          <div className="mb-1 flex items-center gap-2.5">
+            <div className="size-1.5 animate-pulse rounded-full bg-red-500" />
+            <h1 className="text-2xl font-bold text-zinc-100">Notfallplan</h1>
+          </div>
+          <p className="text-xs text-zinc-600">
             Kurzfristiger Ausfall — KI findet sofort Ersatz
           </p>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1.5">
           <div
             className={cn(
-              "size-2 rounded-full",
-              kiLaed ? "animate-pulse bg-violet-400" : "bg-emerald-400"
+              "size-1.5 rounded-full",
+              kiLaed ? "animate-pulse bg-amber-500" : "animate-pulse bg-emerald-500"
             )}
           />
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs font-semibold text-zinc-400">
             {kiLaed ? "KI analysiert…" : "KI bereit"}
           </span>
         </div>
       </div>
 
-      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        {schritte.map((s) => {
-          const aktiv = schritt >= s.nr;
-          const Icon = s.icon;
-          return (
-            <div
-              key={s.nr}
-              className={cn(
-                "rounded-xl border p-3 transition-all",
-                aktiv
-                  ? "border-red-800/60 bg-red-950/40"
-                  : "border-zinc-800 bg-zinc-900/50"
-              )}
-            >
-              <div className="flex items-center gap-2">
-                <div
+      <div className="mb-4 rounded-2xl border border-zinc-800/60 bg-zinc-900 p-4">
+        <div className="flex items-center">
+          {schritte.map((s, i) => {
+            const Icon = s.icon;
+            const erreichbar =
+              s.nr === 1 ||
+              (s.nr === 2 && !!ausfallId && betroffeneGeladen) ||
+              (s.nr === 3 && einsätze.length > 0);
+            return (
+              <span className="contents" key={s.nr}>
+                <button
+                  type="button"
+                  disabled={!erreichbar}
+                  onClick={() => geheZuSchritt(s.nr)}
                   className={cn(
-                    "flex size-5 items-center justify-center rounded-full text-[10px] font-bold",
-                    aktiv
-                      ? "bg-red-500/30 text-red-400"
-                      : "bg-zinc-800 text-zinc-600"
+                    "flex shrink-0 items-center gap-2.5 rounded-xl px-3 py-2 transition-all",
+                    aktiverSchritt === s.nr
+                      ? "bg-zinc-800 text-zinc-100"
+                      : aktiverSchritt > s.nr
+                        ? "cursor-pointer text-emerald-400 hover:bg-zinc-800/50"
+                        : "cursor-not-allowed text-zinc-600"
                   )}
                 >
-                  {s.nr}
-                </div>
-                <Icon
-                  className={cn(
-                    "size-3.5 shrink-0",
-                    aktiv ? "text-red-400/90" : "text-zinc-600"
-                  )}
-                />
-                <span
-                  className={cn(
-                    "text-xs font-medium",
-                    aktiv ? "text-red-300" : "text-zinc-600"
-                  )}
-                >
-                  {s.titel}
-                </span>
-              </div>
-            </div>
-          );
-        })}
+                  <div
+                    className={cn(
+                      "flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-all",
+                      aktiverSchritt === s.nr
+                        ? "bg-zinc-100 text-zinc-900"
+                        : aktiverSchritt > s.nr
+                          ? "border border-emerald-800 bg-emerald-950 text-emerald-400"
+                          : "bg-zinc-800 text-zinc-600"
+                    )}
+                  >
+                    {aktiverSchritt > s.nr ? (
+                      <Check size={11} strokeWidth={3} />
+                    ) : (
+                      s.nr
+                    )}
+                  </div>
+                  <span className="hidden text-sm font-semibold sm:inline">
+                    {s.label}
+                  </span>
+                  <Icon className="size-4 shrink-0 sm:hidden" aria-hidden />
+                </button>
+                {i < schritte.length - 1 ? (
+                  <div
+                    className={cn(
+                      "mx-2 h-px min-w-[12px] flex-1 transition-all",
+                      aktiverSchritt > s.nr ? "bg-emerald-900" : "bg-zinc-800"
+                    )}
+                  />
+                ) : null}
+              </span>
+            );
+          })}
+        </div>
       </div>
 
-      <div className="mb-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="min-w-[180px] flex-1 space-y-1">
-            <Label className="text-xs text-zinc-500">Wer fällt aus?</Label>
-            <Popover open={comboOffen} onOpenChange={setComboOffen}>
-              <PopoverTrigger
-                className={cn(
-                  "inline-flex h-10 w-full items-center justify-between rounded-lg border border-zinc-600/80 bg-zinc-900/90 px-3 text-sm text-zinc-100 shadow-inner",
-                  "hover:bg-zinc-900 focus-visible:ring-2 focus-visible:ring-red-500/30 focus-visible:outline-none"
-                )}
-                nativeButton
-              >
-                <span className="flex min-w-0 items-center gap-2 truncate">
-                  {ausfall ? (
-                    <>
-                      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-zinc-700 text-[10px] font-medium">
-                        {ausfall.name.charAt(0)}
-                      </span>
-                      <span className="truncate">
-                        <span className="block truncate">{ausfall.name}</span>
-                        {ausfall.abteilung ? (
-                          <span className="block truncate text-[10px] text-zinc-500">
-                            {ausfall.abteilung}
-                          </span>
-                        ) : null}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-zinc-500">Mitarbeiter wählen…</span>
+      {aktiverSchritt === 1 ? (
+        <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5">
+          <h3 className="mb-4 text-sm font-semibold text-zinc-200">
+            Ausgefallener Mitarbeiter
+          </h3>
+
+          <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-xs font-semibold tracking-wider text-zinc-500 uppercase">
+                Mitarbeiter
+              </label>
+              <Popover open={comboOffen} onOpenChange={setComboOffen}>
+                <PopoverTrigger
+                  className={cn(
+                    "inline-flex h-[42px] w-full cursor-pointer appearance-none items-center justify-between rounded-xl border border-zinc-700 bg-zinc-800 px-3 text-sm text-zinc-200 transition-colors",
+                    "hover:border-zinc-600 focus-visible:border-zinc-600 focus-visible:outline-none"
                   )}
-                </span>
-                <ChevronsUpDownIcon className="size-4 shrink-0 opacity-50" />
-              </PopoverTrigger>
-              <PopoverContent className="w-[var(--anchor-width)] p-0" align="start">
-                <Command>
-                  <CommandInput placeholder="Suchen…" />
-                  <CommandList>
-                    <CommandEmpty>Kein Treffer.</CommandEmpty>
-                    <CommandGroup>
-                      {mitarbeiter.map((m) => (
-                        <CommandItem
-                          key={m.id}
-                          value={`${m.name} ${m.abteilung ?? ""}`}
-                          onSelect={() => {
-                            setAusfallId(m.id);
-                            setComboOffen(false);
-                          }}
-                        >
-                          <CheckIcon
-                            className={cn(
-                              "mr-2 size-4",
-                              ausfallId === m.id ? "opacity-100" : "opacity-0"
-                            )}
-                          />
-                          <div className="flex items-center gap-2">
-                            <div className="flex size-6 items-center justify-center rounded-full bg-zinc-700 text-[10px]">
-                              {m.name.charAt(0)}
-                            </div>
+                  nativeButton
+                >
+                  <span className="flex min-w-0 flex-1 items-center gap-2 truncate">
+                    {ausfall ? (
+                      <>
+                        <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-zinc-600 bg-zinc-700 text-xs font-bold text-zinc-300">
+                          {ausfall.name.slice(0, 2).toUpperCase()}
+                        </span>
+                        <span className="truncate">{ausfall.name}</span>
+                      </>
+                    ) : (
+                      <span className="text-zinc-500">Mitarbeiter wählen…</span>
+                    )}
+                  </span>
+                  <ChevronsUpDownIcon className="size-4 shrink-0 opacity-50" />
+                </PopoverTrigger>
+                <PopoverContent
+                  className="w-[var(--anchor-width)] p-0"
+                  align="start"
+                >
+                  <Command>
+                    <CommandInput placeholder="Suchen…" />
+                    <CommandList>
+                      <CommandEmpty>Kein Treffer.</CommandEmpty>
+                      <CommandGroup>
+                        {mitarbeiter.map((m) => (
+                          <CommandItem
+                            key={m.id}
+                            value={`${m.name} ${m.abteilung ?? ""}`}
+                            onSelect={() => {
+                              setAusfallId(m.id);
+                              setComboOffen(false);
+                            }}
+                          >
+                            <CheckIcon
+                              className={cn(
+                                "mr-2 size-4",
+                                ausfallId === m.id ? "opacity-100" : "opacity-0"
+                              )}
+                            />
                             <div>
                               <p className="text-sm">{m.name}</p>
                               {m.abteilung ? (
@@ -226,136 +337,274 @@ export function NotfallSteuerung({
                                 </p>
                               ) : null}
                             </div>
-                          </div>
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-xs font-semibold tracking-wider text-zinc-500 uppercase">
+                Ab wann?
+              </label>
+              <input
+                type="date"
+                value={datum}
+                onChange={(e) => setDatum(e.target.value)}
+                className="h-[42px] w-full rounded-xl border border-zinc-700 bg-zinc-800 px-3 text-sm text-zinc-200 transition-colors [color-scheme:dark] focus:border-zinc-600 focus:outline-none"
+              />
+            </div>
           </div>
 
-          <div className="space-y-1">
-            <Label htmlFor="nf-datum" className="text-xs text-zinc-500">
-              Ab wann?
-            </Label>
-            <Input
-              id="nf-datum"
-              type="date"
-              value={datum}
-              onChange={(e) => setDatum(e.target.value)}
-              className="h-10 w-[160px] rounded-lg border-zinc-600/80 bg-zinc-900/90 text-zinc-100"
-            />
-          </div>
+          {ausfall && betroffeneGeladen ? (
+            <div className="mb-4 flex items-center gap-3 rounded-xl border border-zinc-700/50 bg-zinc-800/50 p-3">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-full border border-zinc-600 bg-zinc-700 text-sm font-bold text-zinc-300">
+                {ausfall.name.slice(0, 2).toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-zinc-200">
+                  {ausfall.name}
+                </p>
+                <p className="text-xs text-zinc-600">
+                  {ausfall.abteilung ?? "—"} · {einsätze.length} offene Einsätze
+                </p>
+              </div>
+              <div className="shrink-0 rounded-full border border-red-900/50 bg-red-950/60 px-2.5 py-1">
+                <span className="text-xs font-bold text-red-400">
+                  {einsätze.length} betroffen
+                </span>
+              </div>
+            </div>
+          ) : null}
 
-          <Button
+          {!ausfall?.department_id && ausfallId ? (
+            <p className="mb-3 text-sm text-amber-400">
+              Keine Abteilung hinterlegt — Ersatzfilter ist eingeschränkt.
+            </p>
+          ) : null}
+
+          <button
             type="button"
-            className="bg-red-600 text-white hover:bg-red-500"
             onClick={onNotfallAnalysieren}
             disabled={!ausfallId || kiLaed || lädt}
+            className={cn(
+              "flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold transition-all",
+              ausfallId && !kiLaed && !lädt
+                ? "bg-red-600 text-white hover:bg-red-500"
+                : "cursor-not-allowed bg-zinc-800 text-zinc-600"
+            )}
           >
             {kiLaed || lädt ? (
               <>
-                <Loader2 size={14} className="mr-2 animate-spin" />
-                Analysiert…
+                <div className="size-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                KI analysiert…
               </>
             ) : (
               <>
-                <Zap size={14} className="mr-2" />
+                <Zap size={15} />
                 Notfall analysieren
               </>
             )}
-          </Button>
+          </button>
         </div>
-      </div>
-
-      {!ausfall?.department_id && ausfallId ? (
-        <p className="text-sm text-amber-400">
-          Dieser Mitarbeiter hat keine Abteilung — Ersatzfilter greift nicht.
-        </p>
       ) : null}
 
-      <div className="overflow-hidden rounded-xl border border-zinc-800">
-        <Table>
-          <TableHeader className="bg-zinc-900/80">
-            <TableRow className="border-zinc-800 hover:bg-transparent">
-              <TableHead className="text-xs text-zinc-400">
-                Projekt / Einsatz
-              </TableHead>
-              <TableHead className="text-xs text-zinc-400">Zeit</TableHead>
-              <TableHead className="text-xs text-zinc-400">
-                KI-Ersatz (beste Wahl)
-              </TableHead>
-              <TableHead className="w-[120px] text-xs text-zinc-400">
-                Aktionen
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {einsätze.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={4} className="text-zinc-500">
-                  {ausfallId
-                    ? "Keine Einsätze — zuerst „Notfall analysieren“."
-                    : "Mitarbeiter wählen und analysieren."}
-                </TableCell>
-              </TableRow>
-            ) : (
-              einsätze.map((e) => {
-                const ki = kiErsatz[e.id];
-                const manual = manuellerErsatz[e.id];
-                const kandidaten = kandidatenProEinsatz[e.id] ?? [];
-                const effektivId = manual ?? ki?.employeeId;
+      {aktiverSchritt === 2 ? (
+        <div className="space-y-3">
+          {einsätze.length === 0 ? (
+            <p className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5 text-sm text-zinc-500">
+              Keine Einsätze an diesem Tag. Zurück zu Schritt 1.
+            </p>
+          ) : (
+            einsätze.map((einsatz) => {
+              const vorschlaege = vorschlaegeProEinsatz[einsatz.id] ?? [];
+              const gewaehlt = effektivErsatzId(
+                einsatz.id,
+                manuellerErsatz,
+                kiErsatz
+              );
+              const dringlich =
+                einsatz.date === heuteIso ? "hoch" : "normal";
 
-                return (
-                  <TableRow key={e.id} className="border-zinc-800">
-                    <TableCell>
-                      <p className="text-sm font-medium text-zinc-200">
-                        {projektLabel(e)}
-                      </p>
-                      {e.teamName ? (
-                        <p className="text-xs text-zinc-500">{e.teamName}</p>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="text-sm text-zinc-400">
-                      {formatDatum(e.date)}
-                      <br />
-                      <span className="text-xs tabular-nums">
-                        {e.start_time.slice(0, 5)}–{e.end_time.slice(0, 5)}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {ki ? (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="flex size-7 items-center justify-center rounded-full bg-violet-800/50 text-[10px] font-bold text-violet-300">
-                            {ki.name.charAt(0)}
+              return (
+                <div
+                  key={einsatz.id}
+                  className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-4"
+                >
+                  <div className="mb-3 flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="mb-0.5 flex items-center gap-2">
+                        <div
+                          className="size-1.5 shrink-0 rounded-full"
+                          style={{
+                            background: projektFarbe(einsatz),
+                          }}
+                        />
+                        <p className="text-sm font-bold text-zinc-200">
+                          {projektLabel(einsatz)}
+                        </p>
+                      </div>
+                      <div className="ml-3.5 flex flex-wrap items-center gap-3">
+                        <span className="text-xs tabular-nums text-zinc-600">
+                          {format(new Date(einsatz.date), "EEE, dd.MM.", {
+                            locale: de,
+                          })}
+                        </span>
+                        <span className="text-xs text-zinc-600">
+                          {einsatz.start_time.slice(0, 5)}–
+                          {einsatz.end_time.slice(0, 5)}
+                        </span>
+                        {einsatz.teamName ? (
+                          <span className="text-xs text-zinc-600">
+                            {einsatz.teamName}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div
+                      className={cn(
+                        "shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold",
+                        dringlich === "hoch"
+                          ? "border-red-900/50 bg-red-950/60 text-red-400"
+                          : "border-amber-900/50 bg-amber-950/60 text-amber-400"
+                      )}
+                    >
+                      {dringlich === "hoch" ? "Dringend" : "Normal"}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="mb-2 text-[10px] font-semibold tracking-wider text-zinc-600 uppercase">
+                      KI-Ersatzvorschläge
+                    </p>
+                    {vorschlaege.length === 0 ? (
+                      <div className="flex items-center gap-2 rounded-xl border border-zinc-800/60 bg-zinc-800/30 p-2">
+                        <Select
+                          value={gewaehlt ?? "__none__"}
+                          onValueChange={(v) =>
+                            ersatzManuellSetzen(
+                              einsatz.id,
+                              v === "__none__" ? null : v
+                            )
+                          }
+                        >
+                          <SelectTrigger className="h-9 border-zinc-700 bg-zinc-800 text-xs">
+                            <SelectValue placeholder="Ersatz wählen…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__" disabled>
+                              Ersatz wählen…
+                            </SelectItem>
+                            {(kandidatenProEinsatz[einsatz.id] ?? []).map(
+                              (emp) => (
+                                <SelectItem key={emp.id} value={emp.id}>
+                                  {emp.name}
+                                </SelectItem>
+                              )
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ) : (
+                      vorschlaege.map((v, i) => (
+                        <button
+                          key={v.id}
+                          type="button"
+                          onClick={() =>
+                            ersatzManuellSetzen(einsatz.id, v.id)
+                          }
+                          className={cn(
+                            "flex w-full cursor-pointer items-center gap-3 rounded-xl border p-3 text-left transition-all",
+                            gewaehlt === v.id
+                              ? "border-emerald-700/60 bg-emerald-950/30"
+                              : "border-zinc-800/60 bg-zinc-800/30 hover:border-zinc-700"
+                          )}
+                        >
+                          <div
+                            className={cn(
+                              "flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold",
+                              i === 0
+                                ? "border border-emerald-800 bg-emerald-950 text-emerald-400"
+                                : "border border-zinc-700 bg-zinc-800 text-zinc-600"
+                            )}
+                          >
+                            {i + 1}
+                          </div>
+                          <div className="flex size-8 shrink-0 items-center justify-center rounded-full border border-zinc-600 bg-zinc-700 text-xs font-bold text-zinc-300">
+                            {v.name.slice(0, 2).toUpperCase()}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="text-xs font-medium text-zinc-200">
-                              {ki.name}
+                            <p className="text-sm font-semibold text-zinc-200">
+                              {v.name}
                             </p>
-                            <p className="text-[10px] text-violet-400">
-                              KI · {ki.grund}
+                            <p className="truncate text-xs text-zinc-600">
+                              {v.kiGrund}
                             </p>
                           </div>
+                          <div className="shrink-0 text-right">
+                            <p
+                              className="text-sm font-bold tabular-nums"
+                              style={{
+                                color:
+                                  v.score > 80 ? "#10b981" : "#f59e0b",
+                              }}
+                            >
+                              {v.score}%
+                            </p>
+                            <p className="text-[9px] text-zinc-700">Match</p>
+                          </div>
+                          <div
+                            className={cn(
+                              "flex size-4 shrink-0 items-center justify-center rounded-full border-2 transition-all",
+                              gewaehlt === v.id
+                                ? "border-emerald-500 bg-emerald-500"
+                                : "border-zinc-700"
+                            )}
+                          >
+                            {gewaehlt === v.id ? (
+                              <Check size={9} className="text-white" />
+                            ) : null}
+                          </div>
+                        </button>
+                      ))
+                    )}
+
+                    {vorschlaege.length > 0 ? (() => {
+                      const extraKandidaten = (
+                        kandidatenProEinsatz[einsatz.id] ?? []
+                      ).filter(
+                        (k) => !vorschlaege.some((v) => v.id === k.id)
+                      );
+                      if (extraKandidaten.length === 0) return null;
+                      const poolVal =
+                        gewaehlt &&
+                        extraKandidaten.some((k) => k.id === gewaehlt)
+                          ? gewaehlt
+                          : "__use_cards__";
+                      return (
+                        <div className="pt-1">
                           <Select
-                            value={manual ?? "__ki__"}
+                            value={poolVal}
                             onValueChange={(v) =>
                               ersatzManuellSetzen(
-                                e.id,
-                                v === "__ki__" ? null : v
+                                einsatz.id,
+                                v === "__use_cards__" ? null : v
                               )
                             }
                           >
-                            <SelectTrigger className="h-7 w-7 shrink-0 border-none bg-transparent p-0">
-                              <ChevronDown size={12} className="text-zinc-600" />
+                            <SelectTrigger className="h-8 border-zinc-700 bg-zinc-900 text-[11px] text-zinc-400">
+                              <span className="flex items-center gap-1">
+                                <ChevronDown size={12} /> Weitere aus Pool
+                              </span>
                             </SelectTrigger>
-                            <SelectContent align="end">
-                              <SelectItem value="__ki__">
-                                KI: {ki.name}
+                            <SelectContent>
+                              <SelectItem value="__use_cards__">
+                                Top-Vorschlagsliste nutzen
                               </SelectItem>
-                              {kandidaten.map((emp) => (
+                              {extraKandidaten.map((emp) => (
                                 <SelectItem key={emp.id} value={emp.id}>
                                   {emp.name}
                                 </SelectItem>
@@ -363,69 +612,106 @@ export function NotfallSteuerung({
                             </SelectContent>
                           </Select>
                         </div>
-                      ) : (
-                        <Select
-                          value={manual ?? "__none__"}
-                          onValueChange={(v) =>
-                            ersatzManuellSetzen(
-                              e.id,
-                              v === "__none__" ? null : v
-                            )
-                          }
-                        >
-                          <SelectTrigger className="h-8 max-w-[220px] border-zinc-700 bg-zinc-900 text-xs">
-                            <SelectValue placeholder="Ersatz wählen…" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__" disabled>
-                              Ersatz wählen…
-                            </SelectItem>
-                            {kandidaten.map((emp) => (
-                              <SelectItem key={emp.id} value={emp.id}>
-                                {emp.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="h-7 bg-emerald-600 text-xs hover:bg-emerald-500"
-                        disabled={!effektivId}
-                        onClick={() => ersatzBestaetigen(e.id)}
-                      >
-                        <Check size={12} className="mr-1" />
-                        Bestätigen
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
+                      );
+                    })() : null}
+                  </div>
+                </div>
+              );
+            })
+          )}
 
-        {kiErsatzVorhanden && einsätze.length > 0 ? (
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800 bg-zinc-900/50 p-3">
-            <p className="text-xs text-zinc-500">
-              KI hat {Object.keys(kiErsatz).length} Empfehlung(en)
-            </p>
-            <Button
+          {einsätze.length > 0 ? (
+            <button
               type="button"
-              size="sm"
-              className="bg-red-600 hover:bg-red-500"
-              onClick={alleKiErsatzBestaetigen}
-              disabled={lädt || kiLaed}
+              disabled={!alleEinsaetzeMitErsatz}
+              onClick={() => geheZuSchritt(3)}
+              className={cn(
+                "mt-2 w-full rounded-xl py-2.5 text-sm font-semibold transition-all",
+                alleEinsaetzeMitErsatz
+                  ? "bg-zinc-100 text-zinc-900 hover:bg-white"
+                  : "cursor-not-allowed bg-zinc-800 text-zinc-600"
+              )}
             >
-              <Zap size={12} className="mr-1.5" />
-              Alle KI-Empfehlungen übernehmen
-            </Button>
+              Weiter zur Bestätigung
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {aktiverSchritt === 3 ? (
+        <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5">
+          <h3 className="mb-4 text-sm font-semibold text-zinc-200">
+            Zusammenfassung
+          </h3>
+
+          <div className="mb-5 space-y-2">
+            {einsätze.map((einsatz) => {
+              const maId = effektivErsatzId(
+                einsatz.id,
+                manuellerErsatz,
+                kiErsatz
+              );
+              const ma = mitarbeiter.find((m) => m.id === maId);
+              if (!maId || !ma) return null;
+              return (
+                <div
+                  key={einsatz.id}
+                  className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-800/50 py-2.5 pr-2 pl-3"
+                >
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                    <div
+                      className="size-1.5 shrink-0 rounded-full"
+                      style={{ background: projektFarbe(einsatz) }}
+                    />
+                    <span className="truncate text-xs font-semibold text-zinc-300">
+                      {projektLabel(einsatz)}
+                    </span>
+                    <span className="shrink-0 text-xs text-zinc-600">
+                      {format(new Date(einsatz.date), "dd.MM.", { locale: de })}
+                    </span>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <ArrowRight size={12} className="text-zinc-700" />
+                    <div className="flex size-5 items-center justify-center rounded-full bg-zinc-700 text-[9px] font-bold text-zinc-400">
+                      {ma.name.slice(0, 2).toUpperCase()}
+                    </div>
+                    <span className="max-w-[100px] truncate text-xs font-semibold text-zinc-300 sm:max-w-[160px]">
+                      {ma.name}
+                    </span>
+                  </div>
+                  <div className="flex size-4 shrink-0 items-center justify-center rounded-full border border-emerald-800 bg-emerald-950">
+                    <Check size={9} className="text-emerald-400" />
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        ) : null}
-      </div>
+
+          <button
+            type="button"
+            onClick={onAlleErsatzBestaetigen}
+            disabled={!alleEinsaetzeMitErsatz || lädt || kiLaed}
+            className={cn(
+              "flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold transition-all",
+              alleEinsaetzeMitErsatz && !lädt && !kiLaed
+                ? "bg-emerald-600 text-white hover:bg-emerald-500"
+                : "cursor-not-allowed bg-zinc-800 text-zinc-600"
+            )}
+          >
+            {lädt ? (
+              <>
+                <div className="size-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                Wird gespeichert…
+              </>
+            ) : (
+              <>
+                <CheckCircle2 size={16} />
+                {einsätze.length} Ersatz bestätigen
+              </>
+            )}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

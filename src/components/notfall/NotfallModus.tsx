@@ -65,6 +65,7 @@ export function NotfallModus() {
   >({});
   const [lädt, setLädt] = useState(false);
   const [betroffeneGeladen, setBetroffeneGeladen] = useState(false);
+  const [aktiverSchritt, setAktiverSchritt] = useState(1);
 
   const [kiLaed, setKiLaed] = useState(false);
   const [kiStream, setKiStream] = useState("");
@@ -81,18 +82,37 @@ export function NotfallModus() {
     [mitarbeiter, ausfallId]
   );
 
-  const schritt = useMemo(() => {
-    if (!ausfallId) return 0;
-    if (!betroffeneGeladen) return 1;
-    if (einsätze.length === 0) return 2;
-    return 3;
-  }, [ausfallId, betroffeneGeladen, einsätze.length]);
-
   const kommunikationWhatsapp = useMemo(() => {
     const first = kiAntwort?.empfehlungen?.[0];
     if (!first?.employeeId) return null;
     return mitarbeiter.find((m) => m.id === first.employeeId)?.whatsapp ?? null;
   }, [kiAntwort, mitarbeiter]);
+
+  useEffect(() => {
+    setBetroffeneGeladen(false);
+    setEinsätze([]);
+    setKandidatenProEinsatz({});
+    setKiAntwort(null);
+    setKiStream("");
+    setKiErsatz({});
+    setManuellerErsatz({});
+    setAktiverSchritt(1);
+    absenceEingetragenRef.current = false;
+  }, [ausfallId, datum]);
+
+  const resetNotfall = useCallback(() => {
+    setAusfallId("");
+    setDatum(new Date().toISOString().slice(0, 10));
+    setEinsätze([]);
+    setKandidatenProEinsatz({});
+    setBetroffeneGeladen(false);
+    setAktiverSchritt(1);
+    setKiAntwort(null);
+    setKiStream("");
+    setKiErsatz({});
+    setManuellerErsatz({});
+    absenceEingetragenRef.current = false;
+  }, []);
 
   const ladenMitarbeiter = useCallback(async () => {
     const { data, error } = await supabase
@@ -143,7 +163,7 @@ export function NotfallModus() {
         const { data, error } = await supabase
           .from("assignments")
           .select(
-            "id,date,start_time,end_time,project_id,project_title, projects(title), teams(name)"
+            "id,date,start_time,end_time,project_id,project_title, projects(title, farbe), teams(name)"
           )
           .eq("employee_id", ausfallId)
           .eq("date", datum);
@@ -154,6 +174,10 @@ export function NotfallModus() {
           (row: Record<string, unknown>) => {
             const p = row.projects;
             const proj = Array.isArray(p) ? p[0] : p;
+            const projObj = proj as
+              | { title?: string; farbe?: string | null }
+              | null
+              | undefined;
             const t = row.teams as
               | { name?: string }
               | { name?: string }[]
@@ -166,7 +190,9 @@ export function NotfallModus() {
               end_time: row.end_time as string,
               project_id: (row.project_id as string | null) ?? null,
               project_title: (row.project_title as string | null) ?? null,
-              projects: proj as { title: string } | null,
+              projects: projObj?.title
+                ? { title: projObj.title, farbe: projObj.farbe ?? null }
+                : null,
               teamName: team?.name ? String(team.name) : null,
             };
           }
@@ -342,6 +368,12 @@ export function NotfallModus() {
         console.warn("[Notfall] emergency_log:", logErr.message);
       }
 
+      if (rows.length > 0) {
+        setAktiverSchritt(2);
+      } else {
+        setAktiverSchritt(1);
+      }
+
       if (rows.length === 0) {
         toast.info("Keine Einsätze — KI hat dennoch eine Einschätzung geliefert.");
       }
@@ -385,52 +417,29 @@ export function NotfallModus() {
     if (!error) absenceEingetragenRef.current = true;
   }
 
-  async function ersatzBestaetigen(einsatzId: string) {
-    const ki = kiErsatz[einsatzId];
-    const manual = manuellerErsatz[einsatzId];
-    const ersatzId = manual ?? ki?.employeeId;
-    if (!ersatzId) {
-      toast.error("Ersatz wählen.");
-      return;
-    }
-    const name = mitarbeiter.find((m) => m.id === ersatzId)?.name ?? "Ersatz";
-    setLädt(true);
-    try {
-      const { error } = await supabase
-        .from("assignments")
-        .update({ employee_id: ersatzId })
-        .eq("id", einsatzId);
-      if (error) throw error;
-      await absenceEinmalig();
-      toast.success(`Ersatz bestätigt — ${name} übernimmt den Einsatz.`);
-      void betroffeneLaden({ silent: true });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Zuweisung fehlgeschlagen.";
-      toast.error(msg);
-    } finally {
-      setLädt(false);
-    }
-  }
-
-  async function alleKiErsatzBestaetigen() {
+  async function alleErsatzBestaetigen() {
     const jobs: Promise<void>[] = [];
     for (const e of einsätze) {
       const ki = kiErsatz[e.id];
       const manual = manuellerErsatz[e.id];
-      const ersatzId = manual ?? ki?.employeeId;
-      if (!ersatzId) continue;
+      const ersatzIdEmp = manual ?? ki?.employeeId;
+      if (!ersatzIdEmp) continue;
       jobs.push(
         (async () => {
           const { error } = await supabase
             .from("assignments")
-            .update({ employee_id: ersatzId })
+            .update({ employee_id: ersatzIdEmp })
             .eq("id", e.id);
           if (error) throw error;
         })()
       );
     }
     if (jobs.length === 0) {
-      toast.info("Keine KI-Empfehlungen zum Übernehmen.");
+      toast.info("Keine vollständige Ersatzwahl — bitte alle Einsätze zuweisen.");
+      return;
+    }
+    if (jobs.length < einsätze.length) {
+      toast.error("Bitte für jeden Einsatz einen Ersatz wählen.");
       return;
     }
     setLädt(true);
@@ -438,6 +447,7 @@ export function NotfallModus() {
       await Promise.all(jobs);
       await absenceEinmalig();
       toast.success(`Alle ${jobs.length} Ersatzplanungen übernommen.`);
+      setAktiverSchritt(4);
       void betroffeneLaden({ silent: true });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Batch fehlgeschlagen.";
@@ -448,32 +458,38 @@ export function NotfallModus() {
   }
 
   return (
-    <div className="grid min-h-0 grid-cols-1 gap-6 lg:grid-cols-[1fr_420px]">
-      <NotfallSteuerung
-        mitarbeiter={mitarbeiter}
-        ausfallId={ausfallId}
-        setAusfallId={setAusfallId}
-        datum={datum}
-        setDatum={setDatum}
-        schritt={schritt}
-        kiLaed={kiLaed}
-        onNotfallAnalysieren={() => void notfallAusloesen()}
-        einsätze={einsätze}
-        kandidatenProEinsatz={kandidatenProEinsatz}
-        kiErsatz={kiErsatz}
-        manuellerErsatz={manuellerErsatz}
-        ersatzManuellSetzen={ersatzManuellSetzen}
-        ersatzBestaetigen={(id) => void ersatzBestaetigen(id)}
-        alleKiErsatzBestaetigen={() => void alleKiErsatzBestaetigen()}
-        lädt={lädt}
-      />
-      <KiNotfallPanel
-        kiLaed={kiLaed}
-        kiStream={kiStream}
-        kiAntwort={kiAntwort}
-        onNeuAnalysieren={() => void notfallAusloesen()}
-        kommunikationWhatsapp={kommunikationWhatsapp}
-      />
+    <div className="flex h-[calc(100vh-60px)] min-h-0 gap-4">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto">
+        <NotfallSteuerung
+          mitarbeiter={mitarbeiter}
+          ausfallId={ausfallId}
+          setAusfallId={setAusfallId}
+          datum={datum}
+          setDatum={setDatum}
+          aktiverSchritt={aktiverSchritt}
+          setAktiverSchritt={setAktiverSchritt}
+          betroffeneGeladen={betroffeneGeladen}
+          kiLaed={kiLaed}
+          onNotfallAnalysieren={() => void notfallAusloesen()}
+          einsätze={einsätze}
+          kandidatenProEinsatz={kandidatenProEinsatz}
+          kiErsatz={kiErsatz}
+          manuellerErsatz={manuellerErsatz}
+          ersatzManuellSetzen={ersatzManuellSetzen}
+          onAlleErsatzBestaetigen={() => void alleErsatzBestaetigen()}
+          onResetNotfall={resetNotfall}
+          lädt={lädt}
+        />
+      </div>
+      <div className="flex w-[420px] shrink-0 min-h-0 flex-col">
+        <KiNotfallPanel
+          kiLaed={kiLaed}
+          kiStream={kiStream}
+          kiAntwort={kiAntwort}
+          onNeuAnalysieren={() => void notfallAusloesen()}
+          kommunikationWhatsapp={kommunikationWhatsapp}
+        />
+      </div>
     </div>
   );
 }

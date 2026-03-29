@@ -17,8 +17,17 @@ export type NotfallEinsatzZeile = {
   end_time: string;
   project_id: string | null;
   project_title: string | null;
-  projects: { title: string } | null;
+  projects: { title: string; farbe?: string | null } | null;
   teamName: string | null;
+};
+
+/** Kandidat für Auswahl-Card (KI + Pool) */
+export type NotfallErsatzVorschlag = {
+  id: string;
+  name: string;
+  kiGrund: string;
+  score: number;
+  quelle: "ki" | "pool";
 };
 
 export type NotfallSteuerungProps = {
@@ -27,7 +36,9 @@ export type NotfallSteuerungProps = {
   setAusfallId: (id: string) => void;
   datum: string;
   setDatum: (d: string) => void;
-  schritt: number;
+  aktiverSchritt: number;
+  setAktiverSchritt: (n: number) => void;
+  betroffeneGeladen: boolean;
   kiLaed: boolean;
   onNotfallAnalysieren: () => void;
   einsätze: NotfallEinsatzZeile[];
@@ -35,7 +46,7 @@ export type NotfallSteuerungProps = {
   kiErsatz: Record<string, KiErsatzKarte>;
   manuellerErsatz: Record<string, string>;
   ersatzManuellSetzen: (einsatzId: string, employeeId: string | null) => void;
-  ersatzBestaetigen: (einsatzId: string) => void;
-  alleKiErsatzBestaetigen: () => void;
+  onAlleErsatzBestaetigen: () => void;
+  onResetNotfall: () => void;
   lädt: boolean;
 };

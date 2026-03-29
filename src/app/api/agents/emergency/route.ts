@@ -2,32 +2,47 @@ import { streamText } from "ai";
 import { createClient } from "@/lib/supabase/server";
 import { istKiKonfiguriert, kiModell } from "@/lib/agents/ki-client";
 
-const SYSTEM_NOTFALL = `Du bist ein Notfall-Planungsassistent für einen Handwerksbetrieb.
-Ein Mitarbeiter ist kurzfristig ausgefallen.
-Analysiere die Situation und erstelle einen konkreten Notfallplan.
+const SYSTEM_NOTFALL = `Du bist ein Notfall-Planungsassistent für Handwerksbetriebe. Antworte logisch auf Deutsch.
 
-Deine Ausgabe ist IMMER valides JSON mit dieser Struktur (ohne Markdown, ohne Codeblöcke):
+Deine Ausgabe ist IMMER valides JSON (ohne Markdown-Fences, ohne Codeblöcke) mit genau dieser Struktur:
 {
-  "zusammenfassung": "2-3 Sätze was passiert ist und was zu tun ist",
+  "zusammenfassung": "string",
   "empfehlungen": [
     {
       "einsatzId": "uuid",
       "name": "Mitarbeitername",
       "employeeId": "uuid",
-      "begruendung": "Kurze Begründung warum diese Person",
+      "begruendung": "string",
       "einsatz": "Projektname Datum"
     }
   ],
-  "risiken": ["Risiko 1", "Risiko 2"],
-  "kommunikation": "Fertige WhatsApp-Nachricht an den Ersatz"
+  "risiken": ["string"],
+  "kommunikation": "string"
 }
+
+Inhaltlich darfst du in den STRING-Feldern Markdown nutzen:
+- **fett** für Namen und Kernpunkte
+- ### kurze Zwischenüberschriften (z. B. "### Betroffene Einsätze")
+- Aufzählungen mit -
+
+Strukturvorschlag für "zusammenfassung":
+### Betroffene Einsätze
+Kurze Übersicht.
+
+### Meine Empfehlung
+**Projekt X am Datum** — wer übernimmt und warum.
+
+### Hinweise
+Wichtige Planungs-Hinweise.
+
+In "empfehlungen[].begruendung" ebenfalls **fett** für Namen erlaubt.
 
 Priorisiere:
 1. Gleiche Abteilung wie Ausgefallener
-2. Keine Konflikte am selben Tag (hatKonflikt: false bevorzugen)
-3. Gleiche Qualifikationen wenn möglich
-4. Kurze Begründung in der Sprache des Handwerks
-5. Nutze nur employeeIds aus "verfuegbareKraefte" für Empfehlungen.`;
+2. verfuegbareKraefte mit hatKonflikt: false
+3. Passende Qualifikationen
+4. Nur employeeIds aus "verfuegbareKraefte" für Empfehlungen
+5. Präzise, keine Romanzen.`;
 
 /** Notfall — strukturiertes JSON als Text-Stream */
 export async function POST(request: Request) {
