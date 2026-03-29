@@ -13,6 +13,8 @@ export type AngestellterProfil = {
   role: AngestellterRolle;
   active: boolean;
   department_id: string | null;
+  /** Primäres Team (employees.team_id), u. a. für Dashboard-Teamscope */
+  team_id: string | null;
   auth_user_id: string | null;
 };
 
@@ -35,7 +37,7 @@ export async function ladeAngestelltenProfil(): Promise<AngestellterProfil | nul
 
   const { data, error } = await supabase
     .from("employees")
-    .select("id,name,email,role,active,department_id,auth_user_id")
+    .select("id,name,email,role,active,department_id,team_id,auth_user_id")
     .eq("auth_user_id", user.id)
     .maybeSingle();
 

@@ -16,6 +16,11 @@ export default async function DashboardSeite() {
           </h1>
           <p className="text-sm text-muted-foreground">
             KPIs und Trends auf einen Blick
+            {daten.kontextLabel ? (
+              <span className="mt-1 block text-xs font-medium text-indigo-400/90">
+                {daten.kontextLabel}
+              </span>
+            ) : null}
           </p>
         </div>
         <DashboardUebersicht daten={daten} />

@@ -367,8 +367,9 @@ export function DashboardUebersicht({ daten }: { daten: DashboardDaten }) {
                   Noch keine Einsätze im Zeitraum.
                 </p>
                 <p className="max-w-md text-xs text-zinc-600">
-                  Die letzten 7 Tage werden aus allen gespeicherten Einsätzen
-                  aggregiert. Liegen keine Buchungen vor, bleibt die Kurve bei null.
+                  Die letzten 7 Tage werden aus den für dich sichtbaren Einsätzen
+                  aggregiert (Kalendertag Europe/Berlin). Ohne Buchungen in diesem
+                  Kreis bleibt die Kurve bei null.
                 </p>
               </div>
             ) : (
