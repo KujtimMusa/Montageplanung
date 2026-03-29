@@ -19,6 +19,7 @@ import {
   pruefeEinsatzKonflikt,
 } from "@/lib/utils/conflicts";
 import { getRepresentativeEmployeeId } from "@/lib/planung/team-representative";
+import { bumpProjektGeplantWennNeu } from "@/lib/planung/bump-projekt-geplant";
 import { dbPrioritaetZuUi, uiPrioritaetZuDb } from "@/lib/utils/priority";
 import { Button } from "@/components/ui/button";
 import {
@@ -448,7 +449,11 @@ export function EinsatzNeuDialog({
         .update({ priority: prioritaetDb })
         .eq("id", werte.projekt_id);
 
-      toast.success("Einsatz gespeichert.");
+      await bumpProjektGeplantWennNeu(supabase, werte.projekt_id);
+      const pn = projekte.find((x) => x.id === werte.projekt_id)?.title ?? "Projekt";
+      toast.success(
+        `Einsatz für „${pn}“ am ${format(parseISO(werte.date_von), "dd.MM.yyyy", { locale: de })} gespeichert.`
+      );
       onOpenChange(false);
       onGespeichert();
       return;
@@ -551,8 +556,16 @@ export function EinsatzNeuDialog({
       .update({ priority: prioritaetDb })
       .eq("id", werte.projekt_id);
 
+    await bumpProjektGeplantWennNeu(supabase, werte.projekt_id);
+    const pnNeu = projekte.find((x) => x.id === werte.projekt_id)?.title ?? "Projekt";
+    const datumTxt =
+      werte.date_von === werte.date_bis
+        ? format(parseISO(werte.date_von), "dd.MM.yyyy", { locale: de })
+        : `${format(parseISO(werte.date_von), "dd.MM.", { locale: de })}–${format(parseISO(werte.date_bis), "dd.MM.yyyy", { locale: de })}`;
     toast.success(
-      insgesamt > 1 ? `${insgesamt} Einsätze gespeichert.` : "Einsatz gespeichert."
+      insgesamt > 1
+        ? `Einsatz für „${pnNeu}“: ${insgesamt} Termine am ${datumTxt} erstellt.`
+        : `Einsatz für „${pnNeu}“ am ${datumTxt} erstellt.`
     );
     onOpenChange(false);
     onGespeichert();

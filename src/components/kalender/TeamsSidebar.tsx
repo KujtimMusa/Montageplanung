@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   addDays,
   endOfWeek,
@@ -9,11 +9,24 @@ import {
   startOfWeek,
 } from "date-fns";
 import { de } from "date-fns/locale";
-import { GripVertical, Users } from "lucide-react";
+import { Calendar, GripVertical, HelpCircle, Info, MousePointer, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import { SPEZIALISIERUNGEN, type Dienstleister } from "@/types/dienstleister";
 import type { AbwesenheitRow, EinsatzEvent } from "@/types/planung";
 
@@ -108,6 +121,7 @@ export function TeamsSidebar({
   zuweisungen,
   abwesenheiten,
 }: Props) {
+  const [hilfeOffen, setHilfeOffen] = useState(false);
   const dienstleisterAktiv = dienstleister.filter(
     (d) => d.status === "aktiv" || d.status === "partner"
   );
@@ -123,17 +137,31 @@ export function TeamsSidebar({
   const wocheStart = startOfWeek(new Date(), { weekStartsOn: 1 });
 
   return (
+    <TooltipProvider>
     <div className="flex h-full min-h-0 flex-col border-l border-zinc-800 bg-zinc-950">
-      <div className="shrink-0 border-b border-zinc-800 px-3 py-2">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-          Rechte Leiste
-        </p>
-        <p className="mt-0.5 text-[11px] leading-snug text-zinc-400">
-          <span className="text-zinc-200">Team</span> auf{" "}
-          <span className="text-zinc-200">Projekt-Zelle + Tag</span> ziehen — wird
-          ergänzt oder neu angelegt.{" "}
-          <span className="text-zinc-200">Partner</span> wie bisher per JSON.
-        </p>
+      <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-3 py-2">
+        <h3 className="text-xs font-semibold tracking-wider text-zinc-500 uppercase">
+          Ressourcen
+        </h3>
+        <Tooltip>
+          <TooltipTrigger className="inline-flex">
+            <button
+              type="button"
+              className="rounded p-1 text-zinc-600 transition-colors hover:text-zinc-400"
+              aria-label="Hilfe zu Teams"
+            >
+              <Info size={13} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-xs border-zinc-700 bg-zinc-900 text-xs">
+            <p className="mb-1 font-semibold text-zinc-300">Teams zuweisen</p>
+            <p className="text-zinc-500">
+              Ziehe ein Team auf einen bereits geplanten Einsatz im Kalender. Die
+              Farben in der Wochenübersicht zeigen die Auslastung: wenig belegt,
+              mittel oder stark.
+            </p>
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       <Tabs defaultValue="teams" className="flex min-h-0 flex-1 flex-col">
@@ -173,12 +201,13 @@ export function TeamsSidebar({
                     einsaetzeDieseWoche / MAX_TAGE_AUSLASTUNG,
                     1
                   );
+                  const balkenBreite = Math.min(Math.round(auslastung * 100), 100);
                   const balkenFarbe =
                     auslastung > 0.8
                       ? "#ef4444"
-                      : auslastung > 0.6
+                      : auslastung > 0.5
                         ? "#f59e0b"
-                        : "#10b981";
+                        : team.farbe;
                   const freiLabel = naechsterFreierTagLabel(team.id, zuweisungen);
 
                   return (
@@ -205,7 +234,7 @@ export function TeamsSidebar({
                         marginRight: "8px",
                         cursor: "grab",
                       }}
-                      className="select-none transition-colors hover:border-zinc-600 active:cursor-grabbing"
+                      className="group select-none transition-colors hover:border-zinc-600 active:cursor-grabbing"
                     >
                       <div
                         style={{
@@ -272,7 +301,7 @@ export function TeamsSidebar({
                       >
                         <div
                           style={{
-                            width: `${auslastung * 100}%`,
+                            width: `${balkenBreite}%`,
                             height: "100%",
                             background: balkenFarbe,
                             borderRadius: 99,
@@ -281,70 +310,65 @@ export function TeamsSidebar({
                         />
                       </div>
 
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 4,
-                          marginBottom: 8,
-                          flexWrap: "wrap",
-                        }}
-                      >
+                      <div className="mb-2 flex w-full gap-1">
                         {WOCHE_TAGS.map((tag, i) => {
                           const day = addDays(wocheStart, i);
                           const iso = format(day, "yyyy-MM-dd");
                           const dow = day.getDay();
                           const istWochenende = dow === 0 || dow === 6;
-                          const hatEinsatz = zuweisungen.some(
+                          const tagEinsaetze = zuweisungen.filter(
                             (z) => z.team_id === team.id && z.date === iso
-                          );
+                          ).length;
                           const hatKonflikt = teamHatKonflikt(
                             team.id,
                             iso,
                             membersByTeam,
                             abwesenheiten
                           );
-                          const bg = hatKonflikt
-                            ? "#f9731640"
-                            : hatEinsatz
-                              ? `${team.farbe}40`
-                              : istWochenende
-                                ? "#2a2a2a"
-                                : "#1e1e1e";
-                          const border = hatKonflikt
-                            ? "#f97316"
-                            : hatEinsatz
-                              ? team.farbe
-                              : istWochenende
-                                ? "#3f3f46"
-                                : "#2a2a2a";
+                          const zelleKlasse = cn(
+                            "h-4 w-full rounded-sm border transition-colors",
+                            hatKonflikt && "border-amber-500 bg-amber-500/25",
+                            !hatKonflikt &&
+                              tagEinsaetze === 0 &&
+                              (istWochenende ? "border-zinc-700 bg-zinc-800/80" : "border-zinc-800 bg-zinc-900"),
+                            !hatKonflikt &&
+                              tagEinsaetze >= 2 &&
+                              "border-red-500/80 bg-red-500/70",
+                            !hatKonflikt &&
+                              tagEinsaetze === 1 &&
+                              "border-transparent"
+                          );
                           return (
-                            <div key={tag} style={{ textAlign: "center" }}>
-                              <div
-                                style={{
-                                  width: 14,
-                                  height: 14,
-                                  borderRadius: 3,
-                                  background: bg,
-                                  border: `1px solid ${border}`,
-                                }}
-                              />
-                              <span
-                                style={{
-                                  fontSize: 8,
-                                  color: "#52525b",
-                                  display: "block",
-                                  marginTop: 2,
-                                }}
-                              >
-                                {tag}
-                              </span>
-                            </div>
+                            <Tooltip key={tag}>
+                              <TooltipTrigger className="flex min-w-0 flex-1 flex-col items-center gap-0.5 text-center">
+                                <div
+                                  className={zelleKlasse}
+                                  style={
+                                    !hatKonflikt && tagEinsaetze === 1
+                                      ? {
+                                          background: `${team.farbe}80`,
+                                          borderColor: `${team.farbe}99`,
+                                        }
+                                      : undefined
+                                  }
+                                />
+                                <span className="text-[9px] text-zinc-600">{tag}</span>
+                              </TooltipTrigger>
+                              <TooltipContent className="border-zinc-700 bg-zinc-900 text-xs">
+                                {tag}:{" "}
+                                {tagEinsaetze === 0
+                                  ? "Frei"
+                                  : `${tagEinsaetze} Einsatz${tagEinsaetze > 1 ? "e" : ""}`}
+                                {hatKonflikt ? " · Abwesenheit im Team" : ""}
+                              </TooltipContent>
+                            </Tooltip>
                           );
                         })}
                       </div>
 
-                      <div className="flex -space-x-1 pl-0.5">
-                        {team.mitglieder.slice(0, 4).map((m) => (
+                      <div className="flex items-center gap-1.5 pl-0.5">
+                        <div className="flex -space-x-1">
+                        {team.mitglieder.slice(0, 3).map((m) => (
                           <div
                             key={m.id}
                             title={m.name}
@@ -354,11 +378,15 @@ export function TeamsSidebar({
                             {m.name.charAt(0).toUpperCase()}
                           </div>
                         ))}
-                        {team.mitglieder.length > 4 ? (
+                        {team.mitglieder.length > 3 ? (
                           <div className="flex h-5 w-5 items-center justify-center rounded-full border border-zinc-950 bg-zinc-700 text-[8px] text-zinc-400">
-                            +{team.mitglieder.length - 4}
+                            +{team.mitglieder.length - 3}
                           </div>
                         ) : null}
+                        </div>
+                        <span className="text-xs text-zinc-600">
+                          {team.mitglieder.length} Mitglieder
+                        </span>
                       </div>
 
                       <p
@@ -371,9 +399,8 @@ export function TeamsSidebar({
                         Frei ab: {freiLabel}
                       </p>
 
-                      <p className="mt-2 flex items-center gap-1 text-[9px] text-zinc-700">
-                        <GripVertical size={9} />
-                        Auf Projekt + Tag ziehen
+                      <p className="mt-2 text-[10px] text-zinc-700 transition-colors group-hover:text-zinc-500">
+                        ↳ Auf Projekt + Tag ziehen
                       </p>
 
                       <p className="mt-0.5 text-[9px] text-zinc-600">
@@ -456,6 +483,17 @@ export function TeamsSidebar({
 
       <Separator className="my-2 shrink-0 bg-zinc-800" />
 
+      <div className="shrink-0 px-3">
+        <button
+          type="button"
+          onClick={() => setHilfeOffen(true)}
+          className="mt-3 mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-800 px-2.5 py-1.5 text-xs text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+        >
+          <HelpCircle size={13} />
+          Wie funktioniert die Planung?
+        </button>
+      </div>
+
       <div className="shrink-0 px-3 pb-3">
         <p className="mb-2 text-[10px] font-semibold uppercase text-zinc-500">
           Legende
@@ -486,6 +524,73 @@ export function TeamsSidebar({
           {heuteAbwesenheiten} Mitarbeiter abwesend
         </p>
       </div>
+
+      <Dialog open={hilfeOffen} onOpenChange={setHilfeOffen}>
+        <DialogContent className="max-w-lg rounded-2xl border border-zinc-800 bg-zinc-950 p-0">
+          <div className="border-b border-zinc-800/60 px-6 pt-6 pb-4">
+            <DialogTitle className="text-base font-semibold text-zinc-100">
+              So funktioniert die Planung
+            </DialogTitle>
+          </div>
+          <div className="space-y-4 px-6 py-5 text-sm text-zinc-400">
+            <div className="flex gap-3">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-blue-900/50 bg-blue-950">
+                <MousePointer size={15} className="text-blue-400" />
+              </div>
+              <div>
+                <p className="mb-1 font-semibold text-zinc-300">
+                  Schritt 1 — Projekt einplanen
+                </p>
+                <p>
+                  Ziehe ein Projekt aus der linken Leiste auf einen Tag im Kalender. Es
+                  wird automatisch als „Geplant“ markiert.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-green-900/50 bg-green-950">
+                <Users size={15} className="text-green-400" />
+              </div>
+              <div>
+                <p className="mb-1 font-semibold text-zinc-300">
+                  Schritt 2 — Team zuweisen
+                </p>
+                <p>
+                  Ziehe ein Team aus der rechten Leiste auf den Einsatz im Kalender.
+                  Uhrzeit und Ort kannst du direkt auf der Karte einstellen.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-amber-900/50 bg-amber-950">
+                <Calendar size={15} className="text-amber-400" />
+              </div>
+              <div>
+                <p className="mb-1 font-semibold text-zinc-300">
+                  Mehrere Einsätze pro Projekt
+                </p>
+                <p>
+                  Du kannst dasselbe Projekt an mehreren Tagen einplanen. Jeder Einsatz
+                  kann ein eigenes Team und eigene Zeiten haben.
+                </p>
+              </div>
+            </div>
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-3 text-xs text-zinc-500">
+              Die Legende unten erklärt die Farben der Einsätze im Kalender.
+            </div>
+          </div>
+          <div className="px-6 pb-5">
+            <Button
+              type="button"
+              onClick={() => setHilfeOffen(false)}
+              className="w-full border border-zinc-700 bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
+            >
+              Verstanden
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
+    </TooltipProvider>
   );
 }

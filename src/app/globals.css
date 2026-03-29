@@ -282,6 +282,12 @@
   border-color: #3b82f6 !important;
 }
 
+/* Syncfusion Timeline: leere Ressourcen-Spalte neben Datums-Header ausblenden */
+.planung-sf-inner .e-resource-column-wrap,
+.planung-sf-inner .e-resource-left-td {
+  display: none !important;
+}
+
 /* ── Scrollbar ── */
 .planung-sf ::-webkit-scrollbar {
   width: 5px;

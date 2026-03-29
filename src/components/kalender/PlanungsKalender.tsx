@@ -39,7 +39,7 @@ import {
   startOfWeek,
 } from "date-fns";
 import { de } from "date-fns/locale";
-import { CircleHelp } from "lucide-react";
+import { Clock, MapPin, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { ortLabelFromProjektJoin } from "@/lib/planung/ort-label";
@@ -47,17 +47,12 @@ import { PRIORITAET_FARBEN } from "@/lib/constants/planung-farben";
 import { pruefeEinsatzKonflikt } from "@/lib/utils/conflicts";
 import { getRepresentativeEmployeeId } from "@/lib/planung/team-representative";
 import { registerSyncfusion } from "@/lib/syncfusion/register";
+import { bumpProjektGeplantWennNeu } from "@/lib/planung/bump-projekt-geplant";
 import {
   transformiereEinsatz,
   type SyncfusionEvent,
 } from "@/lib/syncfusion/transform";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -274,56 +269,42 @@ function EinsatzTemplate(props: Record<string, unknown>) {
   const hatKonflikt = Boolean(e.HatKonflikt);
   const kritisch = Boolean(e.Kritisch);
 
+  const teamInitial =
+    e.RolleTag === "Team" && e.RolleName
+      ? e.RolleName.trim().slice(0, 1).toUpperCase()
+      : "";
+
   if (kompakt) {
     return (
       <div
+        className="group relative flex h-[22px] w-full cursor-pointer items-center overflow-hidden rounded-md transition-all hover:brightness-110"
         style={{
-          display: "flex",
-          alignItems: "center",
-          width: "100%",
-          height: "22px",
-          borderRadius: "4px",
-          overflow: "hidden",
           background: hexSuffix(farbe, "18"),
-          cursor: "pointer",
-          position: "relative",
         }}
-        title={titel}
+        title={[titel, zeit, ort].filter(Boolean).join(" · ")}
       >
         <div
-          style={{
-            width: "3px",
-            height: "100%",
-            background: farbe,
-            flexShrink: 0,
-          }}
+          className="h-full w-[3px] shrink-0"
+          style={{ background: kritisch ? "#ef4444" : farbe }}
         />
         <span
-          style={{
-            fontSize: "11px",
-            fontWeight: 500,
-            color: "#e4e4e7",
-            padding: "0 6px",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            flex: 1,
-            lineHeight: "22px",
-          }}
+          className="min-w-0 flex-1 truncate px-1.5 text-[11px] leading-[22px] font-medium text-zinc-200"
         >
           {titel}
         </span>
-        {hatKonflikt ? (
+        {teamInitial ? (
           <div
+            className="mr-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-zinc-700 text-[9px] font-bold"
             style={{
-              width: "5px",
-              height: "5px",
-              borderRadius: "50%",
-              background: "#f97316",
-              marginRight: "5px",
-              flexShrink: 0,
+              background: hexSuffix(farbe, "30"),
+              color: farbe,
             }}
-          />
+          >
+            {teamInitial}
+          </div>
+        ) : null}
+        {hatKonflikt ? (
+          <div className="mr-1 size-[5px] shrink-0 rounded-full bg-orange-500" />
         ) : null}
       </div>
     );
@@ -331,122 +312,66 @@ function EinsatzTemplate(props: Record<string, unknown>) {
 
   return (
     <div
+      className="group relative h-full min-h-[32px] w-full cursor-pointer overflow-visible rounded-md transition-all hover:brightness-110"
       style={{
-        height: "100%",
-        borderRadius: "6px",
-        overflow: "hidden",
-        background: hexSuffix(farbe, "12"),
-        border: `1px solid ${hexSuffix(farbe, "25")}`,
-        display: "flex",
-        flexDirection: "column",
-        cursor: "pointer",
-        position: "relative",
+        background: hexSuffix(farbe, "18"),
+        borderLeft: `3px solid ${kritisch ? "#ef4444" : farbe}`,
       }}
       title={[titel, zeit, ort].filter(Boolean).join(" · ")}
     >
-      <div
-        style={{
-          position: "absolute",
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: "3px",
-          background: kritisch ? "#ef4444" : farbe,
-          borderRadius: "6px 0 0 6px",
-        }}
-      />
-
-      <div style={{ padding: "6px 8px 6px 11px", flex: 1, minWidth: 0 }}>
+      <div className="flex h-full items-center gap-1.5 p-1.5">
         <div
-          style={{
-            fontSize: "12px",
-            fontWeight: 600,
-            color: "#f4f4f5",
-            lineHeight: 1.3,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            marginBottom: "4px",
-          }}
-        >
+          className="size-2 shrink-0 rounded-full"
+          style={{ background: farbe }}
+        />
+        <span className="min-w-0 flex-1 truncate text-xs leading-tight font-semibold text-zinc-200">
           {titel}
-        </div>
+        </span>
+        {e.RolleName ? (
+          <div
+            className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-zinc-700 text-[9px] font-bold"
+            style={{
+              background: hexSuffix(farbe, "30"),
+              color: farbe,
+            }}
+          >
+            {e.RolleName.trim().slice(0, 1).toUpperCase()}
+          </div>
+        ) : null}
+        {hatKonflikt ? (
+          <span className="shrink-0 text-[9px] font-semibold text-orange-400">
+            !
+          </span>
+        ) : null}
+      </div>
 
-        <div
-          style={{
-            display: "flex",
-            gap: "4px",
-            flexWrap: "wrap",
-            marginBottom: "4px",
-          }}
-        >
-          {e.RolleName ? (
-            <span
-              style={{
-                fontSize: "10px",
-                fontWeight: 600,
-                color: farbe,
-                background: hexSuffix(farbe, "20"),
-                padding: "1px 5px",
-                borderRadius: "3px",
-                border: `1px solid ${hexSuffix(farbe, "30")}`,
-              }}
-            >
+      <div
+        className="pointer-events-none absolute top-full left-0 z-[120] mt-1 hidden min-w-[12rem] rounded-xl border border-zinc-700 bg-zinc-900 p-3 text-xs shadow-2xl group-hover:pointer-events-auto group-hover:block"
+      >
+        <p className="text-sm font-semibold text-zinc-200">{titel}</p>
+        {e.RolleName ? (
+          <div className="mt-1.5 flex items-center gap-1.5 text-zinc-400">
+            <Users size={11} className="shrink-0 opacity-80" />
+            <span>
               {e.RolleTag} {e.RolleName}
             </span>
-          ) : null}
-          {hatKonflikt ? (
-            <span
-              style={{
-                fontSize: "10px",
-                fontWeight: 600,
-                color: "#f97316",
-                background: "#f9731610",
-                padding: "1px 5px",
-                borderRadius: "3px",
-                border: "1px solid #f9731630",
-              }}
-            >
-              ⚠ Konflikt
-            </span>
-          ) : null}
-        </div>
-
+          </div>
+        ) : null}
         {zeit ? (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-              fontSize: "10px",
-              color: "#71717a",
-            }}
-          >
-            <span>⏱</span>
-            <span style={{ fontVariantNumeric: "tabular-nums" }}>{zeit}</span>
+          <div className="mt-1 flex items-center gap-1.5 text-zinc-400">
+            <Clock size={11} className="shrink-0 opacity-80" />
+            <span className="tabular-nums">{zeit}</span>
           </div>
         ) : null}
-
         {ort ? (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-              fontSize: "10px",
-              color: "#71717a",
-              marginTop: "2px",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            <span>📍</span>
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
-              {ort}
-            </span>
+          <div className="mt-1 flex items-center gap-1.5 text-zinc-400">
+            <MapPin size={11} className="shrink-0 opacity-80" />
+            <span className="break-words">{ort}</span>
           </div>
         ) : null}
+        <p className="mt-2 border-t border-zinc-800 pt-1.5 text-[10px] text-zinc-600">
+          Klicken für Details
+        </p>
       </div>
     </div>
   );
@@ -824,6 +749,13 @@ export function PlanungsKalender() {
           void laden();
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "projects" },
+        () => {
+          void laden();
+        }
+      )
       .subscribe();
 
     return () => {
@@ -942,6 +874,15 @@ export function PlanungsKalender() {
     return acc;
   }, [zuweisungen]);
 
+  const einsatzCountByProjekt = useMemo(() => {
+    const acc: Record<string, number> = {};
+    for (const z of zuweisungen) {
+      if (!z.project_id) continue;
+      acc[z.project_id] = (acc[z.project_id] ?? 0) + 1;
+    }
+    return acc;
+  }, [zuweisungen]);
+
   const heuteEinsaetzeAnzahl = useMemo(() => {
     const heuteStr = format(new Date(), "yyyy-MM-dd");
     return zuweisungen.filter((z) => z.date === heuteStr).length;
@@ -998,7 +939,7 @@ export function PlanungsKalender() {
         endZeit: endNorm,
       });
       if (k.hatKonflikt) {
-        toast.error(k.nachricht);
+        toast.warning(k.nachricht);
         return;
       }
       const insertPayload: Record<string, unknown> = {
@@ -1030,10 +971,13 @@ export function PlanungsKalender() {
           return;
         }
       }
-      toast.success("Einsatz mit Team ergänzt.");
+      await bumpProjektGeplantWennNeu(supabase, projectId);
+      const teamName =
+        teamsListe.find((t) => t.id === teamId)?.name ?? "Team";
+      toast.success(`Team „${teamName}“ wurde zugewiesen.`);
       void laden();
     },
-    [zuweisungen, supabase, laden, eigeneMitarbeiterId]
+    [zuweisungen, supabase, laden, eigeneMitarbeiterId, teamsListe]
   );
 
   const dialogNeuOeffnen = useCallback(
@@ -1174,7 +1118,7 @@ export function PlanungsKalender() {
         ausserhalbEinsatzId: id,
       });
       if (k.hatKonflikt) {
-        toast.error(k.nachricht);
+        toast.warning(k.nachricht);
         return false;
       }
 
@@ -1579,53 +1523,9 @@ export function PlanungsKalender() {
   return (
     <div className="flex h-[calc(100vh-120px)] min-h-0 flex-col gap-0">
       <div className="flex shrink-0 flex-col gap-2 px-1 pb-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-        <TooltipProvider>
-          <div className="flex flex-1 items-center gap-2 rounded-xl border border-zinc-800/90 bg-gradient-to-br from-zinc-900/90 to-zinc-950 px-3 py-2 shadow-sm">
-            <span className="text-sm font-medium text-zinc-200">Kalenderplanung</span>
-            <Tooltip>
-              <TooltipTrigger className="inline-flex shrink-0">
-                <button
-                  type="button"
-                  className="inline-flex items-center justify-center rounded-full p-1 text-zinc-400 ring-offset-zinc-950 transition hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                  aria-label="So funktioniert die Planung"
-                >
-                  <CircleHelp className="size-5" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent
-                sideOffset={8}
-                className="max-w-md border-zinc-600 bg-zinc-950 p-3 text-left text-xs leading-relaxed text-zinc-300"
-              >
-                <p className="mb-2 font-semibold text-zinc-100">So planen Sie</p>
-                <ol className="list-inside list-decimal space-y-2 pl-0.5">
-                  <li>
-                    <span className="font-medium text-zinc-200">Mitte</span> = Kalender: jede
-                    Zeile ist eine <span className="text-zinc-200">Baustelle</span>, jede Spalte
-                    ein <span className="text-zinc-200">Tag</span>. Pro Einsatz entsteht eine
-                    Karte; mehrere Teams oder Partner am selben Tag = mehrere Karten in der
-                    Zelle (überlappend).
-                  </li>
-                  <li>
-                    <span className="font-medium text-zinc-200">Links</span> Projekt-Karte aus
-                    den Gruppen auf einen <span className="text-zinc-200">Tag</span> ziehen —
-                    Formular für Uhrzeit (mehrere Teams/Partner wählbar).
-                  </li>
-                  <li>
-                    <span className="font-medium text-zinc-200">Rechts</span>{" "}
-                    <span className="text-zinc-200">Team</span> oder{" "}
-                    <span className="text-zinc-200">Partner</span> auf dieselbe Zelle ziehen —
-                    Karte zeigt Projekt, Team/Partner als Tag, Zeit und Ort.
-                  </li>
-                  <li>
-                    Karte anklicken für Details;{" "}
-                    <span className="text-orange-400/90">orangener Rand</span> = Abwesenheit im
-                    Team.
-                  </li>
-                </ol>
-              </TooltipContent>
-            </Tooltip>
-          </div>
-        </TooltipProvider>
+        <div className="flex flex-1 items-center gap-2 rounded-xl border border-zinc-800/90 bg-gradient-to-br from-zinc-900/90 to-zinc-950 px-3 py-2 shadow-sm">
+          <span className="text-sm font-medium text-zinc-200">Kalenderplanung</span>
+        </div>
         <div className="flex shrink-0 flex-col justify-center gap-1.5 text-right text-xs text-zinc-500 sm:min-w-[9rem]">
           <Link
             href="/teams?tab=projekte"
@@ -1669,6 +1569,7 @@ export function PlanungsKalender() {
           <ProjekteSidebar
             projekteAlle={projekteAktiv}
             einsatzCountByProjektWoche={einsatzCountByProjektWoche}
+            einsatzCountByProjekt={einsatzCountByProjekt}
           />
         </ResizablePanel>
 
