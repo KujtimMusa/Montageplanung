@@ -17,18 +17,18 @@ export function StammdatenSheetFooter({
   isSubmitting,
 }: Props) {
   return (
-    <div className="sticky bottom-0 flex flex-col gap-2 border-t border-zinc-800/90 bg-zinc-950/95 px-4 py-4 backdrop-blur-sm sm:flex-row sm:justify-end">
+    <div className="sticky bottom-0 flex flex-col gap-2 border-t border-zinc-800/60 bg-zinc-950/95 px-6 pb-6 pt-3 backdrop-blur-sm sm:flex-row sm:justify-end">
       <Button
         type="button"
-        variant="secondary"
-        className="w-full sm:w-auto"
+        variant="ghost"
+        className="w-full text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 sm:w-auto"
         onClick={onCancel}
       >
         {cancelLabel}
       </Button>
       <Button
         type="submit"
-        className="w-full sm:w-auto"
+        className="w-full bg-zinc-100 font-semibold text-zinc-900 hover:bg-white sm:w-auto"
         disabled={disabled || isSubmitting}
       >
         {isSubmitting ? (

@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -382,6 +383,8 @@ export function PlanungsKalender() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const scheduleRef = useRef<ScheduleComponent>(null);
+  const scheduleHostRef = useRef<HTMLDivElement>(null);
+  const [scheduleHoehePx, setScheduleHoehePx] = useState(560);
   const [teamsListe, setTeamsListe] = useState<TeamOption[]>([]);
   const [zuweisungen, setZuweisungen] = useState<EinsatzEvent[]>([]);
   const [abwesenheiten, setAbwesenheiten] = useState<AbwesenheitRow[]>([]);
@@ -437,6 +440,23 @@ export function PlanungsKalender() {
       storage:
         typeof window !== "undefined" ? window.localStorage : undefined,
     });
+
+  useLayoutEffect(() => {
+    if (!kalenderBereit) return;
+    const el = scheduleHostRef.current;
+    if (!el) return;
+    const sync = () => {
+      const r = el.getBoundingClientRect();
+      const next = Math.max(320, Math.floor(r.height));
+      setScheduleHoehePx((prev) =>
+        Math.abs(prev - next) > 2 ? next : prev
+      );
+    };
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [kalenderBereit]);
 
   const laden = useCallback(async () => {
     try {
@@ -1360,17 +1380,28 @@ export function PlanungsKalender() {
 
     const onDrop = (e: DragEvent) => {
       const sch = scheduleRef.current;
-      if (!sch) return;
+      if (!sch) {
+        toast.error("Kalender ist noch nicht bereit.");
+        return;
+      }
 
       const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
       if (!el) return;
-      const td = el.closest("td[data-group-index]") as HTMLElement | null;
+      let td = el.closest("td[data-group-index]") as HTMLElement | null;
+      if (!td) {
+        td = el.closest("td.e-work-cells") as HTMLElement | null;
+      }
       if (!td) {
         toast.info("Auf eine Projekt-Zeile und Tag ziehen.");
         return;
       }
       const cellData = sch.getCellDetails(td);
-      if (!cellData?.startTime || cellData.groupIndex === undefined) return;
+      if (!cellData?.startTime || cellData.groupIndex === undefined) {
+        toast.error(
+          "Zelle nicht erkannt. Bitte auf den Tag in der gewünschten Projektzeile loslassen."
+        );
+        return;
+      }
 
       const resId = projektRessourcenSf[cellData.groupIndex]?.Id;
       if (!resId || resId === "_leer") {
@@ -1413,6 +1444,7 @@ export function PlanungsKalender() {
       try {
         parsed = JSON.parse(raw) as typeof parsed;
       } catch {
+        toast.error("Ungültige Drag-Daten. Bitte erneut ziehen.");
         return;
       }
 
@@ -1437,7 +1469,10 @@ export function PlanungsKalender() {
       }
 
       const projectId = ep.projektId ?? ep.projectId;
-      if (!projectId) return;
+      if (!projectId) {
+        toast.error("Kein Projekt in den Drag-Daten.");
+        return;
+      }
       dialogNeuOeffnen({
         projekt_id: projectId,
         team_id: teamsListe[0]?.id,
@@ -1461,12 +1496,15 @@ export function PlanungsKalender() {
       <Skeleton className="h-64 w-full bg-zinc-800" />
     </div>
   ) : (
-    <div className="planung-sf flex min-h-[min(520px,50vh)] min-w-0 flex-1 flex-col">
+    <div
+      ref={scheduleHostRef}
+      className="planung-sf flex min-h-0 min-w-0 flex-1 flex-col"
+    >
       <ScheduleComponent
         ref={scheduleRef}
         cssClass="planung-sf-inner"
         width="100%"
-        height="100%"
+        height={`${scheduleHoehePx}px`}
         firstDayOfWeek={1}
         currentView={kalenderAnsicht === "week" ? "TimelineWeek" : "TimelineMonth"}
         rowAutoHeight={false}
@@ -1521,7 +1559,7 @@ export function PlanungsKalender() {
   );
 
   return (
-    <div className="flex h-[calc(100vh-120px)] min-h-0 flex-col gap-0">
+    <div className="flex h-[calc(100dvh-10rem)] min-h-[520px] flex-col gap-0 md:h-[calc(100dvh-8rem)]">
       <div className="flex shrink-0 flex-col gap-2 px-1 pb-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="flex flex-1 items-center gap-2 rounded-xl border border-zinc-800/90 bg-gradient-to-br from-zinc-900/90 to-zinc-950 px-3 py-2 shadow-sm">
           <span className="text-sm font-medium text-zinc-200">Kalenderplanung</span>
@@ -1541,15 +1579,6 @@ export function PlanungsKalender() {
           </Link>
         </div>
       </div>
-
-      <PlanungsToolbar
-        zeitraumLabel={zeitraumLabel}
-        ansicht={kalenderAnsicht}
-        onAnsicht={setzeAnsicht}
-        onPrev={handlePrev}
-        onNext={handleNext}
-        onHeute={handleHeute}
-      />
 
       <ResizablePanelGroup
         id="planung-layout-v2"
@@ -1585,10 +1614,20 @@ export function PlanungsKalender() {
           className="flex min-h-0 min-w-0 flex-1 flex-col"
         >
           <div
-            className="planung-sf flex min-h-0 flex-1 flex-col bg-zinc-900 p-2 md:p-4"
+            className="planung-sf flex min-h-0 flex-1 flex-col overflow-hidden bg-zinc-900"
             id="kalender-container"
           >
-            {kalenderInhalt}
+            <PlanungsToolbar
+              zeitraumLabel={zeitraumLabel}
+              ansicht={kalenderAnsicht}
+              onAnsicht={setzeAnsicht}
+              onPrev={handlePrev}
+              onNext={handleNext}
+              onHeute={handleHeute}
+            />
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col p-2 md:p-4">
+              {kalenderInhalt}
+            </div>
           </div>
         </ResizablePanel>
 

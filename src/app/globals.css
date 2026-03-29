@@ -282,10 +282,15 @@
   border-color: #3b82f6 !important;
 }
 
-/* Syncfusion Timeline: leere Ressourcen-Spalte neben Datums-Header ausblenden */
-.planung-sf-inner .e-resource-column-wrap,
-.planung-sf-inner .e-resource-left-td {
-  display: none !important;
+/* Volle Breite: innere Tabellen folgen dem Container (ohne Ressourcen-Spalte auszublenden) */
+.planung-sf-inner.e-schedule,
+.planung-sf .planung-sf-inner.e-schedule {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+.planung-sf-inner .e-table-container,
+.planung-sf-inner .e-content-wrap {
+  width: 100% !important;
 }
 
 /* ── Scrollbar ── */

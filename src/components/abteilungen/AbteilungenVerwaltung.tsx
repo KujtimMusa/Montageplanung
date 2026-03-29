@@ -124,8 +124,8 @@ export function AbteilungenVerwaltung({
 
   const [loeschenDialog, setLoeschenDialog] = useState<Zeile | null>(null);
   const [sucheAbteilung, setSucheAbteilung] = useState("");
-  const [mitarbeiterOptionen, setMitarbeiterOptionen] = useState<
-    { id: string; name: string }[]
+  const [alleMitarbeiter, setAlleMitarbeiter] = useState<
+    { id: string; name: string; role: string; active: boolean }[]
   >([]);
   const [leaderId, setLeaderId] = useState<string>("__none__");
 
@@ -146,16 +146,17 @@ export function AbteilungenVerwaltung({
         supabase.from("employees").select("id,department_id"),
         supabase
           .from("employees")
-          .select("id,name")
-          .eq("active", true)
+          .select("id,name,role,active")
           .order("name"),
       ]);
       if (e1) throw e1;
       if (eMa) throw eMa;
-      setMitarbeiterOptionen(
+      setAlleMitarbeiter(
         (maOpt ?? []).map((m) => ({
           id: m.id as string,
           name: String(m.name ?? ""),
+          role: String((m as { role?: string }).role ?? ""),
+          active: Boolean((m as { active?: boolean }).active),
         }))
       );
 
@@ -211,6 +212,30 @@ export function AbteilungenVerwaltung({
     );
   }, [zeilen, sucheAbteilung]);
 
+  /** Nur Koordinator:innen; alte Zuweisungen (z. B. Monteur) erscheinen einmalig zur Anzeige/Umstellung. */
+  const koordinatorOptionen = useMemo(
+    () =>
+      alleMitarbeiter.filter(
+        (m) =>
+          m.active &&
+          (m.role ?? "").toLowerCase().trim() === "koordinator"
+      ),
+    [alleMitarbeiter]
+  );
+
+  const abteilungsleitungAuswahl = useMemo(() => {
+    const base = koordinatorOptionen;
+    const lid =
+      leaderId && leaderId !== "__none__" ? leaderId : null;
+    if (!lid || base.some((m) => m.id === lid)) return base;
+    const fromZeile = zeilen.find((z) => z.leader_id === lid);
+    const name =
+      fromZeile?.leaderName ??
+      alleMitarbeiter.find((m) => m.id === lid)?.name ??
+      `Person (${lid.slice(0, 8)}…)`;
+    return [...base, { id: lid, name, role: "", active: false }];
+  }, [koordinatorOptionen, leaderId, zeilen, alleMitarbeiter]);
+
   function leeren() {
     setBearbeitenId(null);
     setName("");
@@ -242,14 +267,24 @@ export function AbteilungenVerwaltung({
       toast.error("Name ist Pflicht.");
       return;
     }
+    const gewLeiter =
+      leaderId && leaderId !== "__none__" ? leaderId : null;
+    if (
+      gewLeiter &&
+      !koordinatorOptionen.some((m) => m.id === gewLeiter)
+    ) {
+      toast.error(
+        "Abteilungsleitung: bitte eine aktive Koordinator:in wählen (oder „Keine Leitung“)."
+      );
+      return;
+    }
     setLädt(true);
     try {
       const payload = {
         name: name.trim(),
         color: farbe,
         icon,
-        leader_id:
-          leaderId && leaderId !== "__none__" ? leaderId : null,
+        leader_id: gewLeiter,
       };
       if (bearbeitenId) {
         const { error } = await supabase
@@ -472,16 +507,26 @@ export function AbteilungenVerwaltung({
             </div>
             <div className="space-y-2">
               <Label>Abteilungsleitung</Label>
+              <p className="text-xs text-zinc-500">
+                Nur Koordinator:innen (keine Monteur-Rollen).
+              </p>
               <Select
                 value={leaderId}
                 onValueChange={(v) => setLeaderId(v ?? "__none__")}
               >
                 <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-900/80">
-                  <SelectValue placeholder="Optional wählen…" />
+                  <SelectValue placeholder="Optional wählen…">
+                    {leaderId && leaderId !== "__none__" ? (
+                      <span className="truncate">
+                        {abteilungsleitungAuswahl.find((m) => m.id === leaderId)
+                          ?.name ?? "…"}
+                      </span>
+                    ) : null}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent className="border-zinc-800 bg-zinc-900">
                   <SelectItem value="__none__">Keine Leitung</SelectItem>
-                  {mitarbeiterOptionen.map((m) => (
+                  {abteilungsleitungAuswahl.map((m) => (
                     <SelectItem key={m.id} value={m.id}>
                       {m.name}
                     </SelectItem>

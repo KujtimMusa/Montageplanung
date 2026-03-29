@@ -21,7 +21,7 @@ export function PlanungsToolbar({
   onHeute,
 }: Props) {
   return (
-    <div className="sticky top-0 z-10 flex shrink-0 items-center gap-2 border-b border-zinc-800 bg-zinc-950/80 px-3 py-2 backdrop-blur-sm">
+    <div className="sticky top-0 z-10 flex shrink-0 items-center gap-2 border-b border-zinc-800 bg-zinc-900/95 px-3 py-2 backdrop-blur-sm">
       <div className="flex items-center gap-1">
         <Button
           type="button"

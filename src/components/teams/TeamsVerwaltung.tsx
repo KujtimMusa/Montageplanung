@@ -127,6 +127,7 @@ export function TeamsVerwaltung({
       department_id: string | null;
       auth_user_id: string | null;
       role: string;
+      active: boolean;
     }[]
   >([]);
   const [laedt, setLaedt] = useState(true);
@@ -173,8 +174,7 @@ export function TeamsVerwaltung({
         supabase.from("departments").select("id,name").order("name"),
         supabase
           .from("employees")
-          .select("id,name,department_id,auth_user_id,role")
-          .eq("active", true)
+          .select("id,name,department_id,auth_user_id,role,active")
           .order("name"),
       ]);
       if (e1) throw e1;
@@ -228,6 +228,7 @@ export function TeamsVerwaltung({
         department_id: string | null;
         auth_user_id: string | null;
         role: string;
+        active: boolean;
       }[];
       setAlleMitarbeiter(emList);
     } catch (e) {
@@ -252,8 +253,10 @@ export function TeamsVerwaltung({
       "geschaeftsfuehrer",
       "koordinator",
     ]);
-    return alleMitarbeiter.filter((e) =>
-      erlaubt.has((e.role ?? "").toLowerCase().trim())
+    return alleMitarbeiter.filter(
+      (e) =>
+        e.active &&
+        erlaubt.has((e.role ?? "").toLowerCase().trim())
     );
   }, [alleMitarbeiter]);
 
@@ -263,10 +266,35 @@ export function TeamsVerwaltung({
     const o = [...teamleiterOptionen];
     if (leaderIdWatch && !o.some((m) => m.id === leaderIdWatch)) {
       const extra = alleMitarbeiter.find((m) => m.id === leaderIdWatch);
-      if (extra) o.push(extra);
+      if (extra) {
+        o.push(extra);
+      } else {
+        o.push({
+          id: leaderIdWatch,
+          name: `Gespeicherter Teamleiter (${leaderIdWatch.slice(0, 8)}…)`,
+          department_id: null,
+          auth_user_id: null,
+          role: "",
+          active: false,
+        });
+      }
     }
     return o;
   }, [teamleiterOptionen, alleMitarbeiter, leaderIdWatch]);
+
+  const departmentIdWatch = teamF.watch("department_id");
+  const abteilungAnzeigename = useMemo(() => {
+    if (!departmentIdWatch) return null;
+    return abteilungen.find((a) => a.id === departmentIdWatch)?.name ?? null;
+  }, [abteilungen, departmentIdWatch]);
+  const abteilungVerwaist =
+    Boolean(departmentIdWatch) &&
+    !abteilungen.some((a) => a.id === departmentIdWatch);
+
+  const teamleiterAnzeigename = useMemo(() => {
+    if (!leaderIdWatch) return null;
+    return leaderAuswahl.find((m) => m.id === leaderIdWatch)?.name ?? null;
+  }, [leaderAuswahl, leaderIdWatch]);
 
   const teamsGefiltert = useMemo(() => {
     const q = sucheTeam.trim().toLowerCase();
@@ -391,7 +419,7 @@ export function TeamsVerwaltung({
     const im = new Set(
       (mitgliederNachTeam[drawerTeam.id] ?? []).map((m) => m.employee_id)
     );
-    return alleMitarbeiter.filter((e) => !im.has(e.id));
+    return alleMitarbeiter.filter((e) => e.active && !im.has(e.id));
   }, [drawerTeam, mitgliederNachTeam, alleMitarbeiter]);
 
   const gefilterteNichtMitglieder = useMemo(() => {
@@ -624,10 +652,30 @@ export function TeamsVerwaltung({
                   }
                 >
                   <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-900/80 text-zinc-100">
-                    <SelectValue placeholder="Abteilung wählen…" />
+                    <SelectValue placeholder="Abteilung wählen…">
+                      {departmentIdWatch ? (
+                        abteilungVerwaist ? (
+                          <span
+                            className="text-amber-200/90"
+                            title={departmentIdWatch}
+                          >
+                            Abteilung nicht verfügbar
+                          </span>
+                        ) : (
+                          abteilungAnzeigename ?? "…"
+                        )
+                      ) : null}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent className="border-zinc-800 bg-zinc-900">
                     <SelectItem value="__none__">Bitte Abteilung wählen</SelectItem>
+                    {abteilungVerwaist && departmentIdWatch ? (
+                      <SelectItem value={departmentIdWatch}>
+                        <span className="text-amber-200/90">
+                          Verwaiste ID – bitte Abteilung neu wählen
+                        </span>
+                      </SelectItem>
+                    ) : null}
                     {abteilungen.map((a) => (
                       <SelectItem key={a.id} value={a.id}>
                         {a.name}
@@ -669,7 +717,18 @@ export function TeamsVerwaltung({
                   }
                 >
                   <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-900/80 text-zinc-100">
-                    <SelectValue placeholder="Teamleiter wählen…" />
+                    <SelectValue placeholder="Teamleiter wählen…">
+                      {leaderIdWatch ? (
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-zinc-700 text-xs font-bold text-zinc-300">
+                            {initialen(teamleiterAnzeigename ?? "?")}
+                          </span>
+                          <span className="truncate">
+                            {teamleiterAnzeigename ?? "…"}
+                          </span>
+                        </span>
+                      ) : null}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent className="border-zinc-800 bg-zinc-900">
                     <SelectItem value="__none__">Kein Teamleiter</SelectItem>

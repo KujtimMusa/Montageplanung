@@ -337,6 +337,15 @@ export function MitarbeiterVerwaltung({
     });
   }, [teams, abteilungen]);
 
+  const koorHauptAbteilungLabel = useMemo(() => {
+    if (!koorDepartmentId) return null;
+    return abteilungen.find((a) => a.id === koorDepartmentId)?.name ?? null;
+  }, [abteilungen, koorDepartmentId]);
+
+  const koorHauptAbteilungVerwaist =
+    Boolean(koorDepartmentId) &&
+    !abteilungen.some((a) => a.id === koorDepartmentId);
+
   const gefilterteZeilen = useMemo(() => {
     const q = suche.trim().toLowerCase();
     const filtered = zeilen.filter((z) => {
@@ -938,10 +947,30 @@ export function MitarbeiterVerwaltung({
                 <SelectTrigger
                   className={cn(STAMMDATEN_FORM_SELECT_TRIGGER, "h-10 rounded-lg")}
                 >
-                  <SelectValue placeholder="Keine feste Haupt-Abteilung" />
+                  <SelectValue placeholder="Keine feste Haupt-Abteilung">
+                    {koorDepartmentId ? (
+                      koorHauptAbteilungVerwaist ? (
+                        <span
+                          className="text-amber-200/90"
+                          title={koorDepartmentId}
+                        >
+                          Abteilung nicht verfügbar
+                        </span>
+                      ) : (
+                        koorHauptAbteilungLabel ?? "…"
+                      )
+                    ) : null}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent className="border-zinc-800 bg-zinc-900">
                   <SelectItem value="__none__">Keine Abteilung</SelectItem>
+                  {koorHauptAbteilungVerwaist && koorDepartmentId ? (
+                    <SelectItem value={koorDepartmentId}>
+                      <span className="text-amber-200/90">
+                        Verwaiste ID – bitte neu wählen
+                      </span>
+                    </SelectItem>
+                  ) : null}
                   {abteilungen.map((a) => (
                     <SelectItem key={a.id} value={a.id}>
                       {a.name}
@@ -952,7 +981,7 @@ export function MitarbeiterVerwaltung({
             </StammdatenFormField>
             <StammdatenFormField
               label="Teams"
-              hint="Mehrfach wählbar. Reihenfolge: erstes Häkchen = Primärteam (Anzeige in Listen). Alle Zuordnungen in team_members."
+              hint="Mehrfach wählbar – auch über mehrere Abteilungen hinweg (je Team eine Zuordnung). Reihenfolge: erstes Häkchen = Primärteam (Anzeige in Listen)."
             >
               <div className="max-h-52 space-y-0.5 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-900/60 p-2">
                 {teamsMitAbteilungsLabel.length === 0 ? (
