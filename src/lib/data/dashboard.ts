@@ -5,7 +5,14 @@ import {
   ladeAngestelltenProfil,
   type AngestellterProfil,
 } from "@/lib/auth/angestellter";
-import { format, startOfWeek, endOfWeek, subDays, parseISO } from "date-fns";
+import {
+  eachDayOfInterval,
+  format,
+  startOfWeek,
+  endOfWeek,
+  subDays,
+  parseISO,
+} from "date-fns";
 import { de } from "date-fns/locale";
 import { formatInTimeZone, toZonedTime } from "date-fns-tz";
 
@@ -23,25 +30,27 @@ export type NaechsterEinsatz = {
   projektFarbe: string | null;
   projektAdresse: string | null;
   projektStatus: string | null;
+  teamMitglieder: { id: string; name: string }[];
 };
 
-export type TeamHeuteZeile = {
+export type WochenTeamInfo = {
   id: string;
   name: string;
   farbe: string;
-  mitglieder: { id: string; name: string }[];
-  heuteEinsaetze: {
-    id: string;
-    start_time: string;
-    end_time: string;
-    projektTitel: string | null;
-  }[];
 };
 
-export type BalkenAbteilung = {
+export type WochenChartZeile = {
+  tag: string;
+  datum: string;
+} & Record<string, number | string>;
+
+export type MitarbeiterHeuteZeile = {
+  id: string;
   name: string;
-  color: string;
-  einsaetze: number;
+  farbe: string;
+  typ: "koordinator" | "mitarbeiter";
+  istImEinsatz: boolean;
+  untertitel: string;
 };
 
 export type TagAuslastung = {
@@ -58,11 +67,12 @@ export type DashboardDaten = {
   offeneKonflikte: number;
   abwesendHeute: number;
   wetterWarnungen: number;
-  balkenAbteilungen: BalkenAbteilung[];
+  wochenChart: WochenChartZeile[];
+  wochenTeams: WochenTeamInfo[];
   naechsteEinsaetze: NaechsterEinsatz[];
   auslastung7Tage: TagAuslastung[];
   darfMitarbeiterEinladen: boolean;
-  teamsHeute: TeamHeuteZeile[];
+  mitarbeiterHeute: MitarbeiterHeuteZeile[];
 };
 
 function zeitZuMinuten(t: string): number {
@@ -223,11 +233,12 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
     offeneKonflikte: 0,
     abwesendHeute: 0,
     wetterWarnungen: 0,
-    balkenAbteilungen: [],
+    wochenChart: [],
+    wochenTeams: [],
     naechsteEinsaetze: [],
     auslastung7Tage: [],
     darfMitarbeiterEinladen: false,
-    teamsHeute: [],
+    mitarbeiterHeute: [],
   };
 
   if (
@@ -284,11 +295,6 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
       .select("employee_id")
       .lte("start_date", gesternStr)
       .gte("end_date", gesternStr);
-    let qZuWoche = supabase
-      .from("assignments")
-      .select("employee_id,date")
-      .gte("date", wStartStr)
-      .lte("date", wEndStr);
     let qZuHeuteListe = supabase
       .from("assignments")
       .select(
@@ -301,20 +307,27 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
       .order("start_time")
       .limit(12);
 
-    let qZuHeuteProTeam = supabase
+    let qWocheMitTeams = supabase
       .from("assignments")
-      .select("id,team_id,start_time,end_time,projects(title)")
-      .eq("date", heuteStr)
+      .select("id, date, team_id, teams(id, name, farbe)")
+      .gte("date", wStartStr)
+      .lte("date", wEndStr)
       .not("team_id", "is", null);
 
-    let qTeamsMitMitgliedern = supabase
-      .from("teams")
+    let qHeuteAssignmentsMitarbeiter = supabase
+      .from("assignments")
       .select(
-        `id,name,farbe,
-         team_members(
-           employees(id,name,active)
-         )`
+        "employee_id, start_time, end_time, projects(title)"
       )
+      .eq("date", heuteStr)
+      .order("start_time");
+
+    let qTeamsListe = supabase.from("teams").select("id,name,farbe").order("name");
+
+    let qMitarbeiterKarten = supabase
+      .from("employees")
+      .select("id, name, auth_user_id, team_id, teams(farbe)")
+      .eq("active", true)
       .order("name");
 
     if (filterIds) {
@@ -324,27 +337,35 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
       qEmp = qEmp.in("id", filterIds);
       qAbwHeute = qAbwHeute.in("employee_id", filterIds);
       qAbwGestern = qAbwGestern.in("employee_id", filterIds);
-      qZuWoche = qZuWoche.in("employee_id", filterIds);
       qZuHeuteListe = qZuHeuteListe.in("employee_id", filterIds);
-      qZuHeuteProTeam = qZuHeuteProTeam.in("employee_id", filterIds);
+      qWocheMitTeams = qWocheMitTeams.in("employee_id", filterIds);
+      qHeuteAssignmentsMitarbeiter = qHeuteAssignmentsMitarbeiter.in(
+        "employee_id",
+        filterIds
+      );
+      qMitarbeiterKarten = qMitarbeiterKarten.in("id", filterIds);
     }
 
     if (teamIdsScope !== null && teamIdsScope.length > 0) {
-      qTeamsMitMitgliedern = qTeamsMitMitgliedern.in("id", teamIdsScope);
-      qZuHeuteProTeam = qZuHeuteProTeam.in("team_id", teamIdsScope);
+      qTeamsListe = qTeamsListe.in("id", teamIdsScope);
+      qWocheMitTeams = qWocheMitTeams.in("team_id", teamIdsScope);
     }
 
-    const teamsLeeresErgebnis = Promise.resolve({
+    const leerPromise = Promise.resolve({
       data: [] as Record<string, unknown>[],
     });
     const qTeamsAusfuehren =
       teamIdsScope !== null && teamIdsScope.length === 0
-        ? teamsLeeresErgebnis
-        : qTeamsMitMitgliedern;
-    const qZuHeuteProTeamAusfuehren =
+        ? leerPromise
+        : qTeamsListe;
+    const qWocheAusfuehren =
       teamIdsScope !== null && teamIdsScope.length === 0
-        ? teamsLeeresErgebnis
-        : qZuHeuteProTeam;
+        ? leerPromise
+        : qWocheMitTeams;
+    const qHeuteMaAusfuehren =
+      teamIdsScope !== null && teamIdsScope.length === 0
+        ? leerPromise
+        : qHeuteAssignmentsMitarbeiter;
 
     const [
       { count: ecHeute },
@@ -354,10 +375,11 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
       { data: abwHeute },
       { data: abwGestern },
       { count: wc },
-      { data: zuWoche },
       { data: zuHeuteListe },
-      { data: zuHeuteProTeamRaw },
-      { data: teamsRaw },
+      { data: wocheMitTeamsRaw },
+      { data: teamsListeRaw },
+      { data: heuteAssignmentsMaRaw },
+      { data: mitarbeiterKartenRaw },
     ] = await Promise.all([
       qEcHeute,
       qEcGestern,
@@ -369,10 +391,11 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
         .from("weather_alerts")
         .select("id", { count: "exact", head: true })
         .eq("acknowledged", false),
-      qZuWoche,
       qZuHeuteListe,
-      qZuHeuteProTeamAusfuehren,
+      qWocheAusfuehren,
       qTeamsAusfuehren,
+      qHeuteMaAusfuehren,
+      qMitarbeiterKarten,
     ]);
 
     const zu = zuAlleRaw ?? [];
@@ -403,45 +426,64 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
       (abwGestern ?? []).map((a) => a.employee_id as string)
     );
 
-    const deptIdsSichtbar = new Set(
-      actives
-        .map((e) => e.department_id as string | null)
-        .filter((x): x is string => Boolean(x))
-    );
-
-    const { data: depsRaw } = await supabase
-      .from("departments")
-      .select("id,name,color")
-      .order("name");
-
-    const deps =
-      filterIds && deptIdsSichtbar.size > 0
-        ? (depsRaw ?? []).filter((d) => deptIdsSichtbar.has(d.id as string))
-        : (depsRaw ?? []);
-
-    const empDep = Object.fromEntries(
-      (employees ?? []).map((e) => [
-        e.id,
-        e.department_id as string | null,
-      ])
-    );
-
-    const countsByDep = new Map<string, number>();
-    for (const d of deps) {
-      countsByDep.set(d.id as string, 0);
+    const teamMetaAusZeilen = new Map<string, WochenTeamInfo>();
+    for (const tr of teamsListeRaw ?? []) {
+      const t = tr as Record<string, unknown>;
+      const id = String(t.id ?? "");
+      if (!id) continue;
+      teamMetaAusZeilen.set(id, {
+        id,
+        name: String(t.name ?? "Team"),
+        farbe: String(t.farbe ?? "#3b82f6"),
+      });
     }
-    for (const row of zuWoche ?? []) {
-      const depId = empDep[row.employee_id as string];
-      if (depId && countsByDep.has(depId)) {
-        countsByDep.set(depId, (countsByDep.get(depId) ?? 0) + 1);
+    for (const raw of wocheMitTeamsRaw ?? []) {
+      const r = raw as Record<string, unknown>;
+      const tm = r.teams as
+        | { id?: string; name?: string; farbe?: string }
+        | { id?: string; name?: string; farbe?: string }[]
+        | null;
+      const t = Array.isArray(tm) ? tm[0] : tm;
+      const tid = (r.team_id as string) ?? t?.id;
+      if (tid && t?.name && !teamMetaAusZeilen.has(tid)) {
+        teamMetaAusZeilen.set(tid, {
+          id: tid,
+          name: String(t.name),
+          farbe: String(t.farbe ?? "#3b82f6"),
+        });
       }
     }
+    const wochenTeams = Array.from(teamMetaAusZeilen.values()).sort((a, b) =>
+      a.name.localeCompare(b.name, "de")
+    );
 
-    const balkenAbteilungen: BalkenAbteilung[] = deps.map((d) => ({
-      name: d.name as string,
-      color: (d.color as string) || "#6366f1",
-      einsaetze: countsByDep.get(d.id as string) ?? 0,
-    }));
+    const wochentagKurz = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"] as const;
+    const tageInterval = eachDayOfInterval({
+      start: parseISO(wStartStr),
+      end: parseISO(wEndStr),
+    });
+    const zaehlProTagTeam = new Map<string, Map<string, number>>();
+    for (const raw of wocheMitTeamsRaw ?? []) {
+      const r = raw as Record<string, unknown>;
+      const d = String(r.date ?? "");
+      const tid = r.team_id as string | undefined;
+      if (!d || !tid) continue;
+      if (!zaehlProTagTeam.has(d)) zaehlProTagTeam.set(d, new Map());
+      const m = zaehlProTagTeam.get(d)!;
+      m.set(tid, (m.get(tid) ?? 0) + 1);
+    }
+    const wochenChart: WochenChartZeile[] = tageInterval.map((day, i) => {
+      const datum = format(day, "yyyy-MM-dd");
+      const row: WochenChartZeile = {
+        tag: wochentagKurz[i] ?? format(day, "EEE", { locale: de }),
+        datum,
+      };
+      const proTeam = zaehlProTagTeam.get(datum);
+      for (const t of wochenTeams) {
+        row[t.id] = proTeam?.get(t.id) ?? 0;
+      }
+      return row;
+    });
 
     const auslastung7Tage: TagAuslastung[] = [];
     for (let i = 6; i >= 0; i--) {
@@ -452,6 +494,37 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
         tag: ds,
         label: format(d, "EEE", { locale: de }),
         einsaetze: count,
+      });
+    }
+
+    const teamIdsHeute = new Set<string>();
+    for (const row of zuHeuteListe ?? []) {
+      const tid = (row as { team_id?: string | null }).team_id;
+      if (tid) teamIdsHeute.add(tid);
+    }
+    const mitgliederByTeam = new Map<string, { id: string; name: string }[]>();
+    if (teamIdsHeute.size > 0) {
+      const { data: tmMitglieder } = await supabase
+        .from("team_members")
+        .select("team_id, employees(id, name, active)")
+        .in("team_id", Array.from(teamIdsHeute));
+      for (const tr of tmMitglieder ?? []) {
+        const r = tr as Record<string, unknown>;
+        const er = r.employees as
+          | { id?: string; name?: string; active?: boolean }
+          | { id?: string; name?: string; active?: boolean }[]
+          | null;
+        const e = Array.isArray(er) ? er[0] : er;
+        const tmid = r.team_id as string;
+        if (!tmid || !e?.id || !e.name || e.active === false) continue;
+        if (!mitgliederByTeam.has(tmid)) mitgliederByTeam.set(tmid, []);
+        mitgliederByTeam.get(tmid)!.push({
+          id: String(e.id),
+          name: String(e.name),
+        });
+      }
+      mitgliederByTeam.forEach((arr) => {
+        arr.sort((a, b) => a.name.localeCompare(b.name, "de"));
       });
     }
 
@@ -484,6 +557,10 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
         const tm = Array.isArray(tmRaw) ? tmRaw[0] : tmRaw;
         const ft = row.project_title as string | null | undefined;
         const adresse = (pr?.adresse ?? "").trim();
+        const teamIdRow = row.team_id as string | null | undefined;
+        const mg = teamIdRow
+          ? [...(mitgliederByTeam.get(teamIdRow) ?? [])].slice(0, 12)
+          : [];
         return {
           id: String(row.id),
           mitarbeiter: String(emp?.name ?? "—"),
@@ -496,58 +573,55 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
           projektFarbe: pr?.farbe ? String(pr.farbe) : null,
           projektAdresse: adresse || null,
           projektStatus: pr?.status ? String(pr.status) : null,
+          teamMitglieder: mg,
         };
       }
     );
 
-    const einsatzByTeam = new Map<
+    const ersteEinsatzProMa = new Map<
       string,
-      { id: string; start_time: string; end_time: string; projektTitel: string | null }[]
+      { titel: string; start: string; end: string }
     >();
-    for (const raw of zuHeuteProTeamRaw ?? []) {
+    for (const raw of heuteAssignmentsMaRaw ?? []) {
       const r = raw as Record<string, unknown>;
-      const tid = r.team_id as string | undefined;
-      if (!tid) continue;
+      const eid = r.employee_id as string;
+      if (!eid || ersteEinsatzProMa.has(eid)) continue;
       const prRaw = r.projects as
         | { title?: string }
         | { title?: string }[]
         | null;
       const pr = Array.isArray(prRaw) ? prRaw[0] : prRaw;
-      const ein = {
-        id: String(r.id),
-        start_time: String(r.start_time ?? "").slice(0, 5),
-        end_time: String(r.end_time ?? "").slice(0, 5),
-        projektTitel: pr?.title ? String(pr.title) : null,
-      };
-      if (!einsatzByTeam.has(tid)) einsatzByTeam.set(tid, []);
-      einsatzByTeam.get(tid)!.push(ein);
+      ersteEinsatzProMa.set(eid, {
+        titel: String(pr?.title ?? "Projekt"),
+        start: String(r.start_time ?? "").slice(0, 5),
+        end: String(r.end_time ?? "").slice(0, 5),
+      });
     }
-    einsatzByTeam.forEach((arr) => {
-      arr.sort((a, b) => a.start_time.localeCompare(b.start_time));
-    });
 
-    const teamsHeute: TeamHeuteZeile[] = (teamsRaw ?? []).map((t) => {
-      const tr = t as Record<string, unknown>;
-      const tmArr = (tr.team_members ?? []) as Record<string, unknown>[];
-      const mitglieder: { id: string; name: string }[] = [];
-      for (const tm of tmArr) {
-        const eRaw = tm.employees as
-          | { id?: string; name?: string; active?: boolean }
-          | { id?: string; name?: string; active?: boolean }[]
-          | null;
-        const e = Array.isArray(eRaw) ? eRaw[0] : eRaw;
-        if (e?.id && e.active !== false && e.name) {
-          mitglieder.push({ id: String(e.id), name: String(e.name) });
-        }
-      }
-      mitglieder.sort((a, b) => a.name.localeCompare(b.name, "de"));
-      const tid = String(tr.id);
+    const mitarbeiterHeute: MitarbeiterHeuteZeile[] = (
+      mitarbeiterKartenRaw ?? []
+    ).map((raw) => {
+      const m = raw as Record<string, unknown>;
+      const id = String(m.id ?? "");
+      const nameStr = String(m.name ?? "");
+      const auth = m.auth_user_id as string | null;
+      const tRaw = m.teams as
+        | { farbe?: string | null }
+        | { farbe?: string | null }[]
+        | null;
+      const tOne = Array.isArray(tRaw) ? tRaw[0] : tRaw;
+      const farbe = String(tOne?.farbe ?? "#52525b");
+      const ein = ersteEinsatzProMa.get(id);
+      const istImEinsatz = Boolean(ein);
       return {
-        id: tid,
-        name: String(tr.name ?? ""),
-        farbe: String(tr.farbe ?? "#3b82f6"),
-        mitglieder,
-        heuteEinsaetze: einsatzByTeam.get(tid) ?? [],
+        id,
+        name: nameStr,
+        farbe,
+        typ: auth ? ("koordinator" as const) : ("mitarbeiter" as const),
+        istImEinsatz,
+        untertitel: ein
+          ? `${ein.titel} · ${ein.start}–${ein.end}`
+          : "Kein Einsatz heute",
       };
     });
 
@@ -564,11 +638,12 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
       offeneKonflikte: konflikte,
       abwesendHeute: abwesendHeuteAnzahl,
       wetterWarnungen: wc ?? 0,
-      balkenAbteilungen,
+      wochenChart,
+      wochenTeams,
       naechsteEinsaetze,
       auslastung7Tage,
       darfMitarbeiterEinladen: Boolean(darf),
-      teamsHeute,
+      mitarbeiterHeute,
     };
   } catch {
     return leer;
