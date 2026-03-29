@@ -88,6 +88,14 @@ function apiFehler(json: { error?: string; fehler?: string }): string {
   return json.error ?? json.fehler ?? "Unbekannter Fehler.";
 }
 
+function mitarbeiterDbHinweisNachricht(msg: string): string {
+  const m = msg.toLowerCase();
+  if (m.includes("employee_departments") || m.includes("schema cache")) {
+    return `${msg} — In Supabase: SQL-Editor öffnen und die Migration „supabase/migrations/20260327200000_employee_departments.sql“ ausführen (oder lokal „npx supabase db push“ nach Link mit dem Projekt).`;
+  }
+  return msg;
+}
+
 /** Entspricht darfMitarbeiterVerwalten (nur für Client, ohne server-Import). */
 function darfAlleMitarbeiterVerwalten(rolle: string | undefined): boolean {
   return rolle === "admin" || rolle === "abteilungsleiter";
@@ -604,7 +612,9 @@ export function MitarbeiterVerwaltung({
       void laden();
     } catch (e) {
       toast.error(
-        nachrichtAusUnbekannt(e, "Speichern fehlgeschlagen.")
+        mitarbeiterDbHinweisNachricht(
+          nachrichtAusUnbekannt(e, "Speichern fehlgeschlagen.")
+        )
       );
     }
   }
@@ -646,7 +656,7 @@ export function MitarbeiterVerwaltung({
       });
       const json = (await res.json()) as { fehler?: string; error?: string };
       if (!res.ok) {
-        toast.error(apiFehler(json));
+        toast.error(mitarbeiterDbHinweisNachricht(apiFehler(json)));
         return;
       }
       toast.success("Gespeichert.");

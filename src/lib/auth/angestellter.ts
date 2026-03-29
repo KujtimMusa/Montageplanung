@@ -13,6 +13,11 @@ export type AngestellterProfil = {
   role: AngestellterRolle;
   active: boolean;
   department_id: string | null;
+  /**
+   * Alle Abteilungen (Pivot employee_departments), Primär zuerst.
+   * Ohne Pivot: [department_id] falls gesetzt, sonst [].
+   */
+  department_ids: string[];
   /** Primäres Team (employees.team_id), u. a. für Dashboard-Teamscope */
   team_id: string | null;
   auth_user_id: string | null;
@@ -42,7 +47,27 @@ export async function ladeAngestelltenProfil(): Promise<AngestellterProfil | nul
     .maybeSingle();
 
   if (error || !data) return null;
-  return data as AngestellterProfil;
+
+  const row = data as Omit<AngestellterProfil, "department_ids">;
+  let department_ids: string[] = [];
+  const { data: eds, error: edErr } = await supabase
+    .from("employee_departments")
+    .select("department_id, ist_primaer")
+    .eq("employee_id", row.id);
+
+  if (!edErr && eds?.length) {
+    const sorted = [...eds].sort((a, b) =>
+      a.ist_primaer === b.ist_primaer ? 0 : a.ist_primaer ? -1 : 1
+    );
+    department_ids = sorted
+      .map((e) => e.department_id as string)
+      .filter((id): id is string => Boolean(id));
+  }
+  if (department_ids.length === 0 && row.department_id) {
+    department_ids = [row.department_id];
+  }
+
+  return { ...row, department_ids };
 }
 
 export function istAdmin(rolle: string | undefined): boolean {

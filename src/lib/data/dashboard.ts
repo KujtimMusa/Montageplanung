@@ -94,6 +94,51 @@ type ScopeErgebnis = {
   mitarbeiterIds: string[] | null;
 };
 
+/** Abteilungs-IDs für Rechte / Filter (Pivot + Fallback department_id). */
+function abteilungsKreiseFuerProfil(profil: AngestellterProfil): string[] {
+  if (profil.department_ids.length > 0) return profil.department_ids;
+  if (profil.department_id) return [profil.department_id];
+  return [];
+}
+
+async function mitarbeiterIdsInAbteilungen(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  deptIds: string[]
+): Promise<Set<string>> {
+  const ids = new Set<string>();
+  if (deptIds.length === 0) return ids;
+
+  const { data: rowsLegacy } = await supabase
+    .from("employees")
+    .select("id")
+    .in("department_id", deptIds)
+    .eq("active", true);
+  for (const e of rowsLegacy ?? []) ids.add(e.id as string);
+
+  const { data: edRows, error: edErr } = await supabase
+    .from("employee_departments")
+    .select("employee_id")
+    .in("department_id", deptIds);
+  if (!edErr && edRows?.length) {
+    const pivotEmp = Array.from(
+      new Set(
+        (edRows ?? [])
+          .map((r) => r.employee_id as string)
+          .filter(Boolean)
+      )
+    );
+    if (pivotEmp.length > 0) {
+      const { data: act } = await supabase
+        .from("employees")
+        .select("id")
+        .in("id", pivotEmp)
+        .eq("active", true);
+      for (const e of act ?? []) ids.add(e.id as string);
+    }
+  }
+  return ids;
+}
+
 /**
  * null mitarbeiterIds = keine Einschränkung (Admin).
  * [] = kein sichtbarer Mitarbeiterkreis (leere Kennzahlen).
@@ -116,19 +161,13 @@ async function ermittleScope(
   }
 
   if (profil.role === "abteilungsleiter") {
-    if (!profil.department_id) {
-      return {
-        mitarbeiterIds: [],
-      };
+    const deptIds = abteilungsKreiseFuerProfil(profil);
+    if (deptIds.length === 0) {
+      return { mitarbeiterIds: [] };
     }
-    const { data: rows } = await supabase
-      .from("employees")
-      .select("id")
-      .eq("department_id", profil.department_id)
-      .eq("active", true);
-    const ids = (rows ?? []).map((e) => e.id as string);
+    const ids = await mitarbeiterIdsInAbteilungen(supabase, deptIds);
     return {
-      mitarbeiterIds: ids,
+      mitarbeiterIds: Array.from(ids),
     };
   }
 
@@ -158,13 +197,10 @@ async function ermittleScope(
 
     ids.add(profil.id);
 
-    if (ids.size <= 1 && profil.department_id) {
-      const { data: deptEmps } = await supabase
-        .from("employees")
-        .select("id")
-        .eq("department_id", profil.department_id)
-        .eq("active", true);
-      for (const e of deptEmps ?? []) ids.add(e.id as string);
+    const deptKreise = abteilungsKreiseFuerProfil(profil);
+    if (ids.size <= 1 && deptKreise.length > 0) {
+      const mehr = await mitarbeiterIdsInAbteilungen(supabase, deptKreise);
+      mehr.forEach((x) => ids.add(x));
     }
 
     return {
@@ -188,11 +224,12 @@ async function ermittleTeamIds(
   }
 
   if (profil.role === "abteilungsleiter") {
-    if (!profil.department_id) return [];
+    const deptIds = abteilungsKreiseFuerProfil(profil);
+    if (deptIds.length === 0) return [];
     const { data } = await supabase
       .from("teams")
       .select("id")
-      .eq("department_id", profil.department_id);
+      .in("department_id", deptIds);
     return (data ?? []).map((t) => t.id as string);
   }
 
@@ -205,11 +242,12 @@ async function ermittleTeamIds(
       .eq("leader_id", profil.id);
     for (const t of ledTeams ?? []) ids.add(t.id as string);
 
-    if (ids.size === 0 && profil.department_id) {
+    const deptKreiseTl = abteilungsKreiseFuerProfil(profil);
+    if (ids.size === 0 && deptKreiseTl.length > 0) {
       const { data: deptTeams } = await supabase
         .from("teams")
         .select("id")
-        .eq("department_id", profil.department_id);
+        .in("department_id", deptKreiseTl);
       for (const t of deptTeams ?? []) ids.add(t.id as string);
     }
 
