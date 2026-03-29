@@ -1,27 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useState,
+} from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { addDays, format, isBefore, parseISO, startOfDay } from "date-fns";
 import {
-  Activity,
-  Building2,
-  CalendarClock,
-  CalendarDays,
-  Clock,
   Eye,
   FolderOpen,
-  LayoutGrid,
-  List,
   Loader2,
   Pencil,
   Plus,
+  Search,
   Trash2,
   X,
-  Zap,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatDatum } from "@/lib/utils/datum";
@@ -42,17 +42,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
   SheetContent,
@@ -78,8 +68,6 @@ import {
   autoStatus,
 } from "@/lib/projekt-status";
 import { KundeKombofeld } from "@/components/projekte/KundeKombofeld";
-
-const ANSICHT_KEY = "projekte-ansicht";
 
 type ProjektZeile = {
   id: string;
@@ -130,7 +118,48 @@ const formSchema = z.object({
 
 type FormWerte = z.infer<typeof formSchema>;
 
-export function ProjekteVerwaltung() {
+function StatusAnzeige({ status }: { status: string }) {
+  const st = normalisiereStatus(status);
+  const cfg = STATUS_CONFIG[st] ?? { label: status, dot: "#71717a" };
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="h-1.5 w-1.5 rounded-full" style={{ background: cfg.dot }} />
+      <span className="text-xs font-medium text-zinc-400">{cfg.label}</span>
+    </div>
+  );
+}
+
+function PrioritaetAnzeige({ prioritaet }: { prioritaet: string }) {
+  const pr = normalisierePrioritaet(prioritaet);
+  const cfg =
+    {
+      niedrig: { label: "Niedrig", farbe: "#71717a" },
+      normal: { label: "Normal", farbe: "#3b82f6" },
+      hoch: { label: "Hoch", farbe: "#f59e0b" },
+      kritisch: { label: "Kritisch", farbe: "#ef4444" },
+    }[pr] ?? { label: prioritaet, farbe: "#71717a" };
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="h-1.5 w-1.5 rounded-full" style={{ background: cfg.farbe }} />
+      <span className="text-xs font-medium text-zinc-500">{cfg.label}</span>
+    </div>
+  );
+}
+
+export type ProjekteVerwaltungHandle = { openNeu: () => void };
+
+type ProjekteVerwaltungProps = {
+  hideChrome?: boolean;
+  onAnzahlProjekteChange?: (n: number) => void;
+};
+
+export const ProjekteVerwaltung = forwardRef<
+  ProjekteVerwaltungHandle,
+  ProjekteVerwaltungProps
+>(function ProjekteVerwaltung(
+  { hideChrome = false, onAnzahlProjekteChange },
+  ref
+) {
   const supabase = useMemo(() => createClient(), []);
   const [zeilen, setZeilen] = useState<ProjektZeile[]>([]);
   const [kunden, setKunden] = useState<KundeOpt[]>([]);
@@ -154,25 +183,6 @@ export function ProjekteVerwaltung() {
     status: "all",
     prioritaet: "all",
   });
-
-  const [ansicht, setAnsicht] = useState<"tabelle" | "kacheln">("tabelle");
-
-  useEffect(() => {
-    try {
-      const v = localStorage.getItem(ANSICHT_KEY);
-      if (v === "tabelle" || v === "kacheln") setAnsicht(v);
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(ANSICHT_KEY, ansicht);
-    } catch {
-      /* ignore */
-    }
-  }, [ansicht]);
 
   const form = useForm<FormWerte>({
     resolver: zodResolver(formSchema),
@@ -250,6 +260,10 @@ export function ProjekteVerwaltung() {
   }, [projekteLaden]);
 
   useEffect(() => {
+    onAnzahlProjekteChange?.(zeilen.length);
+  }, [zeilen, onAnzahlProjekteChange]);
+
+  useEffect(() => {
     if (!detailOffen || !detailProjekt) {
       setDetailEinsaetze([]);
       return;
@@ -311,6 +325,13 @@ export function ProjekteVerwaltung() {
     sheetLeeren();
     setSheetOffen(true);
   }
+
+  useImperativeHandle(ref, () => ({
+    openNeu: () => {
+      sheetLeeren();
+      setSheetOffen(true);
+    },
+  }));
 
   function oeffnenBearbeiten(row: ProjektZeile) {
     setBearbeitenId(row.id);
@@ -435,10 +456,10 @@ export function ProjekteVerwaltung() {
     let wocheFaellig = 0;
     for (const p of zeilen) {
       const st = effektiverStatus(p);
-      const pr = normalisierePrioritaet(p.priority);
+      const rawSt = normalisiereStatus(p.status);
       if (st === "aktiv") aktiv++;
       if (st === "geplant") geplant++;
-      if (pr === "kritisch") kritisch++;
+      if (rawSt === "kritisch") kritisch++;
       if (
         st !== "abgeschlossen" &&
         p.planned_end &&
@@ -493,162 +514,116 @@ export function ProjekteVerwaltung() {
     setDetailOffen(true);
   }
 
-  const statCards = [
+  const kpiZeilen = [
     {
-      label: "Aktive Projekte",
+      label: "AKTIVE PROJEKTE",
       wert: stats.aktiv,
-      icon: FolderOpen,
-      iconClass: "text-emerald-400",
-      wrap: "bg-emerald-500/10",
+      sub: "Status: aktiv",
     },
     {
-      label: "Geplant",
+      label: "GEPLANT",
       wert: stats.geplant,
-      icon: CalendarClock,
-      iconClass: "text-blue-400",
-      wrap: "bg-blue-500/10",
+      sub: "Mind. 1 Einsatz",
     },
     {
-      label: "Kritisch",
+      label: "KRITISCH",
       wert: stats.kritisch,
-      icon: Zap,
-      iconClass: "text-red-400",
-      wrap: "bg-red-500/10",
+      sub: "Manuell markiert",
     },
     {
-      label: "Diese Woche fällig",
+      label: "DIESE WOCHE FÄLLIG",
       wert: stats.wocheFaellig,
-      icon: Clock,
-      iconClass: "text-orange-400",
-      wrap: "bg-orange-500/10",
+      sub: "Enddatum in 7 Tagen",
     },
   ];
 
   return (
     <div>
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+      {!hideChrome ? (
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-bold text-zinc-50">Projekte</h1>
-          <p className="mt-1 text-sm text-zinc-400">
-            Aufträge planen, Teams zuweisen, Status verfolgen.
-          </p>
+          <Button type="button" onClick={sheetOeffnen}>
+            <Plus size={16} className="mr-2" />
+            Neues Projekt
+          </Button>
         </div>
-        <Button type="button" onClick={sheetOeffnen}>
-          <Plus size={16} className="mr-2" />
-          Neues Projekt
-        </Button>
-      </div>
+      ) : null}
 
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {laden
           ? Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-24 rounded-xl bg-zinc-800" />
+              <Skeleton key={i} className="h-32 rounded-2xl bg-zinc-800" />
             ))
-          : statCards.map((c) => (
-              <Card
-                key={c.label}
-                className="rounded-xl border border-zinc-800 bg-zinc-900/50"
+          : kpiZeilen.map((k) => (
+              <div
+                key={k.label}
+                className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5 transition-all hover:border-zinc-700/60"
               >
-                <CardContent className="flex items-center gap-3 p-4">
-                  <div className={cn("rounded-lg p-2", c.wrap)}>
-                    <c.icon className={cn("size-6", c.iconClass)} />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-zinc-50">{c.wert}</p>
-                    <p className="text-xs text-zinc-500">{c.label}</p>
-                  </div>
-                </CardContent>
-              </Card>
+                <p className="mb-4 text-xs font-semibold tracking-wider text-zinc-500 uppercase">
+                  {k.label}
+                </p>
+                <p className="mb-1 text-4xl font-bold text-zinc-100 tabular-nums">
+                  {k.wert}
+                </p>
+                <p className="text-xs text-zinc-600">{k.sub}</p>
+              </div>
             ))}
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <Input
-          placeholder="Projekt oder Kunde suchen..."
-          className="w-full max-w-xs border-zinc-800 bg-zinc-900 sm:w-56"
-          value={filter.suche}
-          onChange={(e) =>
-            setFilter((f) => ({ ...f, suche: e.target.value }))
-          }
-        />
-        <Select
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="relative max-w-xs flex-1">
+          <Search
+            size={13}
+            className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-zinc-500"
+          />
+          <input
+            value={filter.suche}
+            onChange={(e) => setFilter((f) => ({ ...f, suche: e.target.value }))}
+            placeholder="Projekt oder Kunde suchen..."
+            className="w-full rounded-lg border border-zinc-800 bg-zinc-900 py-2 pr-3 pl-8 text-sm text-zinc-200 transition-colors placeholder:text-zinc-600 focus:border-zinc-700 focus:outline-none"
+          />
+        </div>
+        <select
           value={filter.status}
-          onValueChange={(v) =>
-            setFilter((f) => ({ ...f, status: v ?? "all" }))
+          onChange={(e) =>
+            setFilter((f) => ({ ...f, status: e.target.value }))
           }
+          className="cursor-pointer appearance-none rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-400 focus:outline-none"
         >
-          <SelectTrigger className="w-[160px] border-zinc-800 bg-zinc-900">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Alle Status</SelectItem>
-            {PROJEKT_STATUS.map((s) => (
-              <SelectItem key={s.value} value={s.value}>
-                {s.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
+          <option value="all">Alle Status</option>
+          <option value="neu">Neu</option>
+          <option value="geplant">Geplant</option>
+          <option value="aktiv">Aktiv</option>
+          <option value="abgeschlossen">Abgeschlossen</option>
+          <option value="kritisch">Kritisch</option>
+        </select>
+        <select
           value={filter.prioritaet}
-          onValueChange={(v) =>
-            setFilter((f) => ({ ...f, prioritaet: v ?? "all" }))
+          onChange={(e) =>
+            setFilter((f) => ({ ...f, prioritaet: e.target.value }))
           }
+          className="cursor-pointer appearance-none rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-400 focus:outline-none"
         >
-          <SelectTrigger className="w-[180px] border-zinc-800 bg-zinc-900">
-            <SelectValue placeholder="Priorität" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Alle Prioritäten</SelectItem>
-            {PROJEKT_PRIORITAET.map((p) => (
-              <SelectItem key={p.value} value={p.value}>
-                {p.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {hatFilter && (
+          <option value="all">Alle Prioritäten</option>
+          <option value="niedrig">Niedrig</option>
+          <option value="normal">Normal</option>
+          <option value="hoch">Hoch</option>
+          <option value="kritisch">Kritisch</option>
+        </select>
+        {hatFilter ? (
           <Button variant="ghost" size="sm" type="button" onClick={resetFilter}>
             <X size={14} className="mr-1" />
             Filter zurücksetzen
           </Button>
-        )}
-        <div className="ml-auto flex gap-1">
-          <Button
-            type="button"
-            variant={ansicht === "tabelle" ? "secondary" : "ghost"}
-            size="icon"
-            onClick={() => setAnsicht("tabelle")}
-            aria-label="Tabellenansicht"
-          >
-            <List size={16} />
-          </Button>
-          <Button
-            type="button"
-            variant={ansicht === "kacheln" ? "secondary" : "ghost"}
-            size="icon"
-            onClick={() => setAnsicht("kacheln")}
-            aria-label="Kachelansicht"
-          >
-            <LayoutGrid size={16} />
-          </Button>
-        </div>
+        ) : null}
       </div>
 
       {laden ? (
-        ansicht === "tabelle" ? (
-          <div className="space-y-2 rounded-lg border border-zinc-800 p-4">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full bg-zinc-800" />
-            ))}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-40 rounded-xl bg-zinc-800" />
-            ))}
-          </div>
-        )
+        <div className="space-y-2 rounded-2xl border border-zinc-800/60 p-4">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full bg-zinc-800" />
+          ))}
+        </div>
       ) : zeilen.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-zinc-600">
           <FolderOpen size={48} className="mb-4 text-zinc-600" />
@@ -672,195 +647,128 @@ export function ProjekteVerwaltung() {
             Filter zurücksetzen
           </Button>
         </div>
-      ) : ansicht === "tabelle" ? (
-        <div className="overflow-x-auto rounded-lg border border-zinc-800">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-zinc-800 hover:bg-transparent">
-                <TableHead>Titel</TableHead>
-                <TableHead>Kunde</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Priorität</TableHead>
-                <TableHead>Zeitraum</TableHead>
-                <TableHead>Einsätze</TableHead>
-                <TableHead className="text-right">Aktionen</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-zinc-800/60">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-zinc-800/60 bg-zinc-900/40">
+                {[
+                  "Projekt",
+                  "Kunde",
+                  "Status",
+                  "Priorität",
+                  "Zeitraum",
+                  "Einsätze",
+                  "Aktionen",
+                ].map((h) => (
+                  <th
+                    key={h}
+                    className="px-4 py-3 text-left text-xs font-semibold tracking-wider text-zinc-500 uppercase"
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-800/40">
               {gefiltert.map((z) => {
                 const st = effektiverStatus(z);
-                const pr = normalisierePrioritaet(z.priority);
-                const stMeta = PROJEKT_STATUS.find((s) => s.value === st);
-                const prMeta = PROJEKT_PRIORITAET.find((p) => p.value === pr);
                 const cnt = einsatzCounts[z.id] ?? 0;
                 return (
-                  <TableRow key={z.id} className="border-zinc-800 hover:bg-zinc-900/50">
-                    <TableCell>
-                      <button
-                        type="button"
-                        className="text-left font-medium text-zinc-200 hover:underline"
-                        onClick={() => detailOeffnen(z)}
-                      >
-                        {z.title}
-                      </button>
-                    </TableCell>
-                    <TableCell className="px-3 py-3.5">
+                  <tr
+                    key={z.id}
+                    className="group transition-colors hover:bg-zinc-900/40"
+                  >
+                    <td className="px-4 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-700/50 bg-zinc-800 text-xs font-bold text-zinc-400">
+                          {z.title?.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-zinc-200">{z.title}</p>
+                          {z.notes?.trim() ? (
+                            <p className="max-w-32 truncate text-xs text-zinc-600">
+                              {z.notes.trim()}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3.5">
                       {z.customers?.company_name ? (
-                        <div className="flex items-center gap-1.5">
-                          <Building2 size={12} className="text-zinc-600" />
-                          <span className="text-sm text-zinc-400">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-zinc-800 text-[9px] font-bold text-zinc-500">
+                            {z.customers.company_name.slice(0, 2).toUpperCase()}
+                          </div>
+                          <span className="truncate text-sm text-zinc-400">
                             {z.customers.company_name}
                           </span>
                         </div>
                       ) : (
                         <span className="text-sm text-zinc-700">–</span>
                       )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary" className={cn("font-normal", stMeta?.farbe)}>
-                        {stMeta?.label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1.5">
-                        <div
-                          className="size-2 rounded-full"
-                          style={{ backgroundColor: prMeta?.dot }}
-                        />
-                        <span className="text-sm">{prMeta?.label}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-sm text-zinc-300">
-                      {formatDatum(z.planned_start)} → {formatDatum(z.planned_end)}
-                      {istUeberfaellig(z) && (
-                        <Badge variant="destructive" className="ml-2 text-xs">
-                          Überfällig
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm text-zinc-400">
-                      {cnt > 0 ? `${cnt} Einsätze` : "–"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-0">
-                        <Button
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <StatusAnzeige status={st} />
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <PrioritaetAnzeige prioritaet={z.priority} />
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <p className="text-xs text-zinc-400 tabular-nums">
+                        {z.planned_start
+                          ? format(new Date(z.planned_start), "dd.MM.yy")
+                          : "–"}
+                        {" → "}
+                        {z.planned_end
+                          ? format(new Date(z.planned_end), "dd.MM.yy")
+                          : "–"}
+                        {istUeberfaellig(z) ? (
+                          <Badge variant="destructive" className="ml-2 text-[10px]">
+                            Überfällig
+                          </Badge>
+                        ) : null}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <span className="text-sm font-semibold text-zinc-300 tabular-nums">
+                        {cnt}
+                      </span>
+                      <span className="ml-1 text-xs text-zinc-600">Einsätze</span>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                        <button
                           type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="size-8"
                           onClick={() => detailOeffnen(z)}
+                          className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
                           aria-label="Details"
                         >
-                          <Eye size={14} />
-                        </Button>
-                        <Button
+                          <Eye size={13} />
+                        </button>
+                        <button
                           type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="size-8"
                           onClick={() => oeffnenBearbeiten(z)}
+                          className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
                           aria-label="Bearbeiten"
                         >
-                          <Pencil size={14} />
-                        </Button>
-                        <Button
+                          <Pencil size={13} />
+                        </button>
+                        <button
                           type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="size-8 text-destructive"
                           onClick={() => setLoeschenId(z.id)}
+                          className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-red-950 hover:text-red-400"
                           aria-label="Löschen"
                         >
-                          <Trash2 size={14} />
-                        </Button>
+                          <Trash2 size={13} />
+                        </button>
                       </div>
-                    </TableCell>
-                  </TableRow>
+                    </td>
+                  </tr>
                 );
               })}
-            </TableBody>
-          </Table>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {gefiltert.map((z) => {
-            const st = effektiverStatus(z);
-            const pr = normalisierePrioritaet(z.priority);
-            const stMeta = PROJEKT_STATUS.find((s) => s.value === st);
-            const prMeta = PROJEKT_PRIORITAET.find((p) => p.value === pr);
-            const cnt = einsatzCounts[z.id] ?? 0;
-            return (
-              <Card
-                key={z.id}
-                className="cursor-pointer rounded-xl border border-zinc-800 bg-zinc-900/50 transition-colors hover:border-zinc-700"
-                onClick={() => detailOeffnen(z)}
-              >
-                <CardContent className="p-5">
-                  <div className="mb-2 flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="size-2 shrink-0 rounded-full"
-                        style={{ backgroundColor: prMeta?.dot }}
-                      />
-                      <h3 className="line-clamp-2 font-semibold text-base text-zinc-100">
-                        {z.title}
-                      </h3>
-                    </div>
-                    <Badge variant="secondary" className={cn("shrink-0 font-normal", stMeta?.farbe)}>
-                      {stMeta?.label}
-                    </Badge>
-                  </div>
-                  {z.customers?.company_name ? (
-                    <p className="text-sm text-zinc-500">{z.customers.company_name}</p>
-                  ) : null}
-                  <Separator className="my-3 bg-zinc-800" />
-                  <div className="flex items-center gap-2 text-sm text-zinc-400">
-                    <CalendarDays size={14} className="shrink-0" />
-                    <span>
-                      {formatDatum(z.planned_start)} → {formatDatum(z.planned_end)}
-                    </span>
-                  </div>
-                  <div className="mt-2 flex items-center gap-2 text-sm text-zinc-400">
-                    <Activity size={14} className="shrink-0" />
-                    <span>{cnt > 0 ? `${cnt} Einsätze` : "Keine Einsätze"}</span>
-                  </div>
-                  <div
-                    className="mt-4 flex items-center justify-between border-t border-zinc-800 pt-3"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      type="button"
-                      onClick={() => detailOeffnen(z)}
-                    >
-                      Details
-                    </Button>
-                    <div className="flex gap-0">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-8"
-                        onClick={() => oeffnenBearbeiten(z)}
-                      >
-                        <Pencil size={14} />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 text-destructive"
-                        onClick={() => setLoeschenId(z.id)}
-                      >
-                        <Trash2 size={14} />
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -1271,4 +1179,6 @@ export function ProjekteVerwaltung() {
       </Dialog>
     </div>
   );
-}
+});
+
+ProjekteVerwaltung.displayName = "ProjekteVerwaltung";

@@ -1,17 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useState,
+} from "react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
-import {
-  Building2,
-  FolderOpen,
-  Pencil,
-  Plus,
-  Search,
-  Trash2,
-  TrendingUp,
-} from "lucide-react";
+import { Building2, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +27,8 @@ const INPUT_CLASS = `w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 p
   placeholder:text-zinc-600 focus:border-zinc-700 focus:ring-1 focus:ring-zinc-700/50
   focus:outline-none transition-all`;
 
+type ProjektMini = { id: string; title: string; status: string };
+
 type KundeZeile = {
   id: string;
   company_name: string;
@@ -37,7 +38,7 @@ type KundeZeile = {
   address: string;
   notes: string | null;
   created_at: string;
-  projekte_count: number;
+  projekte: ProjektMini[];
 };
 
 type FormState = {
@@ -66,7 +67,21 @@ function FormField({
   );
 }
 
-export function KundenVerwaltung() {
+export type KundenVerwaltungHandle = { openNeu: () => void };
+
+type KundenVerwaltungProps = {
+  embedded?: boolean;
+  tabAktiv?: boolean;
+  onAnzahlKundenChange?: (n: number) => void;
+};
+
+export const KundenVerwaltung = forwardRef<
+  KundenVerwaltungHandle,
+  KundenVerwaltungProps
+>(function KundenVerwaltung(
+  { embedded = false, tabAktiv = true, onAnzahlKundenChange },
+  ref
+) {
   const supabase = useMemo(() => createClient(), []);
   const [zeilen, setZeilen] = useState<KundeZeile[]>([]);
   const [dialogOffen, setDialogOffen] = useState(false);
@@ -82,7 +97,6 @@ export function KundenVerwaltung() {
   const [suche, setSuche] = useState("");
   const [laedt, setLaedt] = useState(true);
   const [speichert, setSpeichert] = useState(false);
-  const [aktiveProjekte, setAktiveProjekte] = useState(0);
 
   const monatStart = useMemo(() => {
     const d = new Date();
@@ -92,29 +106,18 @@ export function KundenVerwaltung() {
   const laden = useCallback(async () => {
     setLaedt(true);
     try {
-      const [{ data: kunden, error: e1 }, { count: projAktiv }] =
-        await Promise.all([
-          supabase
-            .from("customers")
-            .select(
-              "id,company_name,contact_name,email,phone,address,notes,created_at, projects(count)"
-            )
-            .order("company_name"),
-          supabase
-            .from("projects")
-            .select("id", { count: "exact", head: true })
-            .neq("status", "abgeschlossen"),
-        ]);
+      const { data: kunden, error: e1 } = await supabase
+        .from("customers")
+        .select(
+          "id,company_name,contact_name,email,phone,address,notes,created_at, projects(id,title,status)"
+        )
+        .order("company_name");
 
       if (e1) throw e1;
-      setAktiveProjekte(projAktiv ?? 0);
 
       const mapped: KundeZeile[] = (kunden ?? []).map((row) => {
-        const pr = row.projects as { count: number }[] | null;
-        const cnt =
-          Array.isArray(pr) && pr[0] != null && typeof pr[0].count === "number"
-            ? Number(pr[0].count)
-            : 0;
+        const pr = row.projects as ProjektMini[] | ProjektMini | null;
+        const projekte = Array.isArray(pr) ? pr : pr ? [pr] : [];
         return {
           id: row.id as string,
           company_name: row.company_name as string,
@@ -124,7 +127,7 @@ export function KundenVerwaltung() {
           address: (row.address as string) ?? "",
           notes: (row.notes as string | null) ?? null,
           created_at: (row.created_at as string) ?? "",
-          projekte_count: cnt,
+          projekte,
         };
       });
       setZeilen(mapped);
@@ -136,8 +139,13 @@ export function KundenVerwaltung() {
   }, [supabase]);
 
   useEffect(() => {
+    if (!tabAktiv) return;
     void laden();
-  }, [laden]);
+  }, [tabAktiv, laden]);
+
+  useEffect(() => {
+    onAnzahlKundenChange?.(zeilen.length);
+  }, [zeilen, onAnzahlKundenChange]);
 
   const neuDiesenMonat = useMemo(() => {
     return zeilen.filter((z) => {
@@ -145,6 +153,12 @@ export function KundenVerwaltung() {
       return !Number.isNaN(t) && t >= monatStart;
     }).length;
   }, [zeilen, monatStart]);
+
+  const mitAktivenProjekten = useMemo(() => {
+    return zeilen.filter((z) =>
+      z.projekte.some((p) => p.status !== "abgeschlossen")
+    ).length;
+  }, [zeilen]);
 
   const gefiltert = useMemo(() => {
     const q = suche.trim().toLowerCase();
@@ -173,6 +187,10 @@ export function KundenVerwaltung() {
     formLeeren();
     setDialogOffen(true);
   }
+
+  useImperativeHandle(ref, () => ({
+    openNeu: neuOeffnen,
+  }));
 
   function bearbeiten(k: KundeZeile) {
     setBearbeite(k);
@@ -249,83 +267,66 @@ export function KundenVerwaltung() {
   }
 
   const statKarten = [
+    { label: "GESAMT KUNDEN", wert: zeilen.length, sub: "Im Auftraggeber-Stamm" },
     {
-      label: "Gesamt Kunden",
-      wert: zeilen.length,
-      farbe: "#3b82f6",
-      Icon: Building2,
+      label: "MIT AKTIVEN PROJEKTEN",
+      wert: mitAktivenProjekten,
+      sub: "Mind. ein nicht abgeschlossenes Projekt",
     },
     {
-      label: "Aktive Projekte",
-      wert: aktiveProjekte,
-      farbe: "#10b981",
-      Icon: FolderOpen,
-    },
-    {
-      label: "Neu diesen Monat",
+      label: "NEU DIESEN MONAT",
       wert: neuDiesenMonat,
-      farbe: "#a855f7",
-      Icon: TrendingUp,
+      sub: "Erstellungsdatum",
     },
   ] as const;
 
   return (
     <div>
-      <div className="mb-6 flex flex-col gap-4 sm:flex-col sm:items-start sm:justify-between">
-        <div className="flex w-full flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-zinc-100">Kunden</h1>
-            <p className="mt-0.5 text-sm text-zinc-500">
-              Auftraggeber verwalten und Projekte zuordnen.
-            </p>
+      {!embedded ? (
+        <div className="mb-6 flex flex-col gap-4 sm:flex-col sm:items-start sm:justify-between">
+          <div className="flex w-full flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-zinc-100">Kunden</h1>
+              <p className="mt-0.5 text-sm text-zinc-500">
+                Auftraggeber verwalten und Projekte zuordnen.
+              </p>
+            </div>
+            <Button
+              type="button"
+              onClick={neuOeffnen}
+              className="bg-zinc-100 font-semibold text-sm text-zinc-900 hover:bg-white"
+            >
+              <Plus size={15} className="mr-1.5" />
+              Neuer Kunde
+            </Button>
           </div>
-          <Button
-            type="button"
-            onClick={neuOeffnen}
-            className="bg-zinc-100 font-semibold text-sm text-zinc-900 hover:bg-white"
-          >
-            <Plus size={15} className="mr-1.5" />
-            Neuer Kunde
-          </Button>
         </div>
-      </div>
+      ) : null}
 
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
         {laedt
           ? statKarten.map((s) => (
               <div
                 key={s.label}
-                className="h-28 animate-pulse rounded-2xl bg-zinc-900/80"
+                className="h-32 animate-pulse rounded-2xl bg-zinc-900/80"
               />
             ))
-          : statKarten.map(({ label, wert, farbe, Icon }) => (
+          : statKarten.map((k) => (
               <div
-                key={label}
-                className="group relative overflow-hidden rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5 transition-all hover:border-zinc-700"
+                key={k.label}
+                className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5 transition-all hover:border-zinc-700/60"
               >
-                <div
-                  className="absolute -top-6 -right-6 h-20 w-20 rounded-full opacity-10 blur-2xl transition-opacity group-hover:opacity-20"
-                  style={{ background: farbe }}
-                />
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="mb-2 text-xs font-semibold tracking-wider text-zinc-500 uppercase">
-                      {label}
-                    </p>
-                    <p className="text-3xl font-bold text-zinc-100 tabular-nums">
-                      {wert}
-                    </p>
-                  </div>
-                  <div className="rounded-xl p-2.5" style={{ background: `${farbe}15` }}>
-                    <Icon size={20} style={{ color: farbe }} />
-                  </div>
-                </div>
+                <p className="mb-4 text-xs font-semibold tracking-wider text-zinc-500 uppercase">
+                  {k.label}
+                </p>
+                <p className="mb-1 text-4xl font-bold text-zinc-100 tabular-nums">{k.wert}</p>
+                <p className="text-xs text-zinc-600">{k.sub}</p>
               </div>
             ))}
       </div>
 
       <div className="mb-4 flex gap-2">
-        <div className="relative max-w-sm flex-1">
+        <div className="relative max-w-xs flex-1">
           <Search
             size={13}
             className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-zinc-500"
@@ -333,7 +334,7 @@ export function KundenVerwaltung() {
           <input
             value={suche}
             onChange={(e) => setSuche(e.target.value)}
-            placeholder="Kunden suchen…"
+            placeholder="Name suchen…"
             className="w-full rounded-lg border border-zinc-800 bg-zinc-900 py-2 pr-3 pl-8 text-sm text-zinc-200 transition-colors placeholder:text-zinc-600 focus:border-zinc-700 focus:outline-none"
           />
         </div>
@@ -343,7 +344,7 @@ export function KundenVerwaltung() {
         <p className="text-sm text-zinc-500">Lade Kunden…</p>
       ) : zeilen.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-4 py-20">
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+          <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5">
             <Building2 size={32} className="text-zinc-600" />
           </div>
           <div className="text-center">
@@ -364,34 +365,26 @@ export function KundenVerwaltung() {
           </Button>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-zinc-800">
+        <div className="overflow-hidden rounded-2xl border border-zinc-800/60">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-zinc-800/60">
-                {[
-                  "Name",
-                  "Ansprechpartner",
-                  "Telefon",
-                  "Projekte",
-                  "Erstellt",
-                  "Aktionen",
-                ].map((s) => (
-                  <th
-                    key={s}
-                    className="px-3 pb-3 text-left text-xs font-semibold tracking-wider text-zinc-500 uppercase"
-                  >
-                    {s}
-                  </th>
-                ))}
+              <tr className="border-b border-zinc-800/60 bg-zinc-900/40">
+                {["Kunde", "Kontakt", "Projekte", "Erstellt", "Aktionen"].map(
+                  (s) => (
+                    <th
+                      key={s}
+                      className="px-4 py-3 text-left text-xs font-semibold tracking-wider text-zinc-500 uppercase"
+                    >
+                      {s}
+                    </th>
+                  )
+                )}
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-zinc-800/40">
               {gefiltert.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={6}
-                    className="px-3 py-8 text-center text-sm text-zinc-500"
-                  >
+                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-zinc-500">
                     Keine Treffer.
                   </td>
                 </tr>
@@ -399,38 +392,57 @@ export function KundenVerwaltung() {
                 gefiltert.map((kunde) => (
                   <tr
                     key={kunde.id}
-                    className="group border-b border-zinc-800/30 transition-colors hover:bg-zinc-900/40"
+                    className="group transition-colors hover:bg-zinc-900/40"
                   >
-                    <td className="px-3 py-3.5">
+                    <td className="px-4 py-3.5">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800 text-xs font-bold text-zinc-400">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-700/50 bg-zinc-800 text-xs font-bold text-zinc-400">
                           {kunde.company_name.slice(0, 2).toUpperCase()}
                         </div>
-                        <span className="text-sm font-semibold text-zinc-200">
-                          {kunde.company_name}
-                        </span>
+                        <div>
+                          <p className="text-sm font-semibold text-zinc-200">
+                            {kunde.company_name}
+                          </p>
+                          {kunde.email ? (
+                            <p className="text-xs text-zinc-600">{kunde.email}</p>
+                          ) : null}
+                        </div>
                       </div>
                     </td>
-                    <td className="px-3 py-3.5 text-sm text-zinc-400">
-                      {kunde.contact_name ?? "–"}
+                    <td className="px-4 py-3.5">
+                      <p className="text-sm text-zinc-400">
+                        {kunde.contact_name ?? "–"}
+                      </p>
+                      {kunde.phone ? (
+                        <p className="text-xs text-zinc-600">{kunde.phone}</p>
+                      ) : null}
                     </td>
-                    <td className="px-3 py-3.5 text-sm text-zinc-400">
-                      {kunde.phone ?? "–"}
+                    <td className="px-4 py-3.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold text-zinc-300 tabular-nums">
+                          {kunde.projekte.length}
+                        </span>
+                        <span className="text-xs text-zinc-600">Projekte</span>
+                        {kunde.projekte.slice(0, 2).map((p) => (
+                          <span
+                            key={p.id}
+                            className="rounded-md border border-zinc-700/50 bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-500"
+                          >
+                            {p.title}
+                          </span>
+                        ))}
+                      </div>
                     </td>
-                    <td className="px-3 py-3.5">
-                      <span className="text-sm font-semibold text-zinc-300">
-                        {kunde.projekte_count}
+                    <td className="px-4 py-3.5">
+                      <span className="text-xs text-zinc-600">
+                        {kunde.created_at
+                          ? format(new Date(kunde.created_at), "dd.MM.yyyy", {
+                              locale: de,
+                            })
+                          : "–"}
                       </span>
-                      <span className="ml-1 text-xs text-zinc-600">Projekte</span>
                     </td>
-                    <td className="px-3 py-3.5 text-xs text-zinc-500">
-                      {kunde.created_at
-                        ? format(new Date(kunde.created_at), "dd.MM.yyyy", {
-                            locale: de,
-                          })
-                        : "–"}
-                    </td>
-                    <td className="px-3 py-3.5">
+                    <td className="px-4 py-3.5">
                       <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                         <button
                           type="button"
@@ -568,4 +580,6 @@ export function KundenVerwaltung() {
       </Dialog>
     </div>
   );
-}
+});
+
+KundenVerwaltung.displayName = "KundenVerwaltung";

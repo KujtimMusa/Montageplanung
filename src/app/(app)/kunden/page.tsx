@@ -1,5 +1,5 @@
-import { KundenVerwaltung } from "@/components/kunden/KundenVerwaltung";
+import { redirect } from "next/navigation";
 
-export default function KundenSeite() {
-  return <KundenVerwaltung />;
+export default function KundenRedirect() {
+  redirect("/projekte?tab=kunden");
 }
