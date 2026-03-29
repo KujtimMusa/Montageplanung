@@ -271,7 +271,7 @@ export function MitarbeiterVerwaltung({
           supabase
             .from("employees")
             .select(
-              "id,name,email,role,active,department_id,auth_user_id,phone,whatsapp,team_id, departments!department_id(name), teams!team_id(name,farbe), employee_departments(department_id, ist_primaer, departments(name, color))"
+              "id,name,email,role,active,department_id,auth_user_id,phone,whatsapp,team_id, departments!department_id(name), teams!team_id(name,farbe)"
             )
             .order("name"),
           supabase.from("departments").select("id,name,color").order("name"),
@@ -306,7 +306,58 @@ export function MitarbeiterVerwaltung({
       );
       setTeams(teamListNormalisiert);
 
-      const empIds = (mitarbeiter ?? []).map((m) => m.id as string).filter(Boolean);
+      let rawList: Record<string, unknown>[] = (mitarbeiter ?? []).map((m) => ({
+        ...(m as Record<string, unknown>),
+      }));
+
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser();
+      const uid = authUser?.id ?? null;
+      if (
+        uid &&
+        !rawList.some(
+          (r) => (r.auth_user_id as string | null | undefined) === uid
+        )
+      ) {
+        const selfRes = await fetch("/api/profil/mitarbeiter-self");
+        if (selfRes.ok) {
+          const j = (await selfRes.json()) as {
+            mitarbeiter: Record<string, unknown> | null;
+          };
+          if (
+            j.mitarbeiter &&
+            !rawList.some((r) => r.id === j.mitarbeiter!.id)
+          ) {
+            rawList = [...rawList, { ...j.mitarbeiter }];
+          }
+        }
+      }
+
+      const empIds = rawList
+        .map((m) => m.id as string)
+        .filter((id): id is string => Boolean(id));
+
+      const edByEmp = new Map<string, Record<string, unknown>[]>();
+      if (empIds.length > 0) {
+        const { data: edRows, error: edErr } = await supabase
+          .from("employee_departments")
+          .select("employee_id, department_id, ist_primaer, departments(name, color)")
+          .in("employee_id", empIds);
+        if (!edErr && edRows) {
+          for (const row of edRows) {
+            const eid = row.employee_id as string;
+            if (!eid) continue;
+            if (!edByEmp.has(eid)) edByEmp.set(eid, []);
+            edByEmp.get(eid)!.push({
+              department_id: row.department_id,
+              ist_primaer: row.ist_primaer,
+              departments: row.departments,
+            });
+          }
+        }
+      }
+
       const teamLabelByEmp = new Map<string, string>();
       if (empIds.length > 0) {
         const { data: tmem } = await supabase
@@ -334,37 +385,16 @@ export function MitarbeiterVerwaltung({
         }
       }
 
-      let zeilenNeu = (mitarbeiter ?? []).map((m) => {
-        const z = zeileAusSupabase(
-          m as Record<string, unknown>,
-          abMap,
-          teamNameNachId
-        );
+      const zeilenNeu = rawList.map((m) => {
+        const id = m.id as string;
+        const merged: Record<string, unknown> = {
+          ...m,
+          employee_departments: edByEmp.get(id) ?? [],
+        };
+        const z = zeileAusSupabase(merged, abMap, teamNameNachId);
         const ausMitglied = teamLabelByEmp.get(z.id);
         return ausMitglied ? { ...z, teamName: ausMitglied } : z;
       });
-
-      const {
-        data: { user: authUser },
-      } = await supabase.auth.getUser();
-      const uid = authUser?.id ?? null;
-      if (
-        uid &&
-        !zeilenNeu.some((z) => z.auth_user_id === uid)
-      ) {
-        const selfRes = await fetch("/api/profil/mitarbeiter-self");
-        if (selfRes.ok) {
-          const j = (await selfRes.json()) as {
-            mitarbeiter: Record<string, unknown> | null;
-          };
-          if (j.mitarbeiter) {
-            const erg = zeileAusSupabase(j.mitarbeiter, abMap, teamNameNachId);
-            if (!zeilenNeu.some((z) => z.id === erg.id)) {
-              zeilenNeu = [...zeilenNeu, erg];
-            }
-          }
-        }
-      }
 
       setZeilen(zeilenNeu);
     } catch (e) {
