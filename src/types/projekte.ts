@@ -3,7 +3,8 @@ export type ProjektStatus =
   | "geplant"
   | "aktiv"
   | "pausiert"
-  | "abgeschlossen";
+  | "abgeschlossen"
+  | "kritisch";
 
 export type ProjektPrioritaet = "niedrig" | "normal" | "hoch" | "kritisch";
 
@@ -24,6 +25,11 @@ export const PROJEKT_STATUS: {
     value: "abgeschlossen",
     label: "Abgeschlossen",
     farbe: "bg-zinc-600/20 text-zinc-500",
+  },
+  {
+    value: "kritisch",
+    label: "Kritisch (Status)",
+    farbe: "bg-red-500/20 text-red-400",
   },
 ];
 

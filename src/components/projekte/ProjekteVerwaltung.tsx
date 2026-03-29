@@ -8,6 +8,7 @@ import { z } from "zod";
 import { addDays, format, isBefore, parseISO, startOfDay } from "date-fns";
 import {
   Activity,
+  Building2,
   CalendarClock,
   CalendarDays,
   Clock,
@@ -71,6 +72,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import {
+  STATUS_CONFIG,
+  STATUS_DIALOG_REIHENFOLGE,
+  autoStatus,
+} from "@/lib/projekt-status";
+import { KundeKombofeld } from "@/components/projekte/KundeKombofeld";
 
 const ANSICHT_KEY = "projekte-ansicht";
 
@@ -104,7 +111,14 @@ type EinsatzZeile = {
 const formSchema = z.object({
   title: z.string().min(1, "Titel erforderlich."),
   customer_id: z.string().optional(),
-  status: z.enum(["neu", "geplant", "aktiv", "pausiert", "abgeschlossen"]),
+  status: z.enum([
+    "neu",
+    "geplant",
+    "aktiv",
+    "pausiert",
+    "abgeschlossen",
+    "kritisch",
+  ]),
   priority: z.enum(["niedrig", "normal", "hoch", "kritisch"]),
   planned_start: z.string().optional(),
   planned_end: z.string().optional(),
@@ -359,6 +373,26 @@ export function ProjekteVerwaltung() {
     }
   }
 
+  const kundeSchnellAnlegen = useCallback(
+    async (name: string) => {
+      const { data, error } = await supabase
+        .from("customers")
+        .insert({ company_name: name, address: "—" })
+        .select("id, company_name")
+        .single();
+      if (error) throw error;
+      const row = data as KundeOpt;
+      setKunden((prev) =>
+        [...prev, row].sort((a, b) =>
+          a.company_name.localeCompare(b.company_name, "de")
+        )
+      );
+      toast.success("Kunde angelegt.");
+      return row;
+    },
+    [supabase]
+  );
+
   async function loeschenAusfuehren() {
     if (!loeschenId) return;
     setSpeichern(true);
@@ -384,13 +418,23 @@ export function ProjekteVerwaltung() {
   const heuteStr = format(heute, "yyyy-MM-dd");
   const in7 = format(addDays(heute, 7), "yyyy-MM-dd");
 
+  const effektiverStatus = useCallback(
+    (p: ProjektZeile) =>
+      autoStatus({
+        status: p.status,
+        planned_start: p.planned_start,
+        assignments_count: einsatzCounts[p.id] ?? 0,
+      }),
+    [einsatzCounts]
+  );
+
   const stats = useMemo(() => {
     let aktiv = 0;
     let geplant = 0;
     let kritisch = 0;
     let wocheFaellig = 0;
     for (const p of zeilen) {
-      const st = normalisiereStatus(p.status);
+      const st = effektiverStatus(p);
       const pr = normalisierePrioritaet(p.priority);
       if (st === "aktiv") aktiv++;
       if (st === "geplant") geplant++;
@@ -405,7 +449,7 @@ export function ProjekteVerwaltung() {
       }
     }
     return { aktiv, geplant, kritisch, wocheFaellig };
-  }, [zeilen, heuteStr, in7]);
+  }, [zeilen, heuteStr, in7, effektiverStatus]);
 
   const gefiltert = useMemo(() => {
     const q = filter.suche.trim().toLowerCase();
@@ -415,7 +459,7 @@ export function ProjekteVerwaltung() {
         const kunde = z.customers?.company_name?.toLowerCase() ?? "";
         if (!titel.includes(q) && !kunde.includes(q)) return false;
       }
-      if (filter.status !== "all" && normalisiereStatus(z.status) !== filter.status)
+      if (filter.status !== "all" && effektiverStatus(z) !== filter.status)
         return false;
       if (
         filter.prioritaet !== "all" &&
@@ -424,7 +468,7 @@ export function ProjekteVerwaltung() {
         return false;
       return true;
     });
-  }, [zeilen, filter]);
+  }, [zeilen, filter, effektiverStatus]);
 
   const hatFilter =
     Boolean(filter.suche.trim()) ||
@@ -436,8 +480,7 @@ export function ProjekteVerwaltung() {
   }
 
   function istUeberfaellig(p: ProjektZeile): boolean {
-    if (!p.planned_end || normalisiereStatus(p.status) === "abgeschlossen")
-      return false;
+    if (!p.planned_end || effektiverStatus(p) === "abgeschlossen") return false;
     try {
       return isBefore(parseISO(p.planned_end), heute);
     } catch {
@@ -645,7 +688,7 @@ export function ProjekteVerwaltung() {
             </TableHeader>
             <TableBody>
               {gefiltert.map((z) => {
-                const st = normalisiereStatus(z.status);
+                const st = effektiverStatus(z);
                 const pr = normalisierePrioritaet(z.priority);
                 const stMeta = PROJEKT_STATUS.find((s) => s.value === st);
                 const prMeta = PROJEKT_PRIORITAET.find((p) => p.value === pr);
@@ -661,8 +704,17 @@ export function ProjekteVerwaltung() {
                         {z.title}
                       </button>
                     </TableCell>
-                    <TableCell className="text-sm text-zinc-400">
-                      {z.customers?.company_name ?? "—"}
+                    <TableCell className="px-3 py-3.5">
+                      {z.customers?.company_name ? (
+                        <div className="flex items-center gap-1.5">
+                          <Building2 size={12} className="text-zinc-600" />
+                          <span className="text-sm text-zinc-400">
+                            {z.customers.company_name}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-sm text-zinc-700">–</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary" className={cn("font-normal", stMeta?.farbe)}>
@@ -732,7 +784,7 @@ export function ProjekteVerwaltung() {
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {gefiltert.map((z) => {
-            const st = normalisiereStatus(z.status);
+            const st = effektiverStatus(z);
             const pr = normalisierePrioritaet(z.priority);
             const stMeta = PROJEKT_STATUS.find((s) => s.value === st);
             const prMeta = PROJEKT_PRIORITAET.find((p) => p.value === pr);
@@ -844,29 +896,27 @@ export function ProjekteVerwaltung() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-zinc-300">Kunde (optional)</Label>
+              <Label className="text-zinc-300">Auftraggeber</Label>
               <Controller
                 control={form.control}
                 name="customer_id"
                 render={({ field }) => (
-                  <Select
-                    value={field.value || "__kein__"}
-                    onValueChange={(v) =>
-                      field.onChange(v === "__kein__" ? "" : v)
-                    }
-                  >
-                    <SelectTrigger className="border-zinc-800 bg-zinc-900">
-                      <SelectValue placeholder="Kein Kunde" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__kein__">Kein Kunde</SelectItem>
-                      {kunden.map((k) => (
-                        <SelectItem key={k.id} value={k.id}>
-                          {k.company_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <KundeKombofeld
+                    value={field.value?.trim() ? field.value : null}
+                    onChange={(id) => field.onChange(id ?? "")}
+                    kunden={kunden}
+                    onNeuAnlegen={async (name) => {
+                      try {
+                        return await kundeSchnellAnlegen(name);
+                      } catch (e) {
+                        const msg =
+                          e instanceof Error ? e.message : "Kunde konnte nicht angelegt werden.";
+                        toast.error(msg);
+                        throw e;
+                      }
+                    }}
+                    disabled={speichern}
+                  />
                 )}
               />
             </div>
@@ -883,15 +933,29 @@ export function ProjekteVerwaltung() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {PROJEKT_STATUS.map((s) => (
-                          <SelectItem key={s.value} value={s.value}>
-                            {s.label}
-                          </SelectItem>
-                        ))}
+                        {STATUS_DIALOG_REIHENFOLGE.map((val) => {
+                          const cfg = STATUS_CONFIG[val];
+                          if (!cfg) return null;
+                          return (
+                            <SelectItem key={val} value={val}>
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="size-2 shrink-0 rounded-full"
+                                  style={{ background: cfg.dot }}
+                                />
+                                {cfg.label}
+                              </div>
+                            </SelectItem>
+                          );
+                        })}
                       </SelectContent>
                     </Select>
                   )}
                 />
+                <p className="mt-1 text-xs text-zinc-600">
+                  Neu, Geplant und Aktiv richten sich nach Einsätzen und Startdatum in der Liste.
+                  Pausiert, Abgeschlossen und Kritisch (Status) setzt du hier manuell.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label className="text-zinc-300">Priorität *</Label>
@@ -942,21 +1006,21 @@ export function ProjekteVerwaltung() {
             </div>
 
             <div className="space-y-2">
+              <Label className="text-zinc-300">Baustellen-Adresse (optional)</Label>
+              <Input
+                className="border-zinc-800 bg-zinc-900"
+                placeholder="wird in der Planung als Hinweis genutzt"
+                {...form.register("baustelle_adresse")}
+              />
+            </div>
+
+            <div className="space-y-2">
               <Label className="text-zinc-300">Beschreibung (optional)</Label>
               <Textarea
                 className="resize-none border-zinc-800 bg-zinc-900"
                 rows={3}
                 placeholder="Kurzbeschreibung…"
                 {...form.register("description")}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-zinc-300">Baustellen-Adresse (optional)</Label>
-              <Input
-                className="border-zinc-800 bg-zinc-900"
-                placeholder="wird in der Planung als Hinweis genutzt"
-                {...form.register("baustelle_adresse")}
               />
             </div>
 
@@ -1044,13 +1108,13 @@ export function ProjekteVerwaltung() {
                     className={cn(
                       "font-normal",
                       PROJEKT_STATUS.find(
-                        (s) => s.value === normalisiereStatus(detailProjekt.status)
+                        (s) => s.value === effektiverStatus(detailProjekt)
                       )?.farbe
                     )}
                   >
                     {
                       PROJEKT_STATUS.find(
-                        (s) => s.value === normalisiereStatus(detailProjekt.status)
+                        (s) => s.value === effektiverStatus(detailProjekt)
                       )?.label
                     }
                   </Badge>
