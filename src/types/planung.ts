@@ -9,7 +9,7 @@ export type EinsatzTeamMitglied = {
 
 export type EinsatzEvent = {
   id: string;
-  employee_id: string;
+  employee_id: string | null;
   project_id: string | null;
   project_title: string | null;
   team_id: string | null;
@@ -82,7 +82,7 @@ export type ProjektOption = {
 
 export type BearbeitenZuweisung = {
   id: string;
-  employee_id: string;
+  employee_id: string | null;
   project_id: string | null;
   team_id: string | null;
   dienstleister_id: string | null;

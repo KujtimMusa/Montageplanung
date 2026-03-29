@@ -18,7 +18,7 @@ import {
   pruefeAbwesenheitKonfliktText,
   pruefeEinsatzKonflikt,
 } from "@/lib/utils/conflicts";
-import { getRepresentativeEmployeeId } from "@/lib/planung/team-representative";
+import { assignDistinctRepresentativesForTeams } from "@/lib/planung/team-representative";
 import { bumpProjektGeplantWennNeu } from "@/lib/planung/bump-projekt-geplant";
 import { dbPrioritaetZuUi, uiPrioritaetZuDb } from "@/lib/utils/priority";
 import { Button } from "@/components/ui/button";
@@ -331,27 +331,6 @@ export function EinsatzNeuDialog({
       return;
     }
 
-    async function resolveEmpId(einTeam: string, einDl: string): Promise<string | null> {
-      if (einTeam) {
-        const id = await getRepresentativeEmployeeId(supabase, einTeam);
-        if (!id) {
-          toast.error("Im Team ist kein Mitarbeiter hinterlegt (Vertreter fehlt).");
-          return null;
-        }
-        return id;
-      }
-      if (einDl) {
-        if (!eigeneMitarbeiterId) {
-          toast.error(
-            "Für Einsätze nur mit Dienstleister ist ein verknüpfter Mitarbeiter-Account nötig."
-          );
-          return null;
-        }
-        return eigeneMitarbeiterId;
-      }
-      return null;
-    }
-
     const tage = eachDayOfInterval({
       start: parseISO(werte.date_von),
       end: parseISO(werte.date_bis),
@@ -362,11 +341,28 @@ export function EinsatzNeuDialog({
       ...dlListe.map((d) => ({ team: "", dl: d })),
     ];
 
+    const teamNameById = new Map(teams.map((t) => [t.id, t.name]));
+    const { byTeam: teamRepMap, error: repErr } =
+      await assignDistinctRepresentativesForTeams(supabase, teamListe, teamNameById);
+    if (repErr) {
+      toast.error(repErr);
+      return;
+    }
+
+    function empFuerKombo(einTeam: string, einDl: string): string | null {
+      if (einTeam) return teamRepMap.get(einTeam) ?? null;
+      if (einDl) return null;
+      return null;
+    }
+
     const ausserhalbEinsatzId = bearbeiten?.id;
 
     for (const { team: einTeam, dl: einDl } of kombos) {
-      const empId = await resolveEmpId(einTeam, einDl);
-      if (!empId) return;
+      const empId = empFuerKombo(einTeam, einDl);
+      if (einTeam && !empId) {
+        toast.error("Interner Fehler: Team ohne Mitarbeiterzuordnung.");
+        return;
+      }
       const abwText = await pruefeAbwesenheitKonfliktText(supabase, {
         mitarbeiterId: empId,
         von: werte.date_von,
@@ -405,8 +401,11 @@ export function EinsatzNeuDialog({
 
     let insgesamt = 0;
     for (const { team: einTeam, dl: einDl } of kombos) {
-      const empId = await resolveEmpId(einTeam, einDl);
-      if (!empId) return;
+      const empId = empFuerKombo(einTeam, einDl);
+      if (einTeam && !empId) {
+        toast.error("Interner Fehler: Team ohne Mitarbeiterzuordnung.");
+        return;
+      }
       const insertBase: Record<string, unknown> = {
         employee_id: empId,
         project_id: werte.projekt_id,

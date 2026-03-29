@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { addDays, endOfWeek, format } from "date-fns";
+import { addDays, format, parseISO, startOfWeek } from "date-fns";
 import { de } from "date-fns/locale";
 import { GripVertical, Users } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -84,8 +84,9 @@ type Props = {
   heuteAbwesenheiten: number;
   zuweisungen: EinsatzEvent[];
   abwesenheiten: AbwesenheitRow[];
-  /** Montag der im Kalender sichtbaren Woche */
-  wocheStart: Date;
+  /** Inklusiver Kalenderzeitraum (yyyy-MM-dd) für Auslastung & Filter */
+  sichtbarVon: string;
+  sichtbarBis: string;
 };
 
 export function TeamsSidebar({
@@ -96,7 +97,8 @@ export function TeamsSidebar({
   heuteAbwesenheiten,
   zuweisungen,
   abwesenheiten,
-  wocheStart,
+  sichtbarVon,
+  sichtbarBis,
 }: Props) {
   const dienstleisterAktiv = dienstleister.filter(
     (d) => d.status === "aktiv" || d.status === "partner"
@@ -110,33 +112,44 @@ export function TeamsSidebar({
     return m;
   }, [teams]);
 
-  const wocheEndeSichtbar = endOfWeek(wocheStart, { weekStartsOn: 1 });
-  const vonIso = format(wocheStart, "yyyy-MM-dd");
-  const bisIso = format(wocheEndeSichtbar, "yyyy-MM-dd");
+  const vonIso = sichtbarVon;
+  const bisIso = sichtbarBis;
+  /** Montag der Woche, die den sichtbaren Zeitraum beginnt (Mo–So-Kapseln) */
+  const wocheStart = startOfWeek(parseISO(sichtbarVon), { weekStartsOn: 1 });
 
   return (
     <TooltipProvider>
     <div className="flex h-full min-h-0 flex-col bg-zinc-950">
       <Tabs defaultValue="teams" className="flex min-h-0 flex-1 flex-col">
-        <div className="flex h-[52px] shrink-0 items-center justify-between border-b border-zinc-800/60 px-4">
-          <h2 className="text-xs font-semibold tracking-wider text-zinc-400 uppercase">
-            Ressourcen
-          </h2>
-          <TabsList className="h-8 shrink-0 gap-0.5 bg-zinc-900 p-0.5">
-            <TabsTrigger value="teams" className="gap-1 px-2 py-0.5 text-[10px] font-semibold">
-              <Users className="size-3 opacity-70" aria-hidden />
-              Teams
-              <Badge variant="secondary" className="h-4 px-1 text-[9px] tabular-nums">
-                {teams.length}
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="partner" className="px-2 py-0.5 text-[10px] font-semibold">
-              Partner
-              <Badge variant="secondary" className="h-4 px-1 text-[9px] tabular-nums">
-                {dienstleisterAktiv.length}
-              </Badge>
-            </TabsTrigger>
-          </TabsList>
+        <div className="shrink-0 border-b border-zinc-800/60">
+          <div className="flex h-10 items-center px-4 pt-2">
+            <h2 className="text-xs font-semibold tracking-wider text-zinc-400 uppercase">
+              Ressourcen
+            </h2>
+          </div>
+          <div className="px-2 pb-2">
+            <TabsList className="grid h-9 w-full grid-cols-2 gap-1 bg-zinc-900/90 p-1">
+              <TabsTrigger
+                value="teams"
+                className="gap-1.5 px-2 py-1.5 text-[10px] font-semibold data-[state=active]:bg-zinc-800"
+              >
+                <Users className="size-3 opacity-70" aria-hidden />
+                Teams
+                <Badge variant="secondary" className="h-4 px-1 text-[9px] tabular-nums">
+                  {teams.length}
+                </Badge>
+              </TabsTrigger>
+              <TabsTrigger
+                value="partner"
+                className="gap-1 px-2 py-1.5 text-[10px] font-semibold data-[state=active]:bg-zinc-800"
+              >
+                Partner
+                <Badge variant="secondary" className="h-4 px-1 text-[9px] tabular-nums">
+                  {dienstleisterAktiv.length}
+                </Badge>
+              </TabsTrigger>
+            </TabsList>
+          </div>
         </div>
 
         <TabsContent

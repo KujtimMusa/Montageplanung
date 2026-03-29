@@ -12,7 +12,7 @@ export type KonfliktErgebnis = {
 export async function pruefeEinsatzKonflikt(
   supabase: SupabaseClient,
   parameter: {
-    mitarbeiterId: string;
+    mitarbeiterId: string | null;
     datum: string;
     startZeit: string;
     endZeit: string;
@@ -21,6 +21,14 @@ export async function pruefeEinsatzKonflikt(
 ): Promise<KonfliktErgebnis> {
   const { mitarbeiterId, datum, startZeit, endZeit, ausserhalbEinsatzId } =
     parameter;
+
+  if (!mitarbeiterId) {
+    return {
+      hatKonflikt: false,
+      nachricht: "",
+      kollidierendeEinsatzIds: [],
+    };
+  }
 
   const { data: bestehend, error } = await supabase
     .from("assignments")
@@ -94,12 +102,13 @@ const TYP_LABEL: Record<string, string> = {
 export async function pruefeAbwesenheitKonfliktText(
   supabase: SupabaseClient,
   parameter: {
-    mitarbeiterId: string;
+    mitarbeiterId: string | null;
     von: string;
     bis: string;
   }
 ): Promise<string | null> {
   const { mitarbeiterId, von, bis } = parameter;
+  if (!mitarbeiterId) return null;
 
   const { data: rows, error } = await supabase
     .from("absences")

@@ -21,15 +21,18 @@ type ProjektGruppe = {
 };
 
 const GRUPPEN: ProjektGruppe[] = [
-  { id: "geplant", label: "Geplant/Aktiv", dot: "#10b981" },
   { id: "noch", label: "Noch einplanen", dot: "#3b82f6" },
+  { id: "geplant", label: "Geplant/Aktiv", dot: "#10b981" },
   { id: "abgeschlossen", label: "Abgeschlossen", dot: "#22c55e" },
 ];
 
 type Props = {
   projekteAlle: ProjektOption[];
-  einsatzCountByProjektWoche: Record<string, number>;
+  /** Einsätze im aktuell gewählten Kalenderzeitraum (Woche oder Monat) */
+  einsatzCountByProjektImRaster: Record<string, number>;
   einsatzCountByProjekt: Record<string, number>;
+  /** z. B. „diese Woche“ oder „im März 2026“ */
+  rasterZeitraumLabel: string;
 };
 
 function prioRang(prio: string): number {
@@ -60,8 +63,9 @@ function sidebarBucket(
 
 export function ProjekteSidebar({
   projekteAlle,
-  einsatzCountByProjektWoche,
+  einsatzCountByProjektImRaster,
   einsatzCountByProjekt,
+  rasterZeitraumLabel,
 }: Props) {
   const router = useRouter();
   const [offen, setOffen] = useState<Record<string, boolean>>({
@@ -110,7 +114,7 @@ export function ProjekteSidebar({
       PRIORITAET_FARBEN[prio] ?? PRIORITAET_FARBEN.normal ?? "#3b82f6";
     const statusKey = (p.status ?? "neu").toLowerCase();
     const kunde = p.customerLabel?.trim() || null;
-    const wocheN = einsatzCountByProjektWoche[p.id] ?? 0;
+    const rasterN = einsatzCountByProjektImRaster[p.id] ?? 0;
     const projektHex = p.farbe?.trim();
     const punkt = projektHex || prioFarbe;
     const dataEvent = JSON.stringify({
@@ -167,7 +171,7 @@ export function ProjekteSidebar({
           ) : null}
           {gruppeId === "geplant" ? (
             <p className="mt-1 text-[10px] text-zinc-500">
-              {wocheN} Einsatz{wocheN === 1 ? "" : "e"} diese Woche
+              {rasterN} Einsatz{rasterN === 1 ? "" : "e"} {rasterZeitraumLabel}
             </p>
           ) : null}
           {gruppeId === "noch" ? (
@@ -201,7 +205,6 @@ export function ProjekteSidebar({
           {GRUPPEN.map((gruppe) => {
             const liste = projekteProGruppe[gruppe.id];
             const expanded = offen[gruppe.id] ?? true;
-            if (liste.length === 0) return null;
             return (
               <div key={gruppe.id} className="mb-3">
                 <button
@@ -221,7 +224,13 @@ export function ProjekteSidebar({
                   <span className="text-zinc-700">{liste.length}</span>
                 </button>
                 {expanded ? (
-                  <div>{liste.map((pr) => projektKarte(pr, gruppe.id))}</div>
+                  liste.length === 0 ? (
+                    <p className="rounded-md border border-dashed border-zinc-800/60 px-2 py-3 text-center text-[10px] text-zinc-600">
+                      Keine Projekte
+                    </p>
+                  ) : (
+                    <div>{liste.map((pr) => projektKarte(pr, gruppe.id))}</div>
+                  )
                 ) : null}
               </div>
             );

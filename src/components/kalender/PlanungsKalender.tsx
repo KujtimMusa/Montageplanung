@@ -4,55 +4,27 @@ import { useSearchParams, useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
-  useRef,
   useState,
   type DragEvent as ReactDragEvent,
 } from "react";
 import {
-  ScheduleComponent,
-  ViewsDirective,
-  ViewDirective,
-  ResourcesDirective,
-  ResourceDirective,
-  Inject,
-  TimelineViews,
-  TimelineMonth,
-  Resize,
-  DragAndDrop,
-} from "@syncfusion/ej2-react-schedule";
-import type {
-  CellClickEventArgs,
-  DragEventArgs,
-  EventClickArgs,
-  PopupOpenEventArgs,
-  ResizeEventArgs,
-} from "@syncfusion/ej2-schedule";
-import {
   addDays,
   addMonths,
   eachDayOfInterval,
+  endOfMonth,
   endOfWeek,
   format,
-  isSameDay,
   parseISO,
+  startOfMonth,
   startOfWeek,
 } from "date-fns";
 import { de } from "date-fns/locale";
-import { Clock, MapPin, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { cn } from "@/lib/utils";
 import { ortLabelFromProjektJoin } from "@/lib/planung/ort-label";
-import { PRIORITAET_FARBEN } from "@/lib/constants/planung-farben";
 import { pruefeEinsatzKonflikt } from "@/lib/utils/conflicts";
 import { getRepresentativeEmployeeId } from "@/lib/planung/team-representative";
-import { registerSyncfusion } from "@/lib/syncfusion/register";
 import { bumpProjektGeplantWennNeu } from "@/lib/planung/bump-projekt-geplant";
-import {
-  transformiereEinsatz,
-  type SyncfusionEvent,
-} from "@/lib/syncfusion/transform";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import {
@@ -66,6 +38,7 @@ import {
   PlanungWochenRaster,
   formatPlanungWocheLabel,
 } from "@/components/kalender/PlanungWochenRaster";
+import { PlanungMonatsRaster } from "@/components/kalender/PlanungMonatsRaster";
 import { ProjekteSidebar } from "@/components/kalender/ProjekteSidebar";
 import { TeamsSidebar } from "@/components/kalender/TeamsSidebar";
 import { EinsatzEventDetailFloating } from "@/components/kalender/EinsatzEventDetail";
@@ -74,7 +47,6 @@ import {
   subcontractorRowToDienstleister,
   type Dienstleister,
 } from "@/types/dienstleister";
-registerSyncfusion();
 
 function teamHatKonflikt(
   teamId: string,
@@ -115,29 +87,6 @@ function mapProjektRow(p: Record<string, unknown>): ProjektOption {
   };
 }
 
-function prioRangUngeplant(prio: string): number {
-  switch (prio) {
-    case "kritisch":
-      return 1;
-    case "hoch":
-      return 2;
-    case "normal":
-    case "mittel":
-      return 3;
-    case "niedrig":
-      return 4;
-    default:
-      return 5;
-  }
-}
-
-function projektBalkenFarbe(z: EinsatzEvent): string {
-  const pf = z.projects?.farbe?.trim();
-  if (pf) return pf;
-  const prio = z.projects?.priority ?? "normal";
-  return PRIORITAET_FARBEN[prio] ?? "#3b82f6";
-}
-
 function parseTeamMitglieder(team: unknown): { id: string; name: string }[] {
   const t = team as
     | { team_members?: Array<{ employees?: unknown }> }
@@ -155,233 +104,10 @@ function parseTeamMitglieder(team: unknown): { id: string; name: string }[] {
   return out;
 }
 
-function hexSuffix(farbe: string, suf: string): string {
-  const f = farbe.trim();
-  return /^#[0-9A-Fa-f]{6}$/.test(f) ? `${f}${suf}` : "#3b82f682";
-}
-
-function statusFarbeRessource(status: string | undefined): string {
-  const s = (status ?? "").toLowerCase();
-  const map: Record<string, string> = {
-    neu: "#52525b",
-    offen: "#3b82f6",
-    geplant: "#10b981",
-    aktiv: "#10b981",
-    abgeschlossen: "#22c55e",
-    kritisch: "#ef4444",
-  };
-  return map[s] ?? "#52525b";
-}
-
-function RessourceHeaderTemplate(
-  props: Record<string, unknown> & {
-    resourceData?: Record<string, unknown>;
-  }
-) {
-  const projekt = (props.resourceData ?? props) as Record<string, unknown>;
-  const platzhalter = Boolean(projekt.platzhalter);
-  const titel = String(projekt.title ?? projekt.Subject ?? "");
-  const st = String(projekt.status ?? "neu");
-  const punkt =
-    String(projekt.farbe ?? "").trim() ||
-    String(projekt.prioFarbe ?? "").trim() ||
-    "#3b82f6";
-  const statusFarbe = statusFarbeRessource(st);
-  const statusLabel = st || "offen";
-
-  if (platzhalter) {
-    return (
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          padding: "0 12px",
-          height: "100%",
-          overflow: "hidden",
-        }}
-      >
-        <span style={{ fontSize: 12, color: "#71717a" }}>{titel}</span>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "0 12px",
-        height: "100%",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: "50%",
-          background: punkt,
-          flexShrink: 0,
-        }}
-      />
-      <div style={{ minWidth: 0 }}>
-        <div
-          style={{
-            fontSize: 12,
-            fontWeight: 600,
-            color: "#e4e4e7",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {titel}
-        </div>
-        <div
-          style={{
-            fontSize: 10,
-            color: statusFarbe,
-            marginTop: 1,
-            fontWeight: 500,
-            textTransform: "capitalize",
-          }}
-        >
-          {statusLabel}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EinsatzTemplate(props: Record<string, unknown>) {
-  const e = props as SyncfusionEvent;
-  const farbe = (e.TeamFarbe as string) ?? "#3b82f6";
-  const kompakt = Boolean(e.KompaktMonat);
-  const titel =
-    String(e.ProjektTitel ?? "").trim() ||
-    String(e.Subject ?? "").split(" · ")[0] ||
-    "Einsatz";
-  const zeit = String(e.ZeitLabel ?? "");
-  const ort = String(e.OrtLabel ?? "");
-  const hatKonflikt = Boolean(e.HatKonflikt);
-  const kritisch = Boolean(e.Kritisch);
-
-  const teamInitial =
-    e.RolleTag === "Team" && e.RolleName
-      ? e.RolleName.trim().slice(0, 1).toUpperCase()
-      : "";
-
-  if (kompakt) {
-    return (
-      <div
-        className="group relative flex h-[22px] w-full cursor-pointer items-center overflow-hidden rounded-md transition-all hover:brightness-110"
-        style={{
-          background: hexSuffix(farbe, "18"),
-        }}
-        title={[titel, zeit, ort].filter(Boolean).join(" · ")}
-      >
-        <div
-          className="h-full w-[3px] shrink-0"
-          style={{ background: kritisch ? "#ef4444" : farbe }}
-        />
-        <span
-          className="min-w-0 flex-1 truncate px-1.5 text-[11px] leading-[22px] font-medium text-zinc-200"
-        >
-          {titel}
-        </span>
-        {teamInitial ? (
-          <div
-            className="mr-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-zinc-700 text-[9px] font-bold"
-            style={{
-              background: hexSuffix(farbe, "30"),
-              color: farbe,
-            }}
-          >
-            {teamInitial}
-          </div>
-        ) : null}
-        {hatKonflikt ? (
-          <div className="mr-1 size-[5px] shrink-0 rounded-full bg-orange-500" />
-        ) : null}
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="group relative h-full min-h-[32px] w-full cursor-pointer overflow-visible rounded-md transition-all hover:brightness-110"
-      style={{
-        background: hexSuffix(farbe, "18"),
-        borderLeft: `3px solid ${kritisch ? "#ef4444" : farbe}`,
-      }}
-      title={[titel, zeit, ort].filter(Boolean).join(" · ")}
-    >
-      <div className="flex h-full items-center gap-1.5 p-1.5">
-        <div
-          className="size-2 shrink-0 rounded-full"
-          style={{ background: farbe }}
-        />
-        <span className="min-w-0 flex-1 truncate text-xs leading-tight font-semibold text-zinc-200">
-          {titel}
-        </span>
-        {e.RolleName ? (
-          <div
-            className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-zinc-700 text-[9px] font-bold"
-            style={{
-              background: hexSuffix(farbe, "30"),
-              color: farbe,
-            }}
-          >
-            {e.RolleName.trim().slice(0, 1).toUpperCase()}
-          </div>
-        ) : null}
-        {hatKonflikt ? (
-          <span className="shrink-0 text-[9px] font-semibold text-orange-400">
-            !
-          </span>
-        ) : null}
-      </div>
-
-      <div
-        className="pointer-events-none absolute top-full left-0 z-[120] mt-1 hidden min-w-[12rem] rounded-xl border border-zinc-700 bg-zinc-900 p-3 text-xs shadow-2xl group-hover:pointer-events-auto group-hover:block"
-      >
-        <p className="text-sm font-semibold text-zinc-200">{titel}</p>
-        {e.RolleName ? (
-          <div className="mt-1.5 flex items-center gap-1.5 text-zinc-400">
-            <Users size={11} className="shrink-0 opacity-80" />
-            <span>
-              {e.RolleTag} {e.RolleName}
-            </span>
-          </div>
-        ) : null}
-        {zeit ? (
-          <div className="mt-1 flex items-center gap-1.5 text-zinc-400">
-            <Clock size={11} className="shrink-0 opacity-80" />
-            <span className="tabular-nums">{zeit}</span>
-          </div>
-        ) : null}
-        {ort ? (
-          <div className="mt-1 flex items-center gap-1.5 text-zinc-400">
-            <MapPin size={11} className="shrink-0 opacity-80" />
-            <span className="break-words">{ort}</span>
-          </div>
-        ) : null}
-        <p className="mt-2 border-t border-zinc-800 pt-1.5 text-[10px] text-zinc-600">
-          Klicken für Details
-        </p>
-      </div>
-    </div>
-  );
-}
-
 export function PlanungsKalender() {
   const supabase = useMemo(() => createClient(), []);
   const searchParams = useSearchParams();
   const router = useRouter();
-  const scheduleRef = useRef<ScheduleComponent>(null);
-  const scheduleHostRef = useRef<HTMLDivElement>(null);
-  const [scheduleHoehePx, setScheduleHoehePx] = useState(560);
   const [teamsListe, setTeamsListe] = useState<TeamOption[]>([]);
   const [zuweisungen, setZuweisungen] = useState<EinsatzEvent[]>([]);
   const [abwesenheiten, setAbwesenheiten] = useState<AbwesenheitRow[]>([]);
@@ -428,11 +154,10 @@ export function PlanungsKalender() {
   const [detailOffen, setDetailOffen] = useState(false);
   const [loeschenDialogOffen, setLoeschenDialogOffen] = useState(false);
 
-  const [zeitraumLabel, setZeitraumLabel] = useState("");
-
   const [wocheAnker, setWocheAnker] = useState(() =>
     startOfWeek(new Date(), { weekStartsOn: 1 })
   );
+  const [monatAnker, setMonatAnker] = useState(() => startOfMonth(new Date()));
 
   const projekteById = useMemo(() => {
     const m = new Map<string, ProjektOption>();
@@ -444,8 +169,8 @@ export function PlanungsKalender() {
 
   const toolbarZeitraum = useMemo(() => {
     if (kalenderAnsicht === "week") return formatPlanungWocheLabel(wocheAnker);
-    return zeitraumLabel;
-  }, [kalenderAnsicht, wocheAnker, zeitraumLabel]);
+    return format(monatAnker, "MMMM yyyy", { locale: de });
+  }, [kalenderAnsicht, wocheAnker, monatAnker]);
 
   useEffect(() => {
     if (kalenderAnsicht !== "week") return;
@@ -454,22 +179,12 @@ export function PlanungsKalender() {
     setSichtbarerZeitraum({ start, end });
   }, [kalenderAnsicht, wocheAnker]);
 
-  useLayoutEffect(() => {
-    if (!kalenderBereit || kalenderAnsicht !== "month") return;
-    const el = scheduleHostRef.current;
-    if (!el) return;
-    const sync = () => {
-      const r = el.getBoundingClientRect();
-      const next = Math.max(320, Math.floor(r.height));
-      setScheduleHoehePx((prev) =>
-        Math.abs(prev - next) > 2 ? next : prev
-      );
-    };
-    sync();
-    const ro = new ResizeObserver(sync);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [kalenderBereit, kalenderAnsicht]);
+  useEffect(() => {
+    if (kalenderAnsicht !== "month") return;
+    const start = startOfMonth(monatAnker);
+    const end = addDays(endOfMonth(monatAnker), 1);
+    setSichtbarerZeitraum({ start, end });
+  }, [kalenderAnsicht, monatAnker]);
 
   const laden = useCallback(async () => {
     try {
@@ -709,7 +424,7 @@ export function PlanungsKalender() {
             : false;
           return {
             id: row.id as string,
-            employee_id: row.employee_id as string,
+            employee_id: (row.employee_id as string | null) ?? null,
             project_id: (row.project_id as string | null) ?? null,
             project_title: (row.project_title as string | null) ?? null,
             team_id: tid,
@@ -813,45 +528,6 @@ export function PlanungsKalender() {
     setDialogOffen(true);
   }, [dlQuery, kalenderBereit, teamsListe, dienstleisterListe, router]);
 
-  const projektRessourcenSf = useMemo(() => {
-    if (projekteAktiv.length === 0) {
-      return [
-        {
-          Id: "_leer",
-          Subject: "Keine Projekte",
-          title: "Keine Projekte",
-          status: "neu",
-          farbe: "#64748b",
-          prioFarbe: "#64748b",
-          platzhalter: true,
-          kunde: "",
-        },
-      ];
-    }
-    const sorted = [...projekteAktiv].sort((a, b) => {
-      const pa = prioRangUngeplant(a.priority ?? "normal");
-      const pb = prioRangUngeplant(b.priority ?? "normal");
-      if (pa !== pb) return pa - pb;
-      return a.title.localeCompare(b.title, "de");
-    });
-    return sorted.map((p) => {
-      const prio = p.priority ?? "normal";
-      const prioFarbe =
-        PRIORITAET_FARBEN[prio] ?? PRIORITAET_FARBEN.normal ?? "#3b82f6";
-      const projektHex = p.farbe?.trim();
-      return {
-        Id: p.id,
-        Subject: p.title,
-        title: p.title,
-        status: p.status ?? "neu",
-        farbe: projektHex || prioFarbe,
-        prioFarbe,
-        platzhalter: false,
-        kunde: p.customerLabel?.trim() || "",
-      };
-    });
-  }, [projekteAktiv]);
-
   const abwesenheitCountProTag = useMemo(() => {
     const acc: Record<string, number> = {};
     for (const a of abwesenheiten) {
@@ -895,17 +571,23 @@ export function PlanungsKalender() {
     return acc;
   }, [zuweisungen, sichtbarerZeitraum]);
 
-  const einsatzCountByProjektWoche = useMemo(() => {
+  const einsatzCountByProjektImRaster = useMemo(() => {
     const acc: Record<string, number> = {};
-    const start = format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
-    const end = format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
+    if (!sichtbarerZeitraum) return acc;
+    const start = format(sichtbarerZeitraum.start, "yyyy-MM-dd");
+    const end = format(addDays(sichtbarerZeitraum.end, -1), "yyyy-MM-dd");
     for (const z of zuweisungen) {
       if (!z.project_id) continue;
       if (z.date < start || z.date > end) continue;
       acc[z.project_id] = (acc[z.project_id] ?? 0) + 1;
     }
     return acc;
-  }, [zuweisungen]);
+  }, [zuweisungen, sichtbarerZeitraum]);
+
+  const rasterZeitraumLabel = useMemo(() => {
+    if (kalenderAnsicht === "week") return "diese Woche";
+    return `im ${format(monatAnker, "MMMM yyyy", { locale: de })}`;
+  }, [kalenderAnsicht, monatAnker]);
 
   const einsatzCountByProjekt = useMemo(() => {
     const acc: Record<string, number> = {};
@@ -931,17 +613,6 @@ export function PlanungsKalender() {
     }
     return ids.size;
   }, [abwesenheiten]);
-
-  const syncfusionEvents: SyncfusionEvent[] = useMemo(() => {
-    const kompakt = kalenderAnsicht === "month";
-    return zuweisungen
-      .filter((z) => z.project_id)
-      .map((z) => {
-        const barFarbe = projektBalkenFarbe(z);
-        const hatKonflikt = z.hatKonflikt ?? false;
-        return transformiereEinsatz(z, hatKonflikt, barFarbe, kompakt);
-      });
-  }, [zuweisungen, kalenderAnsicht]);
 
   const teamAufZelleLegen = useCallback(
     async (teamId: string, projectId: string, datum: string): Promise<void> => {
@@ -1064,50 +735,21 @@ export function PlanungsKalender() {
     [teamsListe]
   );
 
-  const syncZeitraumFromSchedule = useCallback(() => {
-    const sch = scheduleRef.current;
-    if (!sch) return;
-    const dates = sch.getCurrentViewDates();
-    if (!dates?.length) return;
-    const start = dates[0];
-    const end = dates[dates.length - 1];
-    setSichtbarerZeitraum({ start, end: addDays(end, 1) });
-    if (kalenderAnsicht === "week") {
-      setZeitraumLabel(
-        `${format(start, "d.", { locale: de })} – ${format(end, "d. MMMM yyyy", { locale: de })}`
-      );
-    } else {
-      setZeitraumLabel(format(start, "MMMM yyyy", { locale: de }));
-    }
-  }, [kalenderAnsicht]);
-
   const setzeAnsicht = useCallback((art: "week" | "month") => {
-    if (art === "week") {
-      const sch = scheduleRef.current;
-      if (sch) {
-        const d = new Date(sch.selectedDate);
-        setWocheAnker(startOfWeek(d, { weekStartsOn: 1 }));
-      }
+    if (art === "month") {
+      setMonatAnker(startOfMonth(wocheAnker));
+    } else {
+      setWocheAnker(startOfWeek(monatAnker, { weekStartsOn: 1 }));
     }
     setKalenderAnsicht(art);
-    if (art === "month") {
-      queueMicrotask(() => {
-        const sch = scheduleRef.current;
-        sch?.changeView("TimelineMonth");
-        sch?.changeDate(new Date(wocheAnker));
-      });
-    }
-  }, [wocheAnker]);
+  }, [wocheAnker, monatAnker]);
 
   const handlePrev = useCallback(() => {
     if (kalenderAnsicht === "week") {
       setWocheAnker((d) => addDays(d, -7));
       return;
     }
-    const sch = scheduleRef.current;
-    if (!sch) return;
-    const d = new Date(sch.selectedDate);
-    sch.changeDate(addMonths(d, -1));
+    setMonatAnker((d) => addMonths(d, -1));
   }, [kalenderAnsicht]);
 
   const handleNext = useCallback(() => {
@@ -1115,16 +757,13 @@ export function PlanungsKalender() {
       setWocheAnker((d) => addDays(d, 7));
       return;
     }
-    const sch = scheduleRef.current;
-    if (!sch) return;
-    const d = new Date(sch.selectedDate);
-    sch.changeDate(addMonths(d, 1));
+    setMonatAnker((d) => addMonths(d, 1));
   }, [kalenderAnsicht]);
 
   const handleHeute = useCallback(() => {
     const heute = new Date();
     setWocheAnker(startOfWeek(heute, { weekStartsOn: 1 }));
-    scheduleRef.current?.changeDate(heute);
+    setMonatAnker(startOfMonth(heute));
   }, []);
 
   const beiDragOderResize = useCallback(
@@ -1154,7 +793,7 @@ export function PlanungsKalender() {
       }
 
       const k = await pruefeEinsatzKonflikt(supabase, {
-        mitarbeiterId: empId,
+        mitarbeiterId: empId ?? null,
         datum,
         startZeit,
         endZeit,
@@ -1187,98 +826,6 @@ export function PlanungsKalender() {
       return true;
     },
     [zuweisungen, supabase, laden]
-  );
-
-  const projektIdByGroupIndex = useCallback(
-    (groupIndex: number | undefined) => {
-      if (groupIndex === undefined || groupIndex < 0) return null;
-      return projektRessourcenSf[groupIndex]?.Id ?? null;
-    },
-    [projektRessourcenSf]
-  );
-
-  const onDragStop = useCallback(
-    async (args: DragEventArgs) => {
-      args.cancel = true;
-      const raw = args.data as Record<string, unknown>;
-      const id = String(raw.Id ?? "");
-      const gi = args.groupIndex ?? 0;
-      const newProjectId = projektIdByGroupIndex(gi);
-      const start = args.startTime ?? (raw.StartTime as Date);
-      const ende = args.endTime ?? (raw.EndTime as Date);
-      if (!id || !newProjectId || !start || !ende) return;
-      await beiDragOderResize(id, newProjectId, start, ende);
-    },
-    [beiDragOderResize, projektIdByGroupIndex]
-  );
-
-  const onResizeStop = useCallback(
-    async (args: ResizeEventArgs) => {
-      args.cancel = true;
-      const raw = args.data as Record<string, unknown>;
-      const id = String(raw.Id ?? "");
-      const gi = args.groupIndex ?? 0;
-      const newProjectId = projektIdByGroupIndex(gi);
-      const start = args.startTime ?? (raw.StartTime as Date);
-      const ende = args.endTime ?? (raw.EndTime as Date);
-      if (!id || !newProjectId || !start || !ende) return;
-      await beiDragOderResize(id, newProjectId, start, ende);
-    },
-    [beiDragOderResize, projektIdByGroupIndex]
-  );
-
-  const onEventClick = useCallback((args: EventClickArgs) => {
-    args.cancel = true;
-    const raw = args.event;
-    const ev = Array.isArray(raw) ? raw[0] : raw;
-    const z = (ev as SyncfusionEvent | undefined)?.OriginalZuweisung;
-    if (!z || (!z.team_id && !z.dienstleister_id)) return;
-    const el = Array.isArray(args.element) ? args.element[0] : args.element;
-    const rect = el.getBoundingClientRect();
-    setDetailZuweisung(z);
-    setDetailPosition({ top: rect.bottom + 4, left: rect.left });
-    setDetailOffen(true);
-  }, []);
-
-  const onCellClick = useCallback(
-    (args: CellClickEventArgs) => {
-      args.cancel = true;
-      const projId = projektIdByGroupIndex(args.groupIndex);
-      if (!projId || projId === "_leer") {
-        toast.info("Bitte eine Projekt-Zeile und einen Tag wählen.");
-        return;
-      }
-      dialogNeuOeffnen({
-        projekt_id: projId,
-        team_id: teamsListe[0]?.id,
-        date: format(args.startTime, "yyyy-MM-dd"),
-        start_time: format(args.startTime, "HH:mm"),
-        end_time: format(args.endTime, "HH:mm"),
-      });
-    },
-    [projektIdByGroupIndex, teamsListe, dialogNeuOeffnen]
-  );
-
-  const onPopupOpen = useCallback((args: PopupOpenEventArgs) => {
-    args.cancel = true;
-  }, []);
-
-  /** Syncfusion öffnet bei Doppelklick auf Zelle den Standard-Editor — wir nutzen nur EinsatzNeuDialog. */
-  const onCellDoubleClick = useCallback((args: CellClickEventArgs) => {
-    args.cancel = true;
-  }, []);
-
-  const onEventDoubleClick = useCallback((args: EventClickArgs) => {
-    args.cancel = true;
-  }, []);
-
-  const onEventRendered = useCallback(
-    (args: { data?: Record<string, unknown>; element: HTMLElement }) => {
-      if (args.data?.HatKonflikt) {
-        args.element.classList.add("e-konflikt");
-      }
-    },
-    []
   );
 
   function bearbeitenAusDetail() {
@@ -1359,78 +906,15 @@ export function PlanungsKalender() {
     []
   );
 
-  const dateHeaderTemplate = useCallback(
-    (props: { date?: Date }) => {
-      const d = props.date;
-      if (!d) return null;
-      const iso = format(d, "yyyy-MM-dd");
-      const absN = abwesenheitCountProTag[iso] ?? 0;
-      const heute = isSameDay(d, new Date());
-      const isMonth = kalenderAnsicht === "month";
-      return (
-        <div
-          className={cn(
-            "flex min-w-[3rem] flex-col items-center gap-1 py-2.5",
-            isMonth && "min-w-[3.25rem] py-3"
-          )}
-        >
-          <span
-            className={cn(
-              "font-semibold uppercase tracking-wider text-[#52525b]",
-              isMonth ? "text-[11px]" : "text-[10px]"
-            )}
-          >
-            {format(d, "EEE", { locale: de })}
-          </span>
-          <span
-            className={cn(
-              "flex items-center justify-center font-bold tabular-nums leading-none",
-              isMonth ? "text-lg" : "text-base",
-              heute
-                ? "size-6 rounded-full bg-white text-black"
-                : "text-[#f4f4f5]"
-            )}
-          >
-            {format(d, "d.", { locale: de })}
-          </span>
-          <span
-            className={cn(
-              "text-zinc-500",
-              isMonth ? "text-[10px] font-medium" : "text-[9px]"
-            )}
-          >
-            {format(d, "MMM", { locale: de })}
-          </span>
-          {absN > 0 ? (
-            <span
-              className="mt-0.5 rounded-full bg-amber-500/25 px-1.5 py-px text-[9px] font-medium text-amber-300"
-              title="Abwesenheiten (Team-Mitglieder)"
-            >
-              {absN} abw.
-            </span>
-          ) : null}
-        </div>
-      );
+  const oeffneEinsatzDetail = useCallback(
+    (z: EinsatzEvent, anchor: HTMLElement) => {
+      if (!z.team_id && !z.dienstleister_id) return;
+      const rect = anchor.getBoundingClientRect();
+      setDetailZuweisung(z);
+      setDetailPosition({ top: rect.bottom + 4, left: rect.left });
+      setDetailOffen(true);
     },
-    [abwesenheitCountProTag, kalenderAnsicht]
-  );
-
-  const eventSettings = useMemo(
-    () => ({
-      dataSource: syncfusionEvents,
-      template: EinsatzTemplate,
-      enableMaxHeight: false,
-      allowAdding: false,
-      allowEditing: false,
-      allowDeleting: false,
-      fields: {
-        id: "Id",
-        subject: { name: "Subject" },
-        startTime: { name: "StartTime" },
-        endTime: { name: "EndTime" },
-      },
-    }),
-    [syncfusionEvents]
+    []
   );
 
   useEffect(() => {
@@ -1458,7 +942,10 @@ export function PlanungsKalender() {
       if (!el) return;
 
       const planDrop = el.closest("[data-planung-drop]") as HTMLElement | null;
-      if (planDrop && kalenderAnsicht === "week") {
+      if (
+        planDrop &&
+        (kalenderAnsicht === "week" || kalenderAnsicht === "month")
+      ) {
         e.preventDefault();
         const datum = planDrop.dataset.datum;
         if (!datum) return;
@@ -1497,7 +984,9 @@ export function PlanungsKalender() {
         const rawTeam = e.dataTransfer?.getData("application/team");
         if (rawTeam) {
           if (emptyRow || !rowProjektId) {
-            toast.info("Team auf eine Projektzeile ziehen (nicht die untere Freizeile).");
+            toast.info(
+              "Team auf einen Einsatz unter einem Projekt ziehen (nicht die gestrichelte Freizeile)."
+            );
             return;
           }
           let teamPayload: { teamId?: string };
@@ -1537,7 +1026,7 @@ export function PlanungsKalender() {
 
         if (ep.typ === "dienstleister" && ep.dienstleisterId) {
           if (!rowProjektId || rowProjektId === "_leer") {
-            toast.info("Auf eine Projektzeile ziehen.");
+            toast.info("Auf einen Einsatz unter einem Projekt ziehen.");
             return;
           }
           dialogNeuOeffnen({
@@ -1554,7 +1043,7 @@ export function PlanungsKalender() {
         const teamFromDrag = ep.teamId;
         if (teamFromDrag) {
           if (!rowProjektId) {
-            toast.info("Auf eine Projektzeile ziehen.");
+            toast.info("Auf einen Einsatz unter einem Projekt ziehen.");
             return;
           }
           void teamAufZelleLegen(teamFromDrag, rowProjektId, datum);
@@ -1575,107 +1064,6 @@ export function PlanungsKalender() {
         });
         return;
       }
-
-      const sch = scheduleRef.current;
-      if (!sch) {
-        if (kalenderAnsicht === "week") return;
-        toast.error("Kalender ist noch nicht bereit.");
-        return;
-      }
-
-      let td = el.closest("td[data-group-index]") as HTMLElement | null;
-      if (!td) {
-        td = el.closest("td.e-work-cells") as HTMLElement | null;
-      }
-      if (!td) {
-        toast.info("Auf eine Projekt-Zeile und Tag ziehen.");
-        return;
-      }
-      const cellData = sch.getCellDetails(td);
-      if (!cellData?.startTime || cellData.groupIndex === undefined) {
-        toast.error(
-          "Zelle nicht erkannt. Bitte auf den Tag in der gewünschten Projektzeile loslassen."
-        );
-        return;
-      }
-
-      const resId = projektRessourcenSf[cellData.groupIndex]?.Id;
-      if (!resId || resId === "_leer") {
-        toast.info("Auf eine Projekt-Zeile und Tag ziehen.");
-        return;
-      }
-
-      const start = cellData.startTime;
-      const datum = format(start, "yyyy-MM-dd");
-
-      const rawTeam = e.dataTransfer?.getData("application/team");
-      if (rawTeam) {
-        e.preventDefault();
-        let teamPayload: { teamId?: string };
-        try {
-          teamPayload = JSON.parse(rawTeam) as { teamId?: string };
-        } catch {
-          return;
-        }
-        const teamId = teamPayload.teamId;
-        if (!teamId) return;
-        void teamAufZelleLegen(teamId, resId, datum);
-        return;
-      }
-
-      const raw = e.dataTransfer?.getData("application/json");
-      if (!raw) return;
-      e.preventDefault();
-
-      let parsed: {
-        title?: string;
-        extendedProps?: {
-          projektId?: string;
-          projectId?: string;
-          teamId?: string;
-          typ?: string;
-          dienstleisterId?: string;
-        };
-      };
-      try {
-        parsed = JSON.parse(raw) as typeof parsed;
-      } catch {
-        toast.error("Ungültige Drag-Daten. Bitte erneut ziehen.");
-        return;
-      }
-
-      const ep = parsed.extendedProps ?? {};
-
-      if (ep.typ === "dienstleister" && ep.dienstleisterId) {
-        dialogNeuOeffnen({
-          projekt_id: resId,
-          dienstleister_id: ep.dienstleisterId,
-          dienstleister_name: parsed.title,
-          date: datum,
-          start_time: "07:00",
-          end_time: "16:00",
-        });
-        return;
-      }
-
-      const teamFromDrag = ep.teamId;
-      if (teamFromDrag) {
-        void teamAufZelleLegen(teamFromDrag, resId, datum);
-        return;
-      }
-
-      const projectId = ep.projektId ?? ep.projectId;
-      if (!projectId) {
-        toast.error("Kein Projekt in den Drag-Daten.");
-        return;
-      }
-      dialogNeuOeffnen({
-        projekt_id: projectId,
-        team_id: teamsListe[0]?.id,
-        date: datum,
-        start_time: "07:00",
-        end_time: "16:00",
-      });
     };
 
     root.addEventListener("dragover", onDragOver);
@@ -1686,7 +1074,6 @@ export function PlanungsKalender() {
     };
   }, [
     kalenderAnsicht,
-    projektRessourcenSf,
     teamsListe,
     dialogNeuOeffnen,
     teamAufZelleLegen,
@@ -1694,11 +1081,19 @@ export function PlanungsKalender() {
     beiDragOderResize,
   ]);
 
-  const wocheStartSidebar = useMemo(() => {
+  const sidebarZeitraumIso = useMemo(() => {
     if (sichtbarerZeitraum) {
-      return startOfWeek(sichtbarerZeitraum.start, { weekStartsOn: 1 });
+      return {
+        von: format(sichtbarerZeitraum.start, "yyyy-MM-dd"),
+        bis: format(addDays(sichtbarerZeitraum.end, -1), "yyyy-MM-dd"),
+      };
     }
-    return wocheAnker;
+    const ws = wocheAnker;
+    const we = endOfWeek(ws, { weekStartsOn: 1 });
+    return {
+      von: format(ws, "yyyy-MM-dd"),
+      bis: format(we, "yyyy-MM-dd"),
+    };
   }, [sichtbarerZeitraum, wocheAnker]);
 
   const kalenderInhalt = !kalenderBereit ? (
@@ -1715,69 +1110,19 @@ export function PlanungsKalender() {
       onEinsatzBearbeiten={oeffneBearbeitenEinsatz}
       onEinsatzLoeschen={loeschenEinsatzSchnell}
       onEinsatzDragStart={onEinsatzDragStartHandler}
+      onEinsatzDetail={oeffneEinsatzDetail}
     />
   ) : (
-    <div
-      ref={scheduleHostRef}
-      className="planung-sf flex min-h-0 min-w-0 flex-1 flex-col"
-    >
-      <ScheduleComponent
-        ref={scheduleRef}
-        cssClass="planung-sf-inner"
-        width="100%"
-        height={`${scheduleHoehePx}px`}
-        firstDayOfWeek={1}
-        selectedDate={new Date(wocheAnker)}
-        currentView="TimelineMonth"
-        rowAutoHeight={false}
-        showHeaderBar={false}
-        showTimeIndicator
-        showQuickInfo={false}
-        prerenderDialogs={false}
-        allowOverlap
-        allowDragAndDrop
-        allowResizing
-        popupOpen={onPopupOpen}
-        dateHeaderTemplate={dateHeaderTemplate}
-        resourceHeaderTemplate={RessourceHeaderTemplate}
-        eventSettings={eventSettings}
-        eventClick={onEventClick}
-        cellClick={onCellClick}
-        cellDoubleClick={onCellDoubleClick}
-        eventDoubleClick={onEventDoubleClick}
-        dragStop={onDragStop}
-        resizeStop={onResizeStop}
-        eventRendered={onEventRendered}
-        dataBound={syncZeitraumFromSchedule}
-        group={{ resources: ["Projekte"], enableCompactView: false }}
-      >
-        <ResourcesDirective>
-          <ResourceDirective
-            field="ProjectId"
-            title="Projekte"
-            name="Projekte"
-            allowMultiple={false}
-            dataSource={projektRessourcenSf}
-            textField="Subject"
-            idField="Id"
-          />
-        </ResourcesDirective>
-        <ViewsDirective>
-          <ViewDirective
-            option="TimelineWeek"
-            timeScale={{ enable: false, interval: 1440, slotCount: 1 }}
-            workDays={[0, 1, 2, 3, 4, 5, 6]}
-            showWeekend
-          />
-          <ViewDirective
-            option="TimelineMonth"
-            workDays={[0, 1, 2, 3, 4, 5, 6]}
-            showWeekend
-          />
-        </ViewsDirective>
-        <Inject services={[TimelineViews, TimelineMonth, Resize, DragAndDrop]} />
-      </ScheduleComponent>
-    </div>
+    <PlanungMonatsRaster
+      monatAnker={monatAnker}
+      zuweisungen={zuweisungen}
+      projekteById={projekteById}
+      abwesenheitCountProTag={abwesenheitCountProTag}
+      onEinsatzBearbeiten={oeffneBearbeitenEinsatz}
+      onEinsatzLoeschen={loeschenEinsatzSchnell}
+      onEinsatzDragStart={onEinsatzDragStartHandler}
+      onEinsatzDetail={oeffneEinsatzDetail}
+    />
   );
 
   return (
@@ -1786,8 +1131,9 @@ export function PlanungsKalender() {
         <aside className="flex w-56 shrink-0 flex-col border-r border-zinc-800/60 bg-zinc-950">
           <ProjekteSidebar
             projekteAlle={projekteAktiv}
-            einsatzCountByProjektWoche={einsatzCountByProjektWoche}
+            einsatzCountByProjektImRaster={einsatzCountByProjektImRaster}
             einsatzCountByProjekt={einsatzCountByProjekt}
+            rasterZeitraumLabel={rasterZeitraumLabel}
           />
         </aside>
 
@@ -1819,7 +1165,8 @@ export function PlanungsKalender() {
             heuteAbwesenheiten={heuteAbwesenheitenAnzahl}
             zuweisungen={zuweisungen}
             abwesenheiten={abwesenheiten}
-            wocheStart={wocheStartSidebar}
+            sichtbarVon={sidebarZeitraumIso.von}
+            sichtbarBis={sidebarZeitraumIso.bis}
           />
         </aside>
       </div>
