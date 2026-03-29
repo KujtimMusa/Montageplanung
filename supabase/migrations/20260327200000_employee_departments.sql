@@ -25,6 +25,11 @@ ON CONFLICT (employee_id, department_id) DO NOTHING;
 
 ALTER TABLE public.employee_departments ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "employee_departments_select_auth" ON public.employee_departments;
+DROP POLICY IF EXISTS "employee_departments_insert_auth" ON public.employee_departments;
+DROP POLICY IF EXISTS "employee_departments_update_auth" ON public.employee_departments;
+DROP POLICY IF EXISTS "employee_departments_delete_auth" ON public.employee_departments;
+
 CREATE POLICY "employee_departments_select_auth"
   ON public.employee_departments FOR SELECT TO authenticated
   USING (true);
