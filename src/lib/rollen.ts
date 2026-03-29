@@ -3,6 +3,7 @@
 export const ROLLEN_LABEL: Record<string, string> = {
   admin: "Admin",
   koordinator: "Koordinator",
+  geschaeftsfuehrer: "Geschäftsführer",
   abteilungsleiter: "Abteilungsleiter",
   teamleiter: "Teamleiter",
   mitarbeiter: "Mitarbeiter (Ausführung)",
@@ -14,17 +15,18 @@ export const ROLLEN_LABEL: Record<string, string> = {
   praktikant: "Praktikant",
   /** Teamzuordnung */
   mitglied: "Mitglied",
-}
+};
 
 export function rolleLabel(rolle: string | null | undefined): string {
-  if (!rolle) return "–"
-  const k = rolle.toLowerCase()
-  return ROLLEN_LABEL[k] ?? rolle
+  if (!rolle) return "–";
+  const k = rolle.toLowerCase().trim();
+  return ROLLEN_LABEL[k] ?? rolle;
 }
 
+/** Nur für UI, wo alle Keys als Auswahl gelistet werden dürfen */
 export const ROLLEN_OPTIONEN = Object.entries(ROLLEN_LABEL).map(
   ([value, label]) => ({ value, label })
-)
+);
 
 /** Werte, die die Admin-API für employees.role zulässt */
 export const MITARBEITER_ROLLEN_API = [
@@ -32,13 +34,13 @@ export const MITARBEITER_ROLLEN_API = [
   "abteilungsleiter",
   "teamleiter",
   "monteur",
-] as const
+] as const;
 
-export type MitarbeiterRolleApi = (typeof MITARBEITER_ROLLEN_API)[number]
+export type MitarbeiterRolleApi = (typeof MITARBEITER_ROLLEN_API)[number];
 
 export const MITARBEITER_ROLLEN_OPTIONS = MITARBEITER_ROLLEN_API.map(
   (value) => ({
     value,
     label: rolleLabel(value),
   })
-)
+);

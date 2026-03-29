@@ -63,7 +63,6 @@ type Zeile = {
   phone: string | null;
   whatsapp: string | null;
   team_id: string | null;
-  qualifikationen: string[] | null;
   abteilungsName: string | null;
   teamName: string | null;
 };
@@ -74,7 +73,6 @@ const monteurSchema = z.object({
   whatsapp: z.string().optional(),
   department_id: z.string().optional(),
   team_id: z.string().optional(),
-  qualifikationen: z.array(z.string()).optional(),
 });
 
 type MonteurForm = z.infer<typeof monteurSchema>;
@@ -94,32 +92,38 @@ function initialenAusName(name: string): string {
   return name.slice(0, 2).toUpperCase() || "?";
 }
 
+function eingebetteterName(raw: unknown): string | null {
+  if (raw == null) return null;
+  const one = Array.isArray(raw) ? raw[0] : raw;
+  if (one && typeof one === "object" && "name" in one) {
+    const n = (one as { name?: string }).name;
+    return n != null && String(n).trim() !== "" ? String(n) : null;
+  }
+  return null;
+}
+
 function zeileAusSupabase(
   m: Record<string, unknown>,
   abMap: Record<string, string>,
   teamNameNachId: Record<string, string>
 ): Zeile {
-  const qual = Array.isArray(m.qualifikationen)
-    ? (m.qualifikationen as string[])
-    : [];
+  const depId = (m.department_id as string | null) ?? null;
+  const tmId = (m.team_id as string | null) ?? null;
+  const nameAusDep = eingebetteterName(m.departments);
+  const nameAusTeam = eingebetteterName(m.teams);
   return {
     id: m.id as string,
     name: m.name as string,
     email: (m.email as string | null) ?? null,
     role: m.role as string,
     active: m.active as boolean,
-    department_id: (m.department_id as string | null) ?? null,
+    department_id: depId,
     auth_user_id: (m.auth_user_id as string | null) ?? null,
     phone: (m.phone as string | null) ?? null,
     whatsapp: (m.whatsapp as string | null) ?? null,
-    team_id: (m.team_id as string | null) ?? null,
-    qualifikationen: qual,
-    abteilungsName: m.department_id
-      ? abMap[m.department_id as string] ?? null
-      : null,
-    teamName: m.team_id
-      ? teamNameNachId[m.team_id as string] ?? null
-      : null,
+    team_id: tmId,
+    abteilungsName: nameAusDep ?? (depId ? abMap[depId] ?? null : null),
+    teamName: nameAusTeam ?? (tmId ? teamNameNachId[tmId] ?? null : null),
   };
 }
 
@@ -136,7 +140,7 @@ export function MitarbeiterVerwaltung({
     []
   );
   const [teams, setTeams] = useState<
-    { id: string; name: string; department_id: string | null }[]
+    { id: string; name: string; department_id: string | null; farbe: string }[]
   >([]);
   const [laedt, setLaedt] = useState(true);
 
@@ -159,6 +163,8 @@ export function MitarbeiterVerwaltung({
   const [koorBearbeiten, setKoorBearbeiten] = useState<Zeile | null>(null);
   const [koorAktiv, setKoorAktiv] = useState(true);
   const [koorSpeichert, setKoorSpeichert] = useState(false);
+  const [koorDepartmentId, setKoorDepartmentId] = useState("");
+  const [koorTeamId, setKoorTeamId] = useState("");
 
   const monteurF = useForm<MonteurForm>({
     resolver: zodResolver(monteurSchema),
@@ -168,11 +174,8 @@ export function MitarbeiterVerwaltung({
       whatsapp: "",
       department_id: "",
       team_id: "",
-      qualifikationen: [],
     },
   });
-
-  const [tagInput, setTagInput] = useState("");
 
   const laden = useCallback(async () => {
     setLaedt(true);
@@ -198,11 +201,14 @@ export function MitarbeiterVerwaltung({
           supabase
             .from("employees")
             .select(
-              "id,name,email,role,active,department_id,auth_user_id,phone,whatsapp,team_id,qualifikationen"
+              "id,name,email,role,active,department_id,auth_user_id,phone,whatsapp,team_id, departments(name), teams(name,farbe)"
             )
             .order("name"),
           supabase.from("departments").select("id,name").order("name"),
-          supabase.from("teams").select("id,name,department_id").order("name"),
+          supabase
+            .from("teams")
+            .select("id,name,department_id,farbe")
+            .order("name"),
         ]);
       if (e1) throw e1;
 
@@ -211,13 +217,18 @@ export function MitarbeiterVerwaltung({
         id: string;
         name: string;
         department_id: string | null;
+        farbe: string;
       }[];
       const teamNameNachId = Object.fromEntries(
         teamList.map((t) => [t.id, t.name])
       );
+      const teamListNormalisiert = teamList.map((t) => ({
+        ...t,
+        farbe: t.farbe || "#3b82f6",
+      }));
 
       setAbteilungen((ab ?? []) as { id: string; name: string }[]);
-      setTeams(teamList);
+      setTeams(teamListNormalisiert);
 
       let zeilenNeu = (mitarbeiter ?? []).map((m) =>
         zeileAusSupabase(m as Record<string, unknown>, abMap, teamNameNachId)
@@ -285,6 +296,11 @@ export function MitarbeiterVerwaltung({
     return teams.filter((t) => t.department_id === abteilungMonteur);
   }, [teams, abteilungMonteur]);
 
+  const teamsGefiltertKoor = useMemo(() => {
+    if (!koorDepartmentId) return teams;
+    return teams.filter((t) => t.department_id === koorDepartmentId);
+  }, [teams, koorDepartmentId]);
+
   const gefilterteZeilen = useMemo(() => {
     const q = suche.trim().toLowerCase();
     const filtered = zeilen.filter((z) => {
@@ -336,7 +352,6 @@ export function MitarbeiterVerwaltung({
         whatsapp: zeile.whatsapp ?? "",
         department_id: zeile.department_id ?? "",
         team_id: zeile.team_id ?? "",
-        qualifikationen: zeile.qualifikationen ?? [],
       });
     } else {
       setBearbeitenId(null);
@@ -346,10 +361,8 @@ export function MitarbeiterVerwaltung({
         whatsapp: "",
         department_id: "",
         team_id: "",
-        qualifikationen: [],
       });
     }
-    setTagInput("");
     setMonteurSheetOffen(true);
   }
 
@@ -371,7 +384,7 @@ export function MitarbeiterVerwaltung({
       whatsapp: w.whatsapp?.trim() || null,
       department_id,
       team_id,
-      qualifikationen: w.qualifikationen?.length ? w.qualifikationen : [],
+      qualifikationen: [] as string[],
       role: "monteur" as const,
       auth_user_id: null as null,
       active: true,
@@ -432,14 +445,29 @@ export function MitarbeiterVerwaltung({
     void laden();
   }
 
-  async function koorAktivSpeichern() {
+  async function koorProfilSpeichern() {
     if (!koorBearbeiten) return;
+    const department_id = koorDepartmentId || null;
+    const team_id = koorTeamId || null;
+    if (
+      team_id &&
+      abteilungFuerTeam(team_id) &&
+      department_id &&
+      abteilungFuerTeam(team_id) !== department_id
+    ) {
+      toast.error("Team passt nicht zur gewählten Abteilung.");
+      return;
+    }
     setKoorSpeichert(true);
     try {
       const res = await fetch(`/api/admin/mitarbeiter/${koorBearbeiten.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ active: koorAktiv }),
+        body: JSON.stringify({
+          active: koorAktiv,
+          department_id,
+          team_id,
+        }),
       });
       const json = (await res.json()) as { fehler?: string; error?: string };
       if (!res.ok) {
@@ -483,28 +511,6 @@ export function MitarbeiterVerwaltung({
       setKoordinatorLaedt(false);
     }
   }
-
-  function qualifikationHinzufuegen() {
-    const t = tagInput.trim();
-    if (!t) return;
-    const cur = monteurF.getValues("qualifikationen") ?? [];
-    if (cur.includes(t)) {
-      setTagInput("");
-      return;
-    }
-    monteurF.setValue("qualifikationen", [...cur, t]);
-    setTagInput("");
-  }
-
-  function qualifikationEntfernen(q: string) {
-    const cur = monteurF.getValues("qualifikationen") ?? [];
-    monteurF.setValue(
-      "qualifikationen",
-      cur.filter((x) => x !== q)
-    );
-  }
-
-  const qualifikationen = monteurF.watch("qualifikationen") ?? [];
 
   if (laedt) {
     return (
@@ -733,9 +739,11 @@ export function MitarbeiterVerwaltung({
                                 }}
                               >
                                 <SelectTrigger className="h-8 min-w-[12rem] max-w-[220px] border-zinc-800 bg-zinc-900 text-zinc-100 hover:bg-zinc-800/50 focus:ring-zinc-600/50">
-                                  <SelectValue />
+                                  <SelectValue>
+                                    {rolleLabel(z.role)}
+                                  </SelectValue>
                                 </SelectTrigger>
-                                <SelectContent>
+                                <SelectContent className="border-zinc-800 bg-zinc-900">
                                   {optionen.map((r) => (
                                     <SelectItem key={r.value} value={r.value}>
                                       {r.label}
@@ -765,6 +773,8 @@ export function MitarbeiterVerwaltung({
                             if (istKoordinator) {
                               setKoorBearbeiten(z);
                               setKoorAktiv(z.active);
+                              setKoorDepartmentId(z.department_id ?? "");
+                              setKoorTeamId(z.team_id ?? "");
                             } else {
                               monteurSheetOeffnen(z);
                             }
@@ -857,7 +867,7 @@ export function MitarbeiterVerwaltung({
                   >
                     <SelectValue placeholder="Abteilung wählen" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="border-zinc-800 bg-zinc-900">
                     <SelectItem value="__none__">Keine Abteilung</SelectItem>
                     {abteilungen.map((a) => (
                       <SelectItem key={a.id} value={a.id}>
@@ -882,42 +892,23 @@ export function MitarbeiterVerwaltung({
                   >
                     <SelectValue placeholder="Team wählen" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="border-zinc-800 bg-zinc-900">
                     <SelectItem value="__none__">Kein Team</SelectItem>
                     {teamsGefiltert.map((t) => (
                       <SelectItem key={t.id} value={t.id}>
-                        {t.name}
+                        <span className="flex items-center gap-2">
+                          <span
+                            className="size-2 shrink-0 rounded-full"
+                            style={{
+                              background: t.farbe ?? "#3b82f6",
+                            }}
+                          />
+                          {t.name}
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              </StammdatenFormField>
-              <StammdatenFormField label="Qualifikationen">
-                <Input
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      qualifikationHinzufuegen();
-                    }
-                  }}
-                  placeholder="Eingabe + Enter"
-                  className={STAMMDATEN_FORM_INPUT}
-                />
-                <div className="flex flex-wrap gap-1 pt-1">
-                  {qualifikationen.map((q) => (
-                    <Badge
-                      key={q}
-                      variant="secondary"
-                      className="cursor-pointer gap-1 pr-1"
-                      onClick={() => qualifikationEntfernen(q)}
-                    >
-                      {q}
-                      <span className="text-xs">×</span>
-                    </Badge>
-                  ))}
-                </div>
               </StammdatenFormField>
             </div>
             <StammdatenSheetFooter
@@ -947,6 +938,58 @@ export function MitarbeiterVerwaltung({
                 {koorBearbeiten?.email ?? "—"}
               </p>
             </StammdatenFormField>
+            <StammdatenFormField label="Abteilung">
+              <Select
+                value={koorDepartmentId || "__none__"}
+                onValueChange={(v) => {
+                  const val = v === "__none__" || v == null ? "" : v;
+                  setKoorDepartmentId(val);
+                  setKoorTeamId("");
+                }}
+              >
+                <SelectTrigger
+                  className={cn(STAMMDATEN_FORM_SELECT_TRIGGER, "h-10 rounded-lg")}
+                >
+                  <SelectValue placeholder="Keine Abteilung" />
+                </SelectTrigger>
+                <SelectContent className="border-zinc-800 bg-zinc-900">
+                  <SelectItem value="__none__">Keine Abteilung</SelectItem>
+                  {abteilungen.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </StammdatenFormField>
+            <StammdatenFormField label="Team">
+              <Select
+                value={koorTeamId || "__none__"}
+                onValueChange={(v) =>
+                  setKoorTeamId(v === "__none__" || v == null ? "" : v)
+                }
+              >
+                <SelectTrigger
+                  className={cn(STAMMDATEN_FORM_SELECT_TRIGGER, "h-10 rounded-lg")}
+                >
+                  <SelectValue placeholder="Kein Team" />
+                </SelectTrigger>
+                <SelectContent className="border-zinc-800 bg-zinc-900">
+                  <SelectItem value="__none__">Kein Team</SelectItem>
+                  {teamsGefiltertKoor.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      <span className="flex items-center gap-2">
+                        <span
+                          className="size-2 shrink-0 rounded-full"
+                          style={{ background: t.farbe ?? "#3b82f6" }}
+                        />
+                        {t.name}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </StammdatenFormField>
             <div className="flex items-center justify-between gap-4">
               <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
                 Aktiv
@@ -970,7 +1013,7 @@ export function MitarbeiterVerwaltung({
             <Button
               type="button"
               className="bg-zinc-100 font-semibold text-zinc-900 hover:bg-white"
-              onClick={() => void koorAktivSpeichern()}
+              onClick={() => void koorProfilSpeichern()}
               disabled={koorSpeichert}
             >
               {koorSpeichert ? (
