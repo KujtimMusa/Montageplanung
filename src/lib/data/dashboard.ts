@@ -18,6 +18,24 @@ export type NaechsterEinsatz = {
   start: string;
   ende: string;
   status: string;
+  teamName: string | null;
+  teamFarbe: string | null;
+  projektFarbe: string | null;
+  projektAdresse: string | null;
+  projektStatus: string | null;
+};
+
+export type TeamHeuteZeile = {
+  id: string;
+  name: string;
+  farbe: string;
+  mitglieder: { id: string; name: string }[];
+  heuteEinsaetze: {
+    id: string;
+    start_time: string;
+    end_time: string;
+    projektTitel: string | null;
+  }[];
 };
 
 export type BalkenAbteilung = {
@@ -44,8 +62,7 @@ export type DashboardDaten = {
   naechsteEinsaetze: NaechsterEinsatz[];
   auslastung7Tage: TagAuslastung[];
   darfMitarbeiterEinladen: boolean;
-  /** z. B. „Nur Abteilung: Montage“ — null für globale Admin-Sicht */
-  kontextLabel: string | null;
+  teamsHeute: TeamHeuteZeile[];
 };
 
 function zeitZuMinuten(t: string): number {
@@ -65,7 +82,6 @@ function einsaetzeUeberlappen(
 
 type ScopeErgebnis = {
   mitarbeiterIds: string[] | null;
-  kontextLabel: string | null;
 };
 
 /**
@@ -77,16 +93,15 @@ async function ermittleScope(
   profil: AngestellterProfil | null
 ): Promise<ScopeErgebnis> {
   if (!profil) {
-    return { mitarbeiterIds: null, kontextLabel: null };
+    return { mitarbeiterIds: null };
   }
   if (istAdmin(profil.role)) {
-    return { mitarbeiterIds: null, kontextLabel: null };
+    return { mitarbeiterIds: null };
   }
 
   if (profil.role === "monteur") {
     return {
       mitarbeiterIds: [profil.id],
-      kontextLabel: "Nur deine eigenen Einsätze",
     };
   }
 
@@ -94,27 +109,16 @@ async function ermittleScope(
     if (!profil.department_id) {
       return {
         mitarbeiterIds: [],
-        kontextLabel:
-          "Keiner Abteilung zugewiesen — bitte Profil/Abteilung setzen",
       };
     }
-    const [{ data: deptRow }, { data: rows }] = await Promise.all([
-      supabase
-        .from("departments")
-        .select("name")
-        .eq("id", profil.department_id)
-        .maybeSingle(),
-      supabase
-        .from("employees")
-        .select("id")
-        .eq("department_id", profil.department_id)
-        .eq("active", true),
-    ]);
+    const { data: rows } = await supabase
+      .from("employees")
+      .select("id")
+      .eq("department_id", profil.department_id)
+      .eq("active", true);
     const ids = (rows ?? []).map((e) => e.id as string);
-    const dname = (deptRow?.name as string) ?? "Abteilung";
     return {
       mitarbeiterIds: ids,
-      kontextLabel: `Nur Abteilung: ${dname}`,
     };
   }
 
@@ -153,31 +157,56 @@ async function ermittleScope(
       for (const e of deptEmps ?? []) ids.add(e.id as string);
     }
 
-    let teamLabel = "Team";
-    if (teamIdSet.size === 1) {
-      const tid = Array.from(teamIdSet)[0]!;
-      const { data: tn } = await supabase
-        .from("teams")
-        .select("name")
-        .eq("id", tid)
-        .maybeSingle();
-      if (tn?.name) teamLabel = String(tn.name);
-    } else if (teamIdSet.size > 1) {
-      teamLabel = `${teamIdSet.size} Teams`;
-    }
-
     return {
       mitarbeiterIds: Array.from(ids),
-      kontextLabel:
-        teamIdSet.size > 0
-          ? `Nur Team(s): ${teamLabel}`
-          : profil.department_id
-            ? "Nur deine Abteilung (Team nicht verknüpft)"
-            : "Nur zugewiesene Team-Bereiche",
     };
   }
 
-  return { mitarbeiterIds: null, kontextLabel: null };
+  return { mitarbeiterIds: null };
+}
+
+/** null = alle Teams; [] = keine sichtbaren Teams */
+async function ermittleTeamIds(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  profil: AngestellterProfil | null
+): Promise<string[] | null> {
+  if (!profil) return null;
+  if (istAdmin(profil.role)) return null;
+
+  if (profil.role === "monteur") {
+    return profil.team_id ? [profil.team_id] : [];
+  }
+
+  if (profil.role === "abteilungsleiter") {
+    if (!profil.department_id) return [];
+    const { data } = await supabase
+      .from("teams")
+      .select("id")
+      .eq("department_id", profil.department_id);
+    return (data ?? []).map((t) => t.id as string);
+  }
+
+  if (profil.role === "teamleiter") {
+    const ids = new Set<string>();
+    if (profil.team_id) ids.add(profil.team_id);
+    const { data: ledTeams } = await supabase
+      .from("teams")
+      .select("id")
+      .eq("leader_id", profil.id);
+    for (const t of ledTeams ?? []) ids.add(t.id as string);
+
+    if (ids.size === 0 && profil.department_id) {
+      const { data: deptTeams } = await supabase
+        .from("teams")
+        .select("id")
+        .eq("department_id", profil.department_id);
+      for (const t of deptTeams ?? []) ids.add(t.id as string);
+    }
+
+    return Array.from(ids);
+  }
+
+  return null;
 }
 
 /**
@@ -198,7 +227,7 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
     naechsteEinsaetze: [],
     auslastung7Tage: [],
     darfMitarbeiterEinladen: false,
-    kontextLabel: null,
+    teamsHeute: [],
   };
 
   if (
@@ -213,6 +242,7 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
     const profil = await ladeAngestelltenProfil();
     const scope = await ermittleScope(supabase, profil);
     const filterIds = scope.mitarbeiterIds;
+    const teamIdsScope = await ermittleTeamIds(supabase, profil);
 
     const jetzt = new Date();
     const heuteStr = formatInTimeZone(jetzt, ZEITZONE_APP, "yyyy-MM-dd");
@@ -228,7 +258,6 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
     if (filterIds && filterIds.length === 0) {
       return {
         ...leer,
-        kontextLabel: scope.kontextLabel,
         darfMitarbeiterEinladen: Boolean(darf),
       };
     }
@@ -263,11 +292,30 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
     let qZuHeuteListe = supabase
       .from("assignments")
       .select(
-        "id,start_time,end_time,status,project_title, employees!employee_id(name), projects(title)"
+        `id,start_time,end_time,status,project_title,team_id,
+         employees!employee_id(name),
+         teams(name,farbe),
+         projects(title,status,farbe,adresse)`
       )
       .eq("date", heuteStr)
       .order("start_time")
       .limit(12);
+
+    let qZuHeuteProTeam = supabase
+      .from("assignments")
+      .select("id,team_id,start_time,end_time,projects(title)")
+      .eq("date", heuteStr)
+      .not("team_id", "is", null);
+
+    let qTeamsMitMitgliedern = supabase
+      .from("teams")
+      .select(
+        `id,name,farbe,
+         team_members(
+           employees(id,name,active)
+         )`
+      )
+      .order("name");
 
     if (filterIds) {
       qEcHeute = qEcHeute.in("employee_id", filterIds);
@@ -278,7 +326,25 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
       qAbwGestern = qAbwGestern.in("employee_id", filterIds);
       qZuWoche = qZuWoche.in("employee_id", filterIds);
       qZuHeuteListe = qZuHeuteListe.in("employee_id", filterIds);
+      qZuHeuteProTeam = qZuHeuteProTeam.in("employee_id", filterIds);
     }
+
+    if (teamIdsScope !== null && teamIdsScope.length > 0) {
+      qTeamsMitMitgliedern = qTeamsMitMitgliedern.in("id", teamIdsScope);
+      qZuHeuteProTeam = qZuHeuteProTeam.in("team_id", teamIdsScope);
+    }
+
+    const teamsLeeresErgebnis = Promise.resolve({
+      data: [] as Record<string, unknown>[],
+    });
+    const qTeamsAusfuehren =
+      teamIdsScope !== null && teamIdsScope.length === 0
+        ? teamsLeeresErgebnis
+        : qTeamsMitMitgliedern;
+    const qZuHeuteProTeamAusfuehren =
+      teamIdsScope !== null && teamIdsScope.length === 0
+        ? teamsLeeresErgebnis
+        : qZuHeuteProTeam;
 
     const [
       { count: ecHeute },
@@ -290,6 +356,8 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
       { count: wc },
       { data: zuWoche },
       { data: zuHeuteListe },
+      { data: zuHeuteProTeamRaw },
+      { data: teamsRaw },
     ] = await Promise.all([
       qEcHeute,
       qEcGestern,
@@ -303,6 +371,8 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
         .eq("acknowledged", false),
       qZuWoche,
       qZuHeuteListe,
+      qZuHeuteProTeamAusfuehren,
+      qTeamsAusfuehren,
     ]);
 
     const zu = zuAlleRaw ?? [];
@@ -392,12 +462,28 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
           | { name?: string }[]
           | null;
         const prRaw = row.projects as
-          | { title?: string }
-          | { title?: string }[]
+          | {
+              title?: string;
+              status?: string;
+              farbe?: string | null;
+              adresse?: string | null;
+            }
+          | Array<{
+              title?: string;
+              status?: string;
+              farbe?: string | null;
+              adresse?: string | null;
+            }>
+          | null;
+        const tmRaw = row.teams as
+          | { name?: string; farbe?: string | null }
+          | { name?: string; farbe?: string | null }[]
           | null;
         const emp = Array.isArray(empRaw) ? empRaw[0] : empRaw;
         const pr = Array.isArray(prRaw) ? prRaw[0] : prRaw;
+        const tm = Array.isArray(tmRaw) ? tmRaw[0] : tmRaw;
         const ft = row.project_title as string | null | undefined;
+        const adresse = (pr?.adresse ?? "").trim();
         return {
           id: String(row.id),
           mitarbeiter: String(emp?.name ?? "—"),
@@ -405,9 +491,65 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
           start: String(row.start_time ?? "").slice(0, 5),
           ende: String(row.end_time ?? "").slice(0, 5),
           status: String(row.status ?? "geplant"),
+          teamName: tm?.name ? String(tm.name) : null,
+          teamFarbe: tm?.farbe ? String(tm.farbe) : null,
+          projektFarbe: pr?.farbe ? String(pr.farbe) : null,
+          projektAdresse: adresse || null,
+          projektStatus: pr?.status ? String(pr.status) : null,
         };
       }
     );
+
+    const einsatzByTeam = new Map<
+      string,
+      { id: string; start_time: string; end_time: string; projektTitel: string | null }[]
+    >();
+    for (const raw of zuHeuteProTeamRaw ?? []) {
+      const r = raw as Record<string, unknown>;
+      const tid = r.team_id as string | undefined;
+      if (!tid) continue;
+      const prRaw = r.projects as
+        | { title?: string }
+        | { title?: string }[]
+        | null;
+      const pr = Array.isArray(prRaw) ? prRaw[0] : prRaw;
+      const ein = {
+        id: String(r.id),
+        start_time: String(r.start_time ?? "").slice(0, 5),
+        end_time: String(r.end_time ?? "").slice(0, 5),
+        projektTitel: pr?.title ? String(pr.title) : null,
+      };
+      if (!einsatzByTeam.has(tid)) einsatzByTeam.set(tid, []);
+      einsatzByTeam.get(tid)!.push(ein);
+    }
+    einsatzByTeam.forEach((arr) => {
+      arr.sort((a, b) => a.start_time.localeCompare(b.start_time));
+    });
+
+    const teamsHeute: TeamHeuteZeile[] = (teamsRaw ?? []).map((t) => {
+      const tr = t as Record<string, unknown>;
+      const tmArr = (tr.team_members ?? []) as Record<string, unknown>[];
+      const mitglieder: { id: string; name: string }[] = [];
+      for (const tm of tmArr) {
+        const eRaw = tm.employees as
+          | { id?: string; name?: string; active?: boolean }
+          | { id?: string; name?: string; active?: boolean }[]
+          | null;
+        const e = Array.isArray(eRaw) ? eRaw[0] : eRaw;
+        if (e?.id && e.active !== false && e.name) {
+          mitglieder.push({ id: String(e.id), name: String(e.name) });
+        }
+      }
+      mitglieder.sort((a, b) => a.name.localeCompare(b.name, "de"));
+      const tid = String(tr.id);
+      return {
+        id: tid,
+        name: String(tr.name ?? ""),
+        farbe: String(tr.farbe ?? "#3b82f6"),
+        mitglieder,
+        heuteEinsaetze: einsatzByTeam.get(tid) ?? [],
+      };
+    });
 
     const abwesendHeuteAnzahl = absentHeute.size;
 
@@ -426,7 +568,7 @@ export async function ladeDashboardDaten(): Promise<DashboardDaten> {
       naechsteEinsaetze,
       auslastung7Tage,
       darfMitarbeiterEinladen: Boolean(darf),
-      kontextLabel: scope.kontextLabel,
+      teamsHeute,
     };
   } catch {
     return leer;

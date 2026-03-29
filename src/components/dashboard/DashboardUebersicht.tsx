@@ -3,11 +3,12 @@
 import Link from "next/link";
 import {
   Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
+  Line,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -15,231 +16,361 @@ import {
 } from "recharts";
 import {
   AlertTriangle,
-  ArrowRight,
   Bot,
   Calendar,
-  MessageSquare,
-  Sparkles,
   TrendingDown,
   TrendingUp,
-  UserMinus,
+  UserX,
   Users,
-  Zap,
 } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import type { DashboardDaten } from "@/lib/data/dashboard";
+import type {
+  DashboardDaten,
+  NaechsterEinsatz,
+  TeamHeuteZeile,
+} from "@/lib/data/dashboard";
 
-const cardClass =
-  "border-zinc-800 bg-zinc-900 text-zinc-100 shadow-none";
+function trendProzent(heute: number, gesternMax: number): number {
+  if (gesternMax === 0) return heute > 0 ? 100 : 0;
+  return Math.round(((heute - gesternMax) / gesternMax) * 100);
+}
 
-function TrendPfeil({
-  heute,
-  gestern,
-  umgekehrt,
-}: {
-  heute: number;
-  gestern: number;
-  /** z. B. bei Verfügbarkeit: höher ist besser */
-  umgekehrt?: boolean;
+function StatKarte(props: {
+  wert: number;
+  label: string;
+  subtext: string;
+  farbe: string;
+  Icon: typeof Calendar;
+  trend: number;
+  trendUmgekehrt?: boolean;
 }) {
-  if (gestern === heute) {
-    return (
-      <span className="flex items-center gap-1 text-xs text-zinc-500">
-        <span className="inline-block size-1.5 rounded-full bg-zinc-500" />
-        gleich wie gestern
-      </span>
-    );
-  }
-  const up = heute > gestern;
-  const gut = umgekehrt ? !up : up;
-  const Icon = up ? TrendingUp : TrendingDown;
+  const { wert, label, subtext, farbe, Icon, trend, trendUmgekehrt } = props;
+  const gut = trendUmgekehrt ? trend < 0 : trend > 0;
+  const schlecht = trendUmgekehrt ? trend > 0 : trend < 0;
+
   return (
-    <span
+    <div
       className={cn(
-        "flex items-center gap-1 text-xs font-medium",
-        gut ? "text-emerald-400" : "text-amber-400"
+        "rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5",
+        "transition-all hover:border-zinc-700/60"
       )}
     >
-      <Icon className="size-3.5" aria-hidden />
-      {gestern === 0 ? "neu" : `${heute > gestern ? "+" : ""}${heute - gestern}`}
-    </span>
+      <div className="mb-4 flex items-start justify-between">
+        <div className="rounded-xl p-2" style={{ background: `${farbe}15` }}>
+          <Icon size={18} style={{ color: farbe }} aria-hidden />
+        </div>
+        {trend !== 0 ? (
+          <div
+            className={cn(
+              "flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold",
+              gut
+                ? "bg-emerald-950 text-emerald-400"
+                : schlecht
+                  ? "bg-red-950 text-red-400"
+                  : "bg-zinc-800 text-zinc-400"
+            )}
+          >
+            {trend > 0 ? (
+              <TrendingUp size={10} aria-hidden />
+            ) : (
+              <TrendingDown size={10} aria-hidden />
+            )}
+            {Math.abs(trend)}%
+          </div>
+        ) : null}
+      </div>
+      <div>
+        <p className="mb-1 text-3xl font-bold tabular-nums text-zinc-100">
+          {wert}
+        </p>
+        <p className="text-xs font-medium text-zinc-500">{label}</p>
+        <p className="mt-0.5 text-xs text-zinc-700">{subtext}</p>
+      </div>
+    </div>
+  );
+}
+
+type ChartTooltipEintrag = {
+  value?: number;
+  color?: string;
+  name?: string;
+};
+
+function payloadAlsListe(
+  raw: unknown
+): ChartTooltipEintrag[] {
+  if (!Array.isArray(raw)) return [];
+  return raw as ChartTooltipEintrag[];
+}
+
+function AbteilungTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: ChartTooltipEintrag[];
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-xl border border-zinc-700 bg-zinc-900 p-3 text-sm shadow-2xl">
+      <p className="mb-2 font-semibold text-zinc-200">{label}</p>
+      {payload.map((p, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <div
+            className="size-2 rounded-full"
+            style={{ background: p.color }}
+          />
+          <span className="text-zinc-400">Einsätze:</span>
+          <span className="font-semibold text-zinc-200">{p.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AuslastungTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: ChartTooltipEintrag[];
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-xl border border-zinc-700 bg-zinc-900 p-3 text-sm shadow-2xl">
+      <p className="mb-2 font-semibold text-zinc-200">{label}</p>
+      {payload.map((p, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <div
+            className="size-2 rounded-full"
+            style={{ background: p.color ?? "#6366f1" }}
+          />
+          <span className="text-zinc-400">Einsätze:</span>
+          <span className="font-semibold text-zinc-200">{p.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EinsatzZeile({ einsatz }: { einsatz: NaechsterEinsatz }) {
+  const pfar =
+    einsatz.projektFarbe?.trim() ||
+    einsatz.teamFarbe?.trim() ||
+    "#3b82f6";
+  const statusAnzeige = (einsatz.projektStatus ?? einsatz.status ?? "geplant")
+    .toString()
+    .toLowerCase();
+
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-3 rounded-lg px-2 py-3",
+        "border-b border-zinc-800/40 last:border-0",
+        "transition-colors hover:bg-zinc-800/20"
+      )}
+    >
+      <div className="min-w-[52px] shrink-0 text-right">
+        <p className="text-xs font-bold tabular-nums text-zinc-300">
+          {einsatz.start}
+        </p>
+        <p className="text-xs tabular-nums text-zinc-600">{einsatz.ende}</p>
+      </div>
+      <div className="flex flex-col items-center gap-1 pt-1">
+        <div
+          className="size-2 rounded-full"
+          style={{ background: pfar }}
+        />
+        <div className="min-h-[20px] w-px flex-1 bg-zinc-800" />
+      </div>
+      <div className="min-w-0 flex-1 pb-1">
+        <p className="truncate text-sm font-semibold text-zinc-200">
+          {einsatz.projekt}
+        </p>
+        <p className="mt-0.5 truncate text-xs text-zinc-500">
+          {einsatz.mitarbeiter}
+        </p>
+        <div className="mt-0.5 flex flex-wrap items-center gap-2">
+          {einsatz.teamName ? (
+            <div className="flex items-center gap-1">
+              <div
+                className="size-1.5 rounded-full"
+                style={{
+                  background: einsatz.teamFarbe ?? "#52525b",
+                }}
+              />
+              <span className="text-xs text-zinc-500">{einsatz.teamName}</span>
+            </div>
+          ) : null}
+          {einsatz.projektAdresse ? (
+            <span className="truncate text-xs text-zinc-600">
+              · {einsatz.projektAdresse}
+            </span>
+          ) : null}
+        </div>
+        <div className="mt-1.5">
+          <span
+            className={cn(
+              "rounded-md border border-zinc-700/80 px-1.5 py-0.5 text-[10px] font-semibold",
+              "bg-zinc-800/80 text-zinc-300"
+            )}
+          >
+            {statusAnzeige}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TeamZeile({ team }: { team: TeamHeuteZeile }) {
+  const echtHeute = team.heuteEinsaetze;
+  const istAktiv = echtHeute.length > 0;
+  const erste = echtHeute[0];
+
+  return (
+    <div
+      className={cn(
+        "group flex cursor-default items-center gap-3 rounded-lg px-2 py-3",
+        "border-b border-zinc-800/40 last:border-0",
+        "transition-colors hover:bg-zinc-800/30"
+      )}
+    >
+      <div
+        className={cn(
+          "size-2 shrink-0 rounded-full",
+          istAktiv ? "animate-pulse" : ""
+        )}
+        style={{
+          background: istAktiv ? team.farbe : "#3f3f46",
+        }}
+      />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-semibold text-zinc-300">
+            {team.name}
+          </span>
+          <span className="text-xs text-zinc-600">
+            {team.mitglieder.length} MA
+          </span>
+        </div>
+        {istAktiv && erste ? (
+          <p className="truncate text-xs text-zinc-500">
+            {erste.projektTitel ?? "Einsatz"}
+            {erste.start_time
+              ? ` · ${erste.start_time}–${erste.end_time}`
+              : null}
+          </p>
+        ) : (
+          <p className="text-xs text-zinc-700">Heute frei</p>
+        )}
+      </div>
+      <div
+        className={cn(
+          "rounded-full px-2 py-0.5 text-xs font-semibold",
+          istAktiv
+            ? "border border-emerald-900/50 bg-emerald-950 text-emerald-400"
+            : "bg-zinc-800/50 text-zinc-600"
+        )}
+      >
+        {istAktiv ? `${echtHeute.length}×` : "Frei"}
+      </div>
+      <div
+        className={cn(
+          "flex -space-x-1.5 opacity-0 transition-opacity",
+          "group-hover:opacity-100"
+        )}
+      >
+        {team.mitglieder.slice(0, 3).map((m) => (
+          <div
+            key={m.id}
+            className={cn(
+              "flex size-6 items-center justify-center rounded-full border-2 border-zinc-900",
+              "bg-zinc-700 text-[9px] font-bold text-zinc-400"
+            )}
+            title={m.name}
+          >
+            {m.name.slice(0, 2).toUpperCase()}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
 export function DashboardUebersicht({ daten }: { daten: DashboardDaten }) {
-  const chartAkzent = "#6366f1";
-
   const hatBalken = daten.balkenAbteilungen.some((b) => b.einsaetze > 0);
   const hatArea = daten.auslastung7Tage.some((a) => a.einsaetze > 0);
 
+  const trendEinsaetze = trendProzent(
+    daten.einsaetzeHeute,
+    daten.einsaetzeGestern
+  );
+  const trendVerfuegbar = trendProzent(
+    daten.mitarbeiterVerfuegbar,
+    daten.mitarbeiterGesternVerfuegbar
+  );
+
   return (
-    <div className="space-y-8">
-      {/* Obere Reihe: 4 Stat Cards */}
+    <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Card className={cardClass}>
-          <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
-            <CardDescription className="text-zinc-400">Einsätze heute</CardDescription>
-            <Calendar className="size-4 text-indigo-400" aria-hidden />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold tabular-nums text-white">
-              {daten.einsaetzeHeute}
-            </div>
-            <TrendPfeil
-              heute={daten.einsaetzeHeute}
-              gestern={daten.einsaetzeGestern}
-            />
-          </CardContent>
-        </Card>
-
-        <Card className={cardClass}>
-          <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
-            <CardDescription className="text-zinc-400">
-              Mitarbeiter verfügbar
-            </CardDescription>
-            <Users className="size-4 text-indigo-400" aria-hidden />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold tabular-nums text-white">
-              {daten.mitarbeiterVerfuegbar}
-            </div>
-            <TrendPfeil
-              heute={daten.mitarbeiterVerfuegbar}
-              gestern={daten.mitarbeiterGesternVerfuegbar}
-              umgekehrt
-            />
-          </CardContent>
-        </Card>
-
-        <Card className={cardClass}>
-          <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
-            <CardDescription className="text-zinc-400">Offene Konflikte</CardDescription>
-            <AlertTriangle
-              className={cn(
-                "size-4",
-                daten.offeneKonflikte > 0 ? "text-amber-400" : "text-zinc-600"
-              )}
-              aria-hidden
-            />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold tabular-nums text-white">
-              {daten.offeneKonflikte}
-            </div>
-            <p className="mt-1 text-xs text-zinc-500">
-              Überschneidungen je Mitarbeiter/Tag
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className={cardClass}>
-          <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
-            <CardDescription className="text-zinc-400">Abwesend heute</CardDescription>
-            <UserMinus className="size-4 text-indigo-400" aria-hidden />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold tabular-nums text-white">
-              {daten.abwesendHeute}
-            </div>
-            <Link
-              href="/einstellungen?tab=abwesenheiten"
-              className="mt-1 inline-block text-xs font-medium text-indigo-400 hover:underline"
-            >
-              Abwesenheiten
-            </Link>
-          </CardContent>
-        </Card>
+        <StatKarte
+          wert={daten.einsaetzeHeute}
+          label="Einsätze heute"
+          subtext="Gebuchte Termine für heute"
+          farbe="#3b82f6"
+          Icon={Calendar}
+          trend={trendEinsaetze}
+        />
+        <StatKarte
+          wert={daten.mitarbeiterVerfuegbar}
+          label="Mitarbeiter frei"
+          subtext="Aktiv und heute nicht abwesend"
+          farbe="#10b981"
+          Icon={Users}
+          trend={trendVerfuegbar}
+          trendUmgekehrt
+        />
+        <StatKarte
+          wert={daten.offeneKonflikte}
+          label="Offene Konflikte"
+          subtext="Überschneidungen je Mitarbeiter und Tag"
+          farbe="#f59e0b"
+          Icon={AlertTriangle}
+          trend={0}
+        />
+        <StatKarte
+          wert={daten.abwesendHeute}
+          label="Abwesend heute"
+          subtext="Meldungen mit heutigem Abwesenheitstag"
+          farbe="#ef4444"
+          Icon={UserX}
+          trend={0}
+        />
       </div>
 
-      <Card
-        className={cn(
-          "overflow-hidden border-violet-500/35 bg-gradient-to-br from-violet-950/50 via-zinc-900 to-indigo-950/40 text-zinc-100 shadow-none"
-        )}
-      >
-        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 flex-1 items-start gap-4">
-            <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-violet-500/20 ring-1 ring-violet-400/30">
-              <Bot className="size-6 text-violet-300" aria-hidden />
-            </div>
-            <div className="min-w-0 space-y-1">
-              <p className="text-sm font-semibold text-zinc-50">
-                KI-Assistent, Agenten & Bot
-              </p>
-              <p className="text-sm text-zinc-400">
-                Chat mit Zugriff auf Planung, dedizierte Agenten und
-                Automatisierungen — direkt aus der Montageplanung.
-              </p>
-            </div>
+      <div className="grid gap-4 lg:grid-cols-5">
+        <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5 lg:col-span-3">
+          <div className="mb-4">
+            <h3 className="text-sm font-semibold text-zinc-200">
+              Einsätze pro Abteilung
+            </h3>
+            <p className="mt-0.5 text-xs text-zinc-600">
+              Summe in der laufenden Kalenderwoche (Abteilung des Mitarbeiters)
+            </p>
           </div>
-          <div className="flex shrink-0 flex-col gap-2 sm:items-end">
-            <div className="flex flex-wrap gap-2">
-              <Link
-                href="/ki"
-                className={cn(
-                  buttonVariants({ size: "sm" }),
-                  "gap-2 bg-violet-600 text-white hover:bg-violet-500"
-                )}
-              >
-                <MessageSquare className="size-4" aria-hidden />
-                Zum Chat
-              </Link>
-              <Link
-                href="/ki?tab=agenten"
-                className={cn(
-                  buttonVariants({ variant: "outline", size: "sm" }),
-                  "border-violet-500/40 bg-zinc-950/50 text-zinc-100 hover:bg-zinc-900"
-                )}
-              >
-                <Bot className="size-4" aria-hidden />
-                Agenten
-              </Link>
-              <Link
-                href="/ki?tab=automatisierungen"
-                className={cn(
-                  buttonVariants({ variant: "outline", size: "sm" }),
-                  "border-violet-500/40 bg-zinc-950/50 text-zinc-100 hover:bg-zinc-900"
-                )}
-              >
-                <Zap className="size-4 text-amber-300" aria-hidden />
-                Automationen
-              </Link>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Mittlere Reihe */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className={cn(cardClass, "lg:col-span-2")}>
-          <CardHeader>
-            <CardTitle className="text-lg text-zinc-50">
-              Einsätze pro Abteilung (diese Woche)
-            </CardTitle>
-            <CardDescription className="text-zinc-500">
-              Summe gebuchter Einsätze nach Abteilung des Mitarbeiters
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="h-[280px] pt-2">
+          <div className="h-[280px] pt-2">
             {!hatBalken ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-700 bg-zinc-950/50 p-6 text-center">
-                <Calendar className="size-10 text-zinc-600" />
+                <Calendar className="size-10 text-zinc-600" aria-hidden />
                 <p className="text-sm text-zinc-500">
                   Noch keine Einsätze in dieser Woche.
-                </p>
-                <p className="max-w-sm text-xs text-zinc-600">
-                  Gezählt werden Einsätze der laufenden Kalenderwoche; die Abteilung
-                  kommt vom zugewiesenen Mitarbeiter. Ohne Zuordnung oder außerhalb
-                  der Woche bleibt das Diagramm leer.
                 </p>
                 <Link
                   href="/planung"
@@ -252,237 +383,238 @@ export function DashboardUebersicht({ daten }: { daten: DashboardDaten }) {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={daten.balkenAbteilungen}
-                  margin={{ top: 8, right: 8, left: -8, bottom: 0 }}
+                  margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#3f3f46" />
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="#27272a"
+                    vertical={false}
+                  />
                   <XAxis
                     dataKey="name"
-                    tick={{ fill: "#a1a1aa", fontSize: 11 }}
-                    axisLine={{ stroke: "#52525b" }}
+                    tick={{ fill: "#71717a", fontSize: 12 }}
+                    axisLine={false}
+                    tickLine={false}
                   />
                   <YAxis
-                    tick={{ fill: "#a1a1aa", fontSize: 11 }}
-                    axisLine={{ stroke: "#52525b" }}
+                    tick={{ fill: "#71717a", fontSize: 12 }}
+                    axisLine={false}
+                    tickLine={false}
                     allowDecimals={false}
                   />
                   <Tooltip
-                    contentStyle={{
-                      backgroundColor: "#18181b",
-                      border: "1px solid #3f3f46",
-                      borderRadius: "8px",
-                    }}
-                    labelStyle={{ color: "#fafafa" }}
+                    content={(props) => (
+                      <AbteilungTooltip
+                        active={props.active}
+                        payload={payloadAlsListe(props.payload)}
+                        label={props.label as string}
+                      />
+                    )}
                   />
-                  <Bar
-                    dataKey="einsaetze"
-                    radius={[4, 4, 0, 0]}
-                    maxBarSize={48}
-                  >
+                  <Bar dataKey="einsaetze" radius={[6, 6, 0, 0]} fill="#3b82f6">
                     {daten.balkenAbteilungen.map((entry, i) => (
-                      <Cell key={i} fill={entry.color} />
+                      <Cell
+                        key={i}
+                        fill={entry.color ?? "#3b82f6"}
+                        fillOpacity={0.85}
+                      />
                     ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Card className={cardClass}>
-          <CardHeader>
-            <CardTitle className="text-lg text-zinc-50">
+        <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5 lg:col-span-2">
+          <div className="mb-4">
+            <h3 className="text-sm font-semibold text-zinc-200">
               Nächste Einsätze heute
-            </CardTitle>
-            <CardDescription className="text-zinc-500">
-              Sortiert nach Startzeit
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {daten.naechsteEinsaetze.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-zinc-700 py-8 text-center">
-                <p className="text-sm text-zinc-500">Heute keine Einsätze.</p>
-                <p className="max-w-[220px] text-xs text-zinc-600">
-                  Hier erscheinen nur Termine mit Datum <strong className="font-medium text-zinc-500">heute</strong>.
-                </p>
-                <Link
-                  href="/planung"
-                  className={cn(
-                    buttonVariants({ variant: "outline", size: "sm" }),
-                    "border-zinc-700"
-                  )}
-                >
-                  Planung öffnen
-                </Link>
-              </div>
-            ) : (
-              <ul className="space-y-3">
-                {daten.naechsteEinsaetze.map((e) => (
-                  <li
-                    key={e.id}
-                    className="rounded-lg border border-zinc-800 bg-zinc-950/80 p-3"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium text-zinc-100">
-                          {e.mitarbeiter}
-                        </p>
-                        <p className="truncate text-xs text-zinc-500">{e.projekt}</p>
-                      </div>
-                      <Badge
-                        variant="secondary"
-                        className="shrink-0 border-zinc-700 bg-zinc-800 text-zinc-200"
-                      >
-                        {e.start}–{e.ende}
-                      </Badge>
-                    </div>
-                    <Badge
-                      variant="outline"
-                      className="mt-2 border-zinc-600 text-[10px] text-zinc-400"
-                    >
-                      {e.status}
-                    </Badge>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+            </h3>
+            <p className="mt-0.5 text-xs text-zinc-600">Sortiert nach Startzeit</p>
+          </div>
+          {daten.naechsteEinsaetze.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-zinc-700 py-8 text-center">
+              <p className="text-sm text-zinc-500">Heute keine Einsätze.</p>
+              <Link
+                href="/planung"
+                className={cn(
+                  buttonVariants({ variant: "outline", size: "sm" }),
+                  "border-zinc-700"
+                )}
+              >
+                Planung öffnen
+              </Link>
+            </div>
+          ) : (
+            <ul className="max-h-[min(340px,55vh)] overflow-y-auto">
+              {daten.naechsteEinsaetze.map((e) => (
+                <li key={e.id}>
+                  <EinsatzZeile einsatz={e} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
 
-      {/* Untere Reihe */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className={cn(cardClass, "lg:col-span-2")}>
-          <CardHeader>
-            <CardTitle className="text-lg text-zinc-50">
-              Auslastung (letzte 7 Tage)
-            </CardTitle>
-            <CardDescription className="text-zinc-500">
-              Anzahl Einsätze pro Tag
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="h-[240px] pt-2">
+      <div className="grid gap-4 lg:grid-cols-5">
+        <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5 lg:col-span-3">
+          <div className="mb-4">
+            <h3 className="text-sm font-semibold text-zinc-200">
+              Auslastung letzte 7 Tage
+            </h3>
+            <p className="mt-0.5 text-xs text-zinc-600">
+              Anzahl Einsätze pro Kalendertag (Europe/Berlin)
+            </p>
+          </div>
+          <div className="h-[240px] pt-2">
             {!hatArea ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-700 p-4 text-center">
                 <p className="text-sm text-zinc-500">
                   Noch keine Einsätze im Zeitraum.
                 </p>
-                <p className="max-w-md text-xs text-zinc-600">
-                  Die letzten 7 Tage werden aus den für dich sichtbaren Einsätzen
-                  aggregiert (Kalendertag Europe/Berlin). Ohne Buchungen in diesem
-                  Kreis bleibt die Kurve bei null.
-                </p>
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart
+                <ComposedChart
                   data={daten.auslastung7Tage}
-                  margin={{ top: 8, right: 8, left: -8, bottom: 0 }}
+                  margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
                 >
                   <defs>
-                    <linearGradient id="fillAuslastung" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={chartAkzent} stopOpacity={0.35} />
-                      <stop offset="100%" stopColor={chartAkzent} stopOpacity={0} />
+                    <linearGradient
+                      id="auslastungGradient"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop
+                        offset="0%"
+                        stopColor="#6366f1"
+                        stopOpacity={0.2}
+                      />
+                      <stop
+                        offset="100%"
+                        stopColor="#6366f1"
+                        stopOpacity={0}
+                      />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#3f3f46" />
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="#27272a"
+                    vertical={false}
+                  />
                   <XAxis
                     dataKey="label"
-                    tick={{ fill: "#a1a1aa", fontSize: 11 }}
-                    axisLine={{ stroke: "#52525b" }}
+                    tick={{ fill: "#71717a", fontSize: 12 }}
+                    axisLine={false}
+                    tickLine={false}
                   />
                   <YAxis
-                    tick={{ fill: "#a1a1aa", fontSize: 11 }}
-                    axisLine={{ stroke: "#52525b" }}
+                    tick={{ fill: "#71717a", fontSize: 12 }}
+                    axisLine={false}
+                    tickLine={false}
                     allowDecimals={false}
                   />
                   <Tooltip
-                    contentStyle={{
-                      backgroundColor: "#18181b",
-                      border: "1px solid #3f3f46",
-                      borderRadius: "8px",
-                    }}
+                    content={(props) => (
+                      <AuslastungTooltip
+                        active={props.active}
+                        payload={payloadAlsListe(props.payload)}
+                        label={
+                          typeof props.label === "string"
+                            ? props.label
+                            : String(props.label ?? "")
+                        }
+                      />
+                    )}
                   />
                   <Area
                     type="monotone"
                     dataKey="einsaetze"
-                    stroke={chartAkzent}
-                    fill="url(#fillAuslastung)"
-                    strokeWidth={2}
+                    fill="url(#auslastungGradient)"
+                    stroke="none"
                   />
-                </AreaChart>
+                  <Line
+                    type="monotone"
+                    dataKey="einsaetze"
+                    stroke="#6366f1"
+                    strokeWidth={2.5}
+                    dot={{ fill: "#6366f1", r: 4, strokeWidth: 0 }}
+                    activeDot={{ r: 6, fill: "#818cf8" }}
+                  />
+                </ComposedChart>
               </ResponsiveContainer>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Card className={cardClass}>
-          <CardHeader>
-            <CardTitle className="text-lg text-zinc-50">Schnellzugriff</CardTitle>
-            <CardDescription className="text-zinc-500">
-              Häufige Aktionen
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
+        <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5 lg:col-span-2">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-200">Teams heute</h3>
+              <p className="mt-0.5 text-xs text-zinc-600">
+                Einsatzstatus aller Teams
+              </p>
+            </div>
             <Link
               href="/planung"
-              className={cn(
-                buttonVariants({ variant: "default", size: "default" }),
-                "h-12 w-full justify-between bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-500 hover:to-indigo-500"
-              )}
+              className="text-xs text-zinc-500 transition-colors hover:text-zinc-300"
             >
-              <span className="flex items-center gap-2">
-                <Calendar className="size-4" />
-                Neuer Einsatz
-              </span>
-              <ArrowRight className="size-4 opacity-80" />
+              Planung →
             </Link>
-            <Link
-              href="/ki"
-              className={cn(
-                buttonVariants({ variant: "secondary", size: "default" }),
-                "h-12 w-full justify-between border border-violet-500/35 bg-gradient-to-r from-violet-600/90 to-indigo-600/90 text-white shadow-sm hover:from-violet-500 hover:to-indigo-500"
-              )}
-            >
-              <span className="flex items-center gap-2">
-                <Bot className="size-4" />
-                KI-Assistent
-              </span>
-              <ArrowRight className="size-4 opacity-80" />
-            </Link>
-            <Link
-              href="/notfall"
-              className={cn(
-                buttonVariants({ variant: "secondary", size: "default" }),
-                "h-12 w-full justify-between border border-zinc-700 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
-              )}
-            >
-              <span className="flex items-center gap-2">
-                <AlertTriangle className="size-4 text-amber-400" />
-                Notfall melden
-              </span>
-              <ArrowRight className="size-4 opacity-60" />
-            </Link>
-            {daten.darfMitarbeiterEinladen ? (
-              <Link
-                href="/teams"
-                className={cn(
-                  buttonVariants({ variant: "outline", size: "default" }),
-                  "h-12 w-full justify-between border-zinc-600 text-zinc-100"
-                )}
-              >
-                <span className="flex items-center gap-2">
-                  <Sparkles className="size-4 text-indigo-400" />
-                  Mitarbeiter einladen
-                </span>
-                <ArrowRight className="size-4 opacity-60" />
-              </Link>
-            ) : (
-              <p className="rounded-md border border-dashed border-zinc-700 px-3 py-2 text-center text-xs text-zinc-500">
-                Nur Admins/Abteilungsleiter können Mitarbeiter einladen.
+          </div>
+          <div className="max-h-[min(340px,55vh)] overflow-y-auto">
+            {daten.teamsHeute.length === 0 ? (
+              <p className="py-6 text-center text-xs text-zinc-500">
+                Keine Teams im aktuellen Kontext.
               </p>
+            ) : (
+              daten.teamsHeute.map((t) => <TeamZeile key={t.id} team={t} />)
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
+      </div>
+
+      <div
+        className={cn(
+          "flex flex-col gap-4 rounded-2xl border border-zinc-800/40 bg-zinc-900/50 p-4",
+          "sm:flex-row sm:items-center sm:justify-between"
+        )}
+      >
+        <div className="flex items-center gap-3">
+          <div className="rounded-xl border border-violet-900/30 bg-violet-950/50 p-2">
+            <Bot size={16} className="text-violet-400" aria-hidden />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-zinc-300">KI-Assistent</p>
+            <p className="text-xs text-zinc-600">
+              Planung analysieren, Konflikte erkennen, Empfehlungen erhalten
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Link
+            href="/ki?tab=agenten"
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "sm" }),
+              "border border-zinc-800 text-xs text-zinc-400 hover:border-zinc-700 hover:text-zinc-200"
+            )}
+          >
+            Agenten
+          </Link>
+          <Link
+            href="/ki"
+            className={cn(
+              buttonVariants({ size: "sm" }),
+              "bg-violet-600 text-xs font-semibold text-white hover:bg-violet-500"
+            )}
+          >
+            Chat öffnen
+          </Link>
+        </div>
       </div>
 
       {daten.wetterWarnungen > 0 && (
@@ -492,7 +624,10 @@ export function DashboardUebersicht({ daten }: { daten: DashboardDaten }) {
           <AlertDescription className="text-amber-100/85">
             <span className="tabular-nums">{daten.wetterWarnungen}</span>{" "}
             unbestätigte Meldung(en) — bitte in der{" "}
-            <Link href="/planung" className="font-medium underline underline-offset-2 hover:text-white">
+            <Link
+              href="/planung"
+              className="font-medium underline underline-offset-2 hover:text-white"
+            >
               Planung
             </Link>{" "}
             prüfen und bestätigen.
