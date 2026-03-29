@@ -52,6 +52,12 @@ import {
   rolleLabel,
 } from "@/lib/rollen";
 
+type MitarbeiterAbteilungEmbed = {
+  department_id: string;
+  ist_primaer: boolean;
+  departments: { name: string; color: string } | null;
+};
+
 type Zeile = {
   id: string;
   name: string;
@@ -65,13 +71,14 @@ type Zeile = {
   team_id: string | null;
   abteilungsName: string | null;
   teamName: string | null;
+  employee_departments?: MitarbeiterAbteilungEmbed[];
 };
 
 const monteurSchema = z.object({
   name: z.string().min(2, "Name erforderlich"),
   phone: z.string().optional(),
   whatsapp: z.string().optional(),
-  department_id: z.string().optional(),
+  abteilung_ids: z.array(z.string()),
   team_id: z.string().optional(),
 });
 
@@ -102,6 +109,61 @@ function eingebetteterName(raw: unknown): string | null {
   return null;
 }
 
+function parseEmployeeDepartments(
+  m: Record<string, unknown>
+): MitarbeiterAbteilungEmbed[] {
+  const raw = m.employee_departments;
+  if (raw == null) return [];
+  const arr = Array.isArray(raw) ? raw : [raw];
+  const out: MitarbeiterAbteilungEmbed[] = [];
+  for (const row of arr) {
+    if (!row || typeof row !== "object") continue;
+    const r = row as Record<string, unknown>;
+    const did = r.department_id as string | undefined;
+    if (!did) continue;
+    const depRaw = r.departments;
+    const depOne = Array.isArray(depRaw) ? depRaw[0] : depRaw;
+    const dep =
+      depOne && typeof depOne === "object"
+        ? (depOne as { name?: string; color?: string })
+        : null;
+    out.push({
+      department_id: did,
+      ist_primaer: Boolean(r.ist_primaer),
+      departments: dep
+        ? {
+            name: String(dep.name ?? ""),
+            color: String(dep.color ?? "#3b82f6"),
+          }
+        : null,
+    });
+  }
+  return out;
+}
+
+function abteilungenAusZeile(z: Zeile): {
+  ids: string[];
+  primaer: string | null;
+} {
+  const eds = z.employee_departments;
+  if (eds?.length) {
+    const sorted = [...eds].sort((a, b) =>
+      a.ist_primaer === b.ist_primaer ? 0 : a.ist_primaer ? -1 : 1
+    );
+    return {
+      ids: sorted.map((e) => e.department_id),
+      primaer:
+        sorted.find((e) => e.ist_primaer)?.department_id ??
+        sorted[0]?.department_id ??
+        null,
+    };
+  }
+  if (z.department_id) {
+    return { ids: [z.department_id], primaer: z.department_id };
+  }
+  return { ids: [], primaer: null };
+}
+
 function zeileAusSupabase(
   m: Record<string, unknown>,
   abMap: Record<string, string>,
@@ -111,6 +173,12 @@ function zeileAusSupabase(
   const tmId = (m.team_id as string | null) ?? null;
   const nameAusDep = eingebetteterName(m.departments);
   const nameAusTeam = eingebetteterName(m.teams);
+  const empDepts = parseEmployeeDepartments(m);
+  const namenAusPivot = empDepts
+    .map((e) => e.departments?.name)
+    .filter((n): n is string => Boolean(n && String(n).trim()));
+  const abteilungsNameJoined =
+    namenAusPivot.length > 0 ? namenAusPivot.join(", ") : null;
   return {
     id: m.id as string,
     name: m.name as string,
@@ -122,8 +190,12 @@ function zeileAusSupabase(
     phone: (m.phone as string | null) ?? null,
     whatsapp: (m.whatsapp as string | null) ?? null,
     team_id: tmId,
-    abteilungsName: nameAusDep ?? (depId ? abMap[depId] ?? null : null),
+    abteilungsName:
+      abteilungsNameJoined ??
+      nameAusDep ??
+      (depId ? abMap[depId] ?? null : null),
     teamName: nameAusTeam ?? (tmId ? teamNameNachId[tmId] ?? null : null),
+    employee_departments: empDepts.length ? empDepts : undefined,
   };
 }
 
@@ -136,9 +208,9 @@ export function MitarbeiterVerwaltung({
 }: MitarbeiterVerwaltungProps = {}) {
   const supabase = useMemo(() => createClient(), []);
   const [zeilen, setZeilen] = useState<Zeile[]>([]);
-  const [abteilungen, setAbteilungen] = useState<{ id: string; name: string }[]>(
-    []
-  );
+  const [abteilungen, setAbteilungen] = useState<
+    { id: string; name: string; color: string }[]
+  >([]);
   const [teams, setTeams] = useState<
     { id: string; name: string; department_id: string | null; farbe: string }[]
   >([]);
@@ -158,7 +230,10 @@ export function MitarbeiterVerwaltung({
   const [koorBearbeiten, setKoorBearbeiten] = useState<Zeile | null>(null);
   const [koorAktiv, setKoorAktiv] = useState(true);
   const [koorSpeichert, setKoorSpeichert] = useState(false);
-  const [koorDepartmentId, setKoorDepartmentId] = useState("");
+  const [koorAbteilungIds, setKoorAbteilungIds] = useState<string[]>([]);
+  const [koorPrimaerAbteilungId, setKoorPrimaerAbteilungId] = useState<
+    string | null
+  >(null);
   const [koorTeamIds, setKoorTeamIds] = useState<string[]>([]);
 
   const monteurF = useForm<MonteurForm>({
@@ -167,7 +242,7 @@ export function MitarbeiterVerwaltung({
       name: "",
       phone: "",
       whatsapp: "",
-      department_id: "",
+      abteilung_ids: [],
       team_id: "",
     },
   });
@@ -196,10 +271,10 @@ export function MitarbeiterVerwaltung({
           supabase
             .from("employees")
             .select(
-              "id,name,email,role,active,department_id,auth_user_id,phone,whatsapp,team_id, departments!department_id(name), teams!team_id(name,farbe)"
+              "id,name,email,role,active,department_id,auth_user_id,phone,whatsapp,team_id, departments!department_id(name), teams!team_id(name,farbe), employee_departments(department_id, ist_primaer, departments(name, color))"
             )
             .order("name"),
-          supabase.from("departments").select("id,name").order("name"),
+          supabase.from("departments").select("id,name,color").order("name"),
           supabase
             .from("teams")
             .select("id,name,department_id,farbe")
@@ -222,7 +297,13 @@ export function MitarbeiterVerwaltung({
         farbe: t.farbe || "#3b82f6",
       }));
 
-      setAbteilungen((ab ?? []) as { id: string; name: string }[]);
+      setAbteilungen(
+        (ab ?? []).map((a) => ({
+          id: a.id as string,
+          name: a.name as string,
+          color: String((a as { color?: string }).color ?? "#3b82f6"),
+        }))
+      );
       setTeams(teamListNormalisiert);
 
       const empIds = (mitarbeiter ?? []).map((m) => m.id as string).filter(Boolean);
@@ -319,11 +400,15 @@ export function MitarbeiterVerwaltung({
     [teams]
   );
 
-  const abteilungMonteur = monteurF.watch("department_id");
+  const abteilungIdsMonteur = monteurF.watch("abteilung_ids");
   const teamsGefiltert = useMemo(() => {
-    if (!abteilungMonteur) return teams;
-    return teams.filter((t) => t.department_id === abteilungMonteur);
-  }, [teams, abteilungMonteur]);
+    if (!abteilungIdsMonteur?.length) return teams;
+    return teams.filter(
+      (t) =>
+        t.department_id != null &&
+        abteilungIdsMonteur.includes(t.department_id)
+    );
+  }, [teams, abteilungIdsMonteur]);
 
   /** Alle Teams, gruppiert nach Abteilungsname (Koordinator darf mehrere Teams / Bereiche wählen). */
   const teamsMitAbteilungsLabel = useMemo(() => {
@@ -337,14 +422,6 @@ export function MitarbeiterVerwaltung({
     });
   }, [teams, abteilungen]);
 
-  const koorHauptAbteilungLabel = useMemo(() => {
-    if (!koorDepartmentId) return null;
-    return abteilungen.find((a) => a.id === koorDepartmentId)?.name ?? null;
-  }, [abteilungen, koorDepartmentId]);
-
-  const koorHauptAbteilungVerwaist =
-    Boolean(koorDepartmentId) &&
-    !abteilungen.some((a) => a.id === koorDepartmentId);
 
   const gefilterteZeilen = useMemo(() => {
     const q = suche.trim().toLowerCase();
@@ -381,11 +458,12 @@ export function MitarbeiterVerwaltung({
   function monteurSheetOeffnen(zeile?: Zeile) {
     if (zeile) {
       setBearbeitenId(zeile.id);
+      const { ids } = abteilungenAusZeile(zeile);
       monteurF.reset({
         name: zeile.name,
         phone: zeile.phone ?? "",
         whatsapp: zeile.whatsapp ?? "",
-        department_id: zeile.department_id ?? "",
+        abteilung_ids: ids,
         team_id: zeile.team_id ?? "",
       });
     } else {
@@ -394,7 +472,7 @@ export function MitarbeiterVerwaltung({
         name: "",
         phone: "",
         whatsapp: "",
-        department_id: "",
+        abteilung_ids: [],
         team_id: "",
       });
     }
@@ -402,16 +480,19 @@ export function MitarbeiterVerwaltung({
   }
 
   async function monteurSpeichern(w: MonteurForm) {
-    const department_id = w.department_id || null;
+    const abtIds = Array.from(new Set(w.abteilung_ids ?? [])).filter(Boolean);
+    const department_id = abtIds[0] ? abtIds[0]! : null;
     const team_id = w.team_id || null;
-    if (
-      team_id &&
-      abteilungFuerTeam(team_id) &&
-      department_id &&
-      abteilungFuerTeam(team_id) !== department_id
-    ) {
-      toast.error("Team passt nicht zur gewählten Abteilung.");
-      return;
+    if (team_id) {
+      const tdep = abteilungFuerTeam(team_id);
+      if (
+        abtIds.length > 0 &&
+        tdep &&
+        !abtIds.includes(tdep)
+      ) {
+        toast.error("Team passt nicht zu den gewählten Abteilungen.");
+        return;
+      }
     }
     const payload = {
       name: w.name.trim(),
@@ -432,6 +513,23 @@ export function MitarbeiterVerwaltung({
           .update(payload)
           .eq("id", bearbeitenId);
         if (error) throw error;
+        const { error: edDel } = await supabase
+          .from("employee_departments")
+          .delete()
+          .eq("employee_id", bearbeitenId);
+        if (edDel) throw edDel;
+        if (abtIds.length > 0) {
+          const { error: edIns } = await supabase
+            .from("employee_departments")
+            .insert(
+              abtIds.map((d, i) => ({
+                employee_id: bearbeitenId,
+                department_id: d,
+                ist_primaer: i === 0,
+              }))
+            );
+          if (edIns) throw edIns;
+        }
         await supabase.from("team_members").delete().eq("employee_id", bearbeitenId);
         if (team_id) {
           const { error: e2 } = await supabase.from("team_members").insert({
@@ -449,10 +547,23 @@ export function MitarbeiterVerwaltung({
           .select("id")
           .single();
         if (error) throw error;
-        if (neu?.id && team_id) {
+        const nid = neu?.id as string | undefined;
+        if (nid && abtIds.length > 0) {
+          const { error: edIns } = await supabase
+            .from("employee_departments")
+            .insert(
+              abtIds.map((d, i) => ({
+                employee_id: nid,
+                department_id: d,
+                ist_primaer: i === 0,
+              }))
+            );
+          if (edIns) throw edIns;
+        }
+        if (nid && team_id) {
           const { error: e2 } = await supabase.from("team_members").insert({
             team_id,
-            employee_id: neu.id as string,
+            employee_id: nid,
             team_role: "mitglied",
           });
           if (e2) throw e2;
@@ -482,7 +593,15 @@ export function MitarbeiterVerwaltung({
 
   async function koorProfilSpeichern() {
     if (!koorBearbeiten) return;
-    const department_id = koorDepartmentId || null;
+    const ids = Array.from(new Set(koorAbteilungIds)).filter(Boolean);
+    const primaer =
+      koorPrimaerAbteilungId && ids.includes(koorPrimaerAbteilungId)
+        ? koorPrimaerAbteilungId
+        : ids[0] ?? null;
+    const department_ids =
+      primaer && ids.length > 0
+        ? [primaer, ...ids.filter((x) => x !== primaer)]
+        : ids;
     setKoorSpeichert(true);
     try {
       const res = await fetch(`/api/admin/mitarbeiter/${koorBearbeiten.id}`, {
@@ -490,7 +609,8 @@ export function MitarbeiterVerwaltung({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           active: koorAktiv,
-          department_id,
+          department_ids,
+          primaer_abteilung_id: primaer,
           team_ids: koorTeamIds,
         }),
       });
@@ -673,7 +793,46 @@ export function MitarbeiterVerwaltung({
                           <Badge variant="secondary">Mitarbeiter</Badge>
                         )}
                       </TableCell>
-                      <TableCell>{z.abteilungsName ?? "—"}</TableCell>
+                      <TableCell className="max-w-[14rem]">
+                        <div className="flex flex-wrap gap-1">
+                          {z.employee_departments &&
+                          z.employee_departments.length > 0 ? (
+                            [...z.employee_departments]
+                              .sort((a, b) =>
+                                a.ist_primaer === b.ist_primaer
+                                  ? 0
+                                  : a.ist_primaer
+                                    ? -1
+                                    : 1
+                              )
+                              .map((ed) => {
+                              const col =
+                                ed.departments?.color ?? "#3b82f6";
+                              const mehrAlsEins =
+                                (z.employee_departments?.length ?? 0) > 1;
+                              return (
+                                <span
+                                  key={ed.department_id}
+                                  className="rounded-md px-1.5 py-0.5 text-xs font-medium"
+                                  style={{
+                                    background: `${col}20`,
+                                    color: col,
+                                  }}
+                                >
+                                  {ed.departments?.name ?? "–"}
+                                  {ed.ist_primaer && mehrAlsEins ? " ★" : ""}
+                                </span>
+                              );
+                            })
+                          ) : z.abteilungsName ? (
+                            <span className="text-sm text-zinc-300">
+                              {z.abteilungsName}
+                            </span>
+                          ) : (
+                            <span className="text-zinc-700">—</span>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell>{z.teamName ?? "—"}</TableCell>
                       <TableCell className="text-muted-foreground">
                         {z.phone ?? "—"}
@@ -749,26 +908,35 @@ export function MitarbeiterVerwaltung({
                               void (async () => {
                                 setKoorBearbeiten(z);
                                 setKoorAktiv(z.active);
-                                setKoorDepartmentId(z.department_id ?? "");
+                                const { ids, primaer } = abteilungenAusZeile(z);
+                                const geord =
+                                  primaer && ids.length
+                                    ? [
+                                        primaer,
+                                        ...ids.filter((x) => x !== primaer),
+                                      ]
+                                    : ids;
+                                setKoorAbteilungIds(geord);
+                                setKoorPrimaerAbteilungId(primaer);
                                 const { data } = await supabase
                                   .from("team_members")
                                   .select("team_id")
                                   .eq("employee_id", z.id);
-                                const ids = (data ?? []).map(
+                                const teamIdListe = (data ?? []).map(
                                   (r) => r.team_id as string
                                 );
-                                const uniq = Array.from(new Set(ids));
+                                const uniq = Array.from(new Set(teamIdListe));
                                 if (uniq.length === 0 && z.team_id) {
                                   uniq.push(z.team_id);
                                 }
-                                const geord =
+                                const teamsGeord =
                                   z.team_id && uniq.includes(z.team_id)
                                     ? [
                                         z.team_id,
                                         ...uniq.filter((x) => x !== z.team_id),
                                       ]
                                     : uniq;
-                                setKoorTeamIds(geord);
+                                setKoorTeamIds(teamsGeord);
                               })();
                             } else {
                               monteurSheetOeffnen(z);
@@ -848,29 +1016,87 @@ export function MitarbeiterVerwaltung({
                   className={STAMMDATEN_FORM_INPUT}
                 />
               </StammdatenFormField>
-              <StammdatenFormField label="Abteilung">
-                <Select
-                  value={monteurF.watch("department_id") || "__none__"}
-                  onValueChange={(v) => {
-                    const val = v === "__none__" || v == null ? "" : v;
-                    monteurF.setValue("department_id", val);
-                    monteurF.setValue("team_id", "");
-                  }}
-                >
-                  <SelectTrigger
-                    className={cn(STAMMDATEN_FORM_SELECT_TRIGGER, "h-10 rounded-lg")}
-                  >
-                    <SelectValue placeholder="Abteilung wählen" />
-                  </SelectTrigger>
-                  <SelectContent className="border-zinc-800 bg-zinc-900">
-                    <SelectItem value="__none__">Keine Abteilung</SelectItem>
-                    {abteilungen.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <StammdatenFormField
+                label="Abteilungen"
+                hint="Mehrfachauswahl möglich. Erste gewählte Abteilung = Primärabteilung (Reihenfolge der Häkchen)."
+              >
+                <div className="space-y-2">
+                  <div className="divide-y divide-zinc-800/60 overflow-hidden rounded-xl border border-zinc-800">
+                    {abteilungen.map((abt) => {
+                      const ids = monteurF.watch("abteilung_ids") ?? [];
+                      const isChecked = ids.includes(abt.id);
+                      const isPrimaer = isChecked && ids[0] === abt.id;
+                      return (
+                        <div
+                          key={abt.id}
+                          className="flex items-center gap-3 p-3 transition-colors hover:bg-zinc-800/30"
+                        >
+                          <Checkbox
+                            checked={isChecked}
+                            onCheckedChange={(c) => {
+                              const prev = monteurF.getValues("abteilung_ids");
+                              const neu =
+                                c === true
+                                  ? prev.includes(abt.id)
+                                    ? prev
+                                    : [...prev, abt.id]
+                                  : prev.filter((x) => x !== abt.id);
+                              monteurF.setValue("abteilung_ids", neu);
+                              const tid = monteurF.getValues("team_id") ?? "";
+                              if (tid) {
+                                const tdep = abteilungFuerTeam(tid);
+                                if (
+                                  neu.length === 0 ||
+                                  (tdep != null && !neu.includes(tdep))
+                                ) {
+                                  monteurF.setValue("team_id", "");
+                                }
+                              }
+                            }}
+                            className="border-zinc-600 data-[state=checked]:bg-zinc-700"
+                          />
+                          <span
+                            className="size-2.5 shrink-0 rounded-full"
+                            style={{
+                              background: abt.color ?? "#3b82f6",
+                            }}
+                            aria-hidden
+                          />
+                          <button
+                            type="button"
+                            className="min-w-0 flex-1 cursor-pointer text-left"
+                            onClick={() => {
+                              if (!isChecked) return;
+                              const prev = monteurF.getValues("abteilung_ids");
+                              monteurF.setValue("abteilung_ids", [
+                                abt.id,
+                                ...prev.filter((x) => x !== abt.id),
+                              ]);
+                            }}
+                          >
+                            <p className="text-sm font-semibold text-zinc-300">
+                              {abt.name}
+                            </p>
+                            {isChecked && isPrimaer && ids.length > 1 ? (
+                              <p className="text-[10px] text-zinc-600">
+                                Primärabteilung · antippen zum Wechseln
+                              </p>
+                            ) : isChecked && ids.length > 1 ? (
+                              <p className="text-[10px] text-zinc-600">
+                                Antippen für Primärabteilung
+                              </p>
+                            ) : null}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {(monteurF.watch("abteilung_ids")?.length ?? 0) === 0 ? (
+                    <p className="text-xs italic text-zinc-700">
+                      Keine Abteilung ausgewählt
+                    </p>
+                  ) : null}
+                </div>
               </StammdatenFormField>
               <StammdatenFormField label="Team">
                 <Select
@@ -934,50 +1160,86 @@ export function MitarbeiterVerwaltung({
               </p>
             </StammdatenFormField>
             <StammdatenFormField
-              label="Haupt-Abteilung (optional)"
-              hint="Pflicht nur, wenn alle Teams dieser einen Abteilung zugeordnet sein sollen. Ohne Auswahl: mehrere Teams aus verschiedenen Abteilungen möglich (Haupt-Abteilung bleibt leer)."
+              label="Abteilungen"
+              hint="Mehrfachauswahl möglich. Primärabteilung steuert die Stammdaten-Zuordnung; Teams können mehreren gewählten Abteilungen zugeordnet sein."
             >
-              <Select
-                value={koorDepartmentId || "__none__"}
-                onValueChange={(v) => {
-                  const val = v === "__none__" || v == null ? "" : v;
-                  setKoorDepartmentId(val);
-                }}
-              >
-                <SelectTrigger
-                  className={cn(STAMMDATEN_FORM_SELECT_TRIGGER, "h-10 rounded-lg")}
-                >
-                  <SelectValue placeholder="Keine feste Haupt-Abteilung">
-                    {koorDepartmentId ? (
-                      koorHauptAbteilungVerwaist ? (
+              <div className="space-y-2">
+                <div className="divide-y divide-zinc-800/60 overflow-hidden rounded-xl border border-zinc-800">
+                  {abteilungen.map((abt) => {
+                    const isChecked = koorAbteilungIds.includes(abt.id);
+                    const isPrimaer =
+                      isChecked && koorPrimaerAbteilungId === abt.id;
+                    return (
+                      <div
+                        key={abt.id}
+                        className="flex items-center gap-3 p-3 transition-colors hover:bg-zinc-800/30"
+                      >
+                        <Checkbox
+                          checked={isChecked}
+                          onCheckedChange={(c) => {
+                            if (c === true) {
+                              setKoorAbteilungIds((prev) => {
+                                if (prev.includes(abt.id)) return prev;
+                                return [...prev, abt.id];
+                              });
+                              setKoorPrimaerAbteilungId((p) =>
+                                p == null ? abt.id : p
+                              );
+                              return;
+                            }
+                            const neu = koorAbteilungIds.filter(
+                              (x) => x !== abt.id
+                            );
+                            setKoorAbteilungIds(neu);
+                            setKoorPrimaerAbteilungId((p) => {
+                              if (p === abt.id) return neu[0] ?? null;
+                              if (p != null && neu.includes(p)) return p;
+                              return neu[0] ?? null;
+                            });
+                          }}
+                          className="border-zinc-600 data-[state=checked]:bg-zinc-700"
+                        />
                         <span
-                          className="text-amber-200/90"
-                          title={koorDepartmentId}
+                          className="size-2.5 shrink-0 rounded-full"
+                          style={{ background: abt.color ?? "#3b82f6" }}
+                          aria-hidden
+                        />
+                        <button
+                          type="button"
+                          className="min-w-0 flex-1 cursor-pointer text-left"
+                          onClick={() => {
+                            if (koorAbteilungIds.includes(abt.id)) {
+                              setKoorPrimaerAbteilungId(abt.id);
+                            }
+                          }}
                         >
-                          Abteilung nicht verfügbar
-                        </span>
-                      ) : (
-                        koorHauptAbteilungLabel ?? "…"
-                      )
-                    ) : null}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent className="border-zinc-800 bg-zinc-900">
-                  <SelectItem value="__none__">Keine Abteilung</SelectItem>
-                  {koorHauptAbteilungVerwaist && koorDepartmentId ? (
-                    <SelectItem value={koorDepartmentId}>
-                      <span className="text-amber-200/90">
-                        Verwaiste ID – bitte neu wählen
-                      </span>
-                    </SelectItem>
-                  ) : null}
-                  {abteilungen.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                          <p className="text-sm font-semibold text-zinc-300">
+                            {abt.name}
+                          </p>
+                          {isPrimaer && koorAbteilungIds.length > 1 ? (
+                            <p className="text-[10px] text-zinc-600">
+                              Primärabteilung · antippen zum Wechseln
+                            </p>
+                          ) : isChecked && koorAbteilungIds.length > 1 ? (
+                            <p className="text-[10px] text-zinc-600">
+                              Antippen für Primärabteilung
+                            </p>
+                          ) : isPrimaer ? (
+                            <p className="text-[10px] text-zinc-600">
+                              Primärabteilung
+                            </p>
+                          ) : null}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+                {koorAbteilungIds.length === 0 ? (
+                  <p className="text-xs italic text-zinc-700">
+                    Keine Abteilung ausgewählt
+                  </p>
+                ) : null}
+              </div>
             </StammdatenFormField>
             <StammdatenFormField
               label="Teams"

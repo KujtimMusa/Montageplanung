@@ -36,6 +36,9 @@ export async function PATCH(
     role?: string;
     active?: boolean;
     department_id?: string | null;
+    /** Mehrere Abteilungen (employee_departments); setzt employees.department_id auf Primär */
+    department_ids?: string[] | null;
+    primaer_abteilung_id?: string | null;
     team_id?: string | null;
     /** Mehrere Teams (team_members); überschreibt team_id beim Sync */
     team_ids?: string[] | null;
@@ -63,6 +66,7 @@ export async function PATCH(
 
   const deptTeamAnfrage =
     body.department_id !== undefined ||
+    body.department_ids !== undefined ||
     body.team_id !== undefined ||
     body.team_ids !== undefined;
   if (deptTeamAnfrage && !canManageAll) {
@@ -71,6 +75,11 @@ export async function PATCH(
       { status: 403 }
     );
   }
+
+  const expliziteAbteilungen = body.department_ids !== undefined;
+
+  let pivotIds: string[] = [];
+  let pivotPrimaer: string | null = null;
 
   const update: Record<string, unknown> = {};
   if (typeof body.active === "boolean") {
@@ -85,12 +94,30 @@ export async function PATCH(
 
   let department_id: string | null | undefined;
 
-  if (body.department_id !== undefined) {
+  if (expliziteAbteilungen) {
+    pivotIds = Array.from(
+      new Set(
+        (body.department_ids ?? []).filter(
+          (x): x is string => typeof x === "string" && x.length > 0
+        )
+      )
+    );
+    const gewPrimaer =
+      body.primaer_abteilung_id &&
+      pivotIds.includes(body.primaer_abteilung_id)
+        ? body.primaer_abteilung_id
+        : pivotIds[0] ?? null;
+    pivotPrimaer = gewPrimaer;
+    department_id = gewPrimaer;
+    update.department_id = department_id;
+  } else if (body.department_id !== undefined) {
     department_id =
       body.department_id === "" || body.department_id === null
         ? null
         : body.department_id;
     update.department_id = department_id;
+    pivotIds = department_id ? [department_id] : [];
+    pivotPrimaer = department_id;
   }
 
   /** Team-IDs für Validierung und team_members (Reihenfolge = Primärteam zuerst) */
@@ -125,29 +152,45 @@ export async function PATCH(
       new Set(teamDeptList.filter((d): d is string => Boolean(d)))
     );
 
-    const hauptAbteilungAktiv =
-      body.department_id !== undefined &&
-      department_id !== null &&
-      department_id !== "";
-
-    if (hauptAbteilungAktiv) {
-      const ziel = department_id as string;
-      for (const tdep of teamDeptList) {
-        if (tdep && tdep !== ziel) {
-          return NextResponse.json(
-            {
-              fehler:
-                "Ein gewähltes Team passt nicht zur gewählten Haupt-Abteilung.",
-            },
-            { status: 400 }
-          );
+    if (expliziteAbteilungen) {
+      if (pivotIds.length > 0) {
+        for (const tdep of teamDeptList) {
+          if (tdep && !pivotIds.includes(tdep)) {
+            return NextResponse.json(
+              {
+                fehler:
+                  "Ein gewähltes Team gehört nicht zu den ausgewählten Abteilungen.",
+              },
+              { status: 400 }
+            );
+          }
         }
       }
     } else {
-      if (distinct.length > 1) {
-        update.department_id = null;
-      } else if (distinct.length === 1) {
-        update.department_id = distinct[0] ?? null;
+      const hauptAbteilungAktiv =
+        body.department_id !== undefined &&
+        department_id !== null &&
+        department_id !== "";
+
+      if (hauptAbteilungAktiv) {
+        const ziel = department_id as string;
+        for (const tdep of teamDeptList) {
+          if (tdep && tdep !== ziel) {
+            return NextResponse.json(
+              {
+                fehler:
+                  "Ein gewähltes Team passt nicht zur gewählten Haupt-Abteilung.",
+              },
+              { status: 400 }
+            );
+          }
+        }
+      } else {
+        if (distinct.length > 1) {
+          update.department_id = null;
+        } else if (distinct.length === 1) {
+          update.department_id = distinct[0] ?? null;
+        }
       }
     }
   }
@@ -172,6 +215,34 @@ export async function PATCH(
       });
       if (e2) {
         return NextResponse.json({ fehler: e2.message }, { status: 400 });
+      }
+    }
+  }
+
+  if (expliziteAbteilungen) {
+    await supabase.from("employee_departments").delete().eq("employee_id", id);
+    if (pivotIds.length > 0) {
+      const { error: e3 } = await supabase.from("employee_departments").insert(
+        pivotIds.map((d) => ({
+          employee_id: id,
+          department_id: d,
+          ist_primaer: d === pivotPrimaer,
+        }))
+      );
+      if (e3) {
+        return NextResponse.json({ fehler: e3.message }, { status: 400 });
+      }
+    }
+  } else if (body.department_id !== undefined) {
+    await supabase.from("employee_departments").delete().eq("employee_id", id);
+    if (department_id) {
+      const { error: e3 } = await supabase.from("employee_departments").insert({
+        employee_id: id,
+        department_id,
+        ist_primaer: true,
+      });
+      if (e3) {
+        return NextResponse.json({ fehler: e3.message }, { status: 400 });
       }
     }
   }

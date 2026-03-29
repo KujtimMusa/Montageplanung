@@ -90,6 +90,20 @@ function IconVorschau({ name }: { name: string | null }) {
   return <Cmp className="size-5" aria-hidden />;
 }
 
+function initialen(name: string): string {
+  const p = name.trim().split(/\s+/).filter(Boolean);
+  if (p.length >= 2) return (p[0]![0]! + p[1]![0]!).toUpperCase();
+  return name.slice(0, 2).toUpperCase() || "?";
+}
+
+/** Rollen, die als Abteilungsleitung wählbar sind (keine reinen Monteure). */
+const ABTEILUNGSLEITER_ROLLEN = new Set([
+  "koordinator",
+  "abteilungsleiter",
+  "admin",
+  "geschaeftsfuehrer",
+]);
+
 function IconOption({ name }: { name: string }) {
   const Cmp = (
     LucideIcons as unknown as Record<
@@ -127,7 +141,7 @@ export function AbteilungenVerwaltung({
   const [alleMitarbeiter, setAlleMitarbeiter] = useState<
     { id: string; name: string; role: string; active: boolean }[]
   >([]);
-  const [leaderId, setLeaderId] = useState<string>("__none__");
+  const [leaderId, setLeaderId] = useState<string>("");
 
   const laden = useCallback(async () => {
     setListeLaedt(true);
@@ -136,6 +150,7 @@ export function AbteilungenVerwaltung({
         { data: depts, error: e1 },
         { data: teams },
         { data: emps },
+        { data: edRows },
         { data: maOpt, error: eMa },
       ] = await Promise.all([
         supabase
@@ -144,6 +159,9 @@ export function AbteilungenVerwaltung({
           .order("name"),
         supabase.from("teams").select("id,department_id"),
         supabase.from("employees").select("id,department_id"),
+        supabase
+          .from("employee_departments")
+          .select("employee_id,department_id"),
         supabase
           .from("employees")
           .select("id,name,role,active")
@@ -165,10 +183,20 @@ export function AbteilungenVerwaltung({
         const d = (t as { department_id: string | null }).department_id;
         if (d) teamCount[d] = (teamCount[d] ?? 0) + 1;
       }
-      const empCount: Record<string, number> = {};
+      const empByDept: Record<string, Set<string>> = {};
+      for (const row of edRows ?? []) {
+        const d = (row as { department_id: string }).department_id;
+        const eid = (row as { employee_id: string }).employee_id;
+        if (!d || !eid) continue;
+        if (!empByDept[d]) empByDept[d] = new Set();
+        empByDept[d]!.add(eid);
+      }
       for (const e of emps ?? []) {
         const d = (e as { department_id: string | null }).department_id;
-        if (d) empCount[d] = (empCount[d] ?? 0) + 1;
+        const eid = (e as { id: string }).id;
+        if (!d || !eid) continue;
+        if (!empByDept[d]) empByDept[d] = new Set();
+        if (!empByDept[d]!.has(eid)) empByDept[d]!.add(eid);
       }
 
       const nameById = Object.fromEntries(
@@ -183,7 +211,7 @@ export function AbteilungenVerwaltung({
             color: z.color as string,
             icon: (z.icon as string | null) ?? null,
             anzahlTeams: teamCount[z.id as string] ?? 0,
-            anzahlMitarbeiter: empCount[z.id as string] ?? 0,
+            anzahlMitarbeiter: empByDept[z.id as string]?.size ?? 0,
             leader_id: lid,
             leaderName: lid ? nameById[lid] ?? null : null,
           };
@@ -212,21 +240,20 @@ export function AbteilungenVerwaltung({
     );
   }, [zeilen, sucheAbteilung]);
 
-  /** Nur Koordinator:innen; alte Zuweisungen (z. B. Monteur) erscheinen einmalig zur Anzeige/Umstellung. */
+  /** Aktive Leitungs-Rollen inkl. Koordinator und Abteilungsleiter. */
   const koordinatorOptionen = useMemo(
     () =>
-      alleMitarbeiter.filter(
-        (m) =>
-          m.active &&
-          (m.role ?? "").toLowerCase().trim() === "koordinator"
-      ),
+      alleMitarbeiter.filter((m) => {
+        if (!m.active) return false;
+        const r = (m.role ?? "").toLowerCase().trim();
+        return ABTEILUNGSLEITER_ROLLEN.has(r);
+      }),
     [alleMitarbeiter]
   );
 
   const abteilungsleitungAuswahl = useMemo(() => {
     const base = koordinatorOptionen;
-    const lid =
-      leaderId && leaderId !== "__none__" ? leaderId : null;
+    const lid = leaderId || null;
     if (!lid || base.some((m) => m.id === lid)) return base;
     const fromZeile = zeilen.find((z) => z.leader_id === lid);
     const name =
@@ -241,7 +268,7 @@ export function AbteilungenVerwaltung({
     setName("");
     setFarbe("#3b82f6");
     setIcon("Wrench");
-    setLeaderId("__none__");
+    setLeaderId("");
   }
 
   function oeffnenNeu() {
@@ -258,7 +285,7 @@ export function AbteilungenVerwaltung({
         ? z.icon
         : "Wrench"
     );
-    setLeaderId(z.leader_id ?? "__none__");
+    setLeaderId(z.leader_id ?? "");
     setSheetOffen(true);
   }
 
@@ -267,15 +294,12 @@ export function AbteilungenVerwaltung({
       toast.error("Name ist Pflicht.");
       return;
     }
-    const gewLeiter =
-      leaderId && leaderId !== "__none__" ? leaderId : null;
+    const gewLeiter = leaderId || null;
     if (
       gewLeiter &&
-      !koordinatorOptionen.some((m) => m.id === gewLeiter)
+      !abteilungsleitungAuswahl.some((m) => m.id === gewLeiter)
     ) {
-      toast.error(
-        "Abteilungsleitung: bitte eine aktive Koordinator:in wählen (oder „Keine Leitung“)."
-      );
+      toast.error("Abteilungsleitung: bitte eine gültige Person wählen.");
       return;
     }
     setLädt(true);
@@ -508,27 +532,44 @@ export function AbteilungenVerwaltung({
             <div className="space-y-2">
               <Label>Abteilungsleitung</Label>
               <p className="text-xs text-zinc-500">
-                Nur Koordinator:innen (keine Monteur-Rollen).
+                Koordinator:innen, Abteilungsleiter:innen und Admins (aktiv).
               </p>
               <Select
-                value={leaderId}
-                onValueChange={(v) => setLeaderId(v ?? "__none__")}
+                value={leaderId || "none"}
+                onValueChange={(v) =>
+                  setLeaderId(v == null || v === "none" ? "" : v)
+                }
               >
-                <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-900/80">
+                <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-900/80 text-zinc-100">
                   <SelectValue placeholder="Optional wählen…">
-                    {leaderId && leaderId !== "__none__" ? (
-                      <span className="truncate">
-                        {abteilungsleitungAuswahl.find((m) => m.id === leaderId)
-                          ?.name ?? "…"}
+                    {leaderId ? (
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-zinc-700 text-[9px] font-bold text-zinc-400">
+                          {initialen(
+                            abteilungsleitungAuswahl.find(
+                              (m) => m.id === leaderId
+                            )?.name ?? ""
+                          )}
+                        </span>
+                        <span className="truncate">
+                          {abteilungsleitungAuswahl.find(
+                            (m) => m.id === leaderId
+                          )?.name ?? "…"}
+                        </span>
                       </span>
                     ) : null}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent className="border-zinc-800 bg-zinc-900">
-                  <SelectItem value="__none__">Keine Leitung</SelectItem>
+                  <SelectItem value="none">Keine Leitung</SelectItem>
                   {abteilungsleitungAuswahl.map((m) => (
                     <SelectItem key={m.id} value={m.id}>
-                      {m.name}
+                      <span className="flex items-center gap-2">
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-zinc-700 text-[9px] font-bold text-zinc-400">
+                          {initialen(m.name)}
+                        </span>
+                        {m.name}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
