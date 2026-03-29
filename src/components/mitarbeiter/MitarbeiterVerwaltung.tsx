@@ -40,7 +40,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { nachrichtAusUnbekannt } from "@/lib/fehler";
 import { cn } from "@/lib/utils";
 import { StammdatenSection } from "@/components/stammdaten/StammdatenSection";
-import { StammdatenFilterBar } from "@/components/stammdaten/StammdatenFilterBar";
 import { StammdatenSheetFooter } from "@/components/stammdaten/StammdatenSheetFooter";
 import {
   STAMMDATEN_FILTER_INPUT,
@@ -326,16 +325,25 @@ export function MitarbeiterVerwaltung({
     return teams.filter((t) => t.department_id === abteilungMonteur);
   }, [teams, abteilungMonteur]);
 
-  const teamsFuerKoorDialog = useMemo(() => {
-    if (!koorDepartmentId) return teams;
-    return teams.filter((t) => t.department_id === koorDepartmentId);
-  }, [teams, koorDepartmentId]);
+  /** Alle Teams, gruppiert nach Abteilungsname (Koordinator darf mehrere Teams / Bereiche wählen). */
+  const teamsMitAbteilungsLabel = useMemo(() => {
+    const abName = (id: string | null) =>
+      id ? (abteilungen.find((a) => a.id === id)?.name ?? "Ohne Abteilung") : "Ohne Abteilung";
+    return [...teams].sort((a, b) => {
+      const na = abName(a.department_id);
+      const nb = abName(b.department_id);
+      if (na !== nb) return na.localeCompare(nb, "de");
+      return a.name.localeCompare(b.name, "de");
+    });
+  }, [teams, abteilungen]);
 
   const gefilterteZeilen = useMemo(() => {
     const q = suche.trim().toLowerCase();
     const filtered = zeilen.filter((z) => {
-      if (q && !z.name.toLowerCase().includes(q)) return false;
-      return true;
+      if (!q) return true;
+      const inName = z.name.toLowerCase().includes(q);
+      const inMail = (z.email ?? "").toLowerCase().includes(q);
+      return inName || inMail;
     });
     if (!authUserId) return filtered;
     return [...filtered].sort((a, b) => {
@@ -466,24 +474,6 @@ export function MitarbeiterVerwaltung({
   async function koorProfilSpeichern() {
     if (!koorBearbeiten) return;
     const department_id = koorDepartmentId || null;
-    if (
-      !department_id &&
-      koorTeamIds.some((tid) => abteilungFuerTeam(tid))
-    ) {
-      toast.error(
-        "Mindestens ein Team gehört zu einer Abteilung — bitte Abteilung wählen."
-      );
-      return;
-    }
-    if (department_id) {
-      for (const tid of koorTeamIds) {
-        const tdep = abteilungFuerTeam(tid);
-        if (tdep && tdep !== department_id) {
-          toast.error("Ein gewähltes Team passt nicht zur Abteilung.");
-          return;
-        }
-      }
-    }
     setKoorSpeichert(true);
     try {
       const res = await fetch(`/api/admin/mitarbeiter/${koorBearbeiten.id}`, {
@@ -571,14 +561,15 @@ export function MitarbeiterVerwaltung({
         </div>
       }
     >
-      <StammdatenFilterBar>
+      <div className="rounded-xl border border-zinc-800/70 bg-zinc-900/25 p-4">
         <Input
-          placeholder="Mitarbeiter suchen…"
+          placeholder="Mitarbeiter durchsuchen…"
           value={suche}
           onChange={(e) => setSuche(e.target.value)}
-          className={cn(STAMMDATEN_FILTER_INPUT)}
+          className={cn(STAMMDATEN_FILTER_INPUT, "max-w-md")}
+          aria-label="Mitarbeiter durchsuchen"
         />
-      </StammdatenFilterBar>
+      </div>
 
       {zeilen.length === 0 ? (
         <Card className="border-dashed border-zinc-700 bg-zinc-900/40">
@@ -761,7 +752,14 @@ export function MitarbeiterVerwaltung({
                                 if (uniq.length === 0 && z.team_id) {
                                   uniq.push(z.team_id);
                                 }
-                                setKoorTeamIds(uniq);
+                                const geord =
+                                  z.team_id && uniq.includes(z.team_id)
+                                    ? [
+                                        z.team_id,
+                                        ...uniq.filter((x) => x !== z.team_id),
+                                      ]
+                                    : uniq;
+                                setKoorTeamIds(geord);
                               })();
                             } else {
                               monteurSheetOeffnen(z);
@@ -853,15 +851,7 @@ export function MitarbeiterVerwaltung({
                   <SelectTrigger
                     className={cn(STAMMDATEN_FORM_SELECT_TRIGGER, "h-10 rounded-lg")}
                   >
-                    <SelectValue placeholder="Abteilung wählen">
-                      {(() => {
-                        const id = monteurF.watch("department_id");
-                        if (!id) return null;
-                        return (
-                          abteilungen.find((a) => a.id === id)?.name ?? null
-                        );
-                      })()}
-                    </SelectValue>
+                    <SelectValue placeholder="Abteilung wählen" />
                   </SelectTrigger>
                   <SelectContent className="border-zinc-800 bg-zinc-900">
                     <SelectItem value="__none__">Keine Abteilung</SelectItem>
@@ -886,15 +876,7 @@ export function MitarbeiterVerwaltung({
                   <SelectTrigger
                     className={cn(STAMMDATEN_FORM_SELECT_TRIGGER, "h-10 rounded-lg")}
                   >
-                    <SelectValue placeholder="Team wählen">
-                      {(() => {
-                        const id = monteurF.watch("team_id");
-                        if (!id) return null;
-                        const t = teamsGefiltert.find((x) => x.id === id) ??
-                          teams.find((x) => x.id === id);
-                        return t?.name ?? null;
-                      })()}
-                    </SelectValue>
+                    <SelectValue placeholder="Team wählen" />
                   </SelectTrigger>
                   <SelectContent className="border-zinc-800 bg-zinc-900">
                     <SelectItem value="__none__">Kein Team</SelectItem>
@@ -943,34 +925,20 @@ export function MitarbeiterVerwaltung({
               </p>
             </StammdatenFormField>
             <StammdatenFormField
-              label="Abteilung"
-              hint="Im System ist pro Mitarbeiter genau eine Haupt-Abteilung (Feld department_id) vorgesehen."
+              label="Haupt-Abteilung (optional)"
+              hint="Pflicht nur, wenn alle Teams dieser einen Abteilung zugeordnet sein sollen. Ohne Auswahl: mehrere Teams aus verschiedenen Abteilungen möglich (Haupt-Abteilung bleibt leer)."
             >
               <Select
                 value={koorDepartmentId || "__none__"}
                 onValueChange={(v) => {
                   const val = v === "__none__" || v == null ? "" : v;
                   setKoorDepartmentId(val);
-                  setKoorTeamIds((prev) =>
-                    val
-                      ? prev.filter(
-                          (tid) =>
-                            teams.find((t) => t.id === tid)?.department_id ===
-                            val
-                        )
-                      : prev
-                  );
                 }}
               >
                 <SelectTrigger
                   className={cn(STAMMDATEN_FORM_SELECT_TRIGGER, "h-10 rounded-lg")}
                 >
-                  <SelectValue placeholder="Keine Abteilung">
-                    {koorDepartmentId
-                      ? abteilungen.find((a) => a.id === koorDepartmentId)
-                          ?.name ?? null
-                      : null}
-                  </SelectValue>
+                  <SelectValue placeholder="Keine feste Haupt-Abteilung" />
                 </SelectTrigger>
                 <SelectContent className="border-zinc-800 bg-zinc-900">
                   <SelectItem value="__none__">Keine Abteilung</SelectItem>
@@ -984,38 +952,53 @@ export function MitarbeiterVerwaltung({
             </StammdatenFormField>
             <StammdatenFormField
               label="Teams"
-              hint="Mehrfach wählbar. Erstes gewähltes Team ist das Primärteam (employees.team_id). Alle Zuordnungen liegen in team_members."
+              hint="Mehrfach wählbar. Reihenfolge: erstes Häkchen = Primärteam (Anzeige in Listen). Alle Zuordnungen in team_members."
             >
-              <div className="max-h-52 space-y-1.5 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-900/60 p-2">
-                {teamsFuerKoorDialog.length === 0 ? (
+              <div className="max-h-52 space-y-0.5 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-900/60 p-2">
+                {teamsMitAbteilungsLabel.length === 0 ? (
                   <p className="px-1 text-xs text-zinc-500">
-                    Keine Teams in dieser Abteilung — Abteilung wählen oder es
-                    sind noch keine Teams angelegt.
+                    Noch keine Teams angelegt.
                   </p>
                 ) : (
-                  teamsFuerKoorDialog.map((t) => (
-                    <label
-                      key={t.id}
-                      className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-sm text-zinc-200 hover:bg-zinc-800/80"
-                    >
-                      <Checkbox
-                        checked={koorTeamIds.includes(t.id)}
-                        onCheckedChange={(c) => {
-                          setKoorTeamIds((prev) =>
-                            c === true
-                              ? [...prev, t.id]
-                              : prev.filter((x) => x !== t.id)
-                          );
-                        }}
-                      />
-                      <span
-                        className="size-2.5 shrink-0 rounded-full"
-                        style={{ background: t.farbe ?? "#3b82f6" }}
-                        aria-hidden
-                      />
-                      <span className="flex-1">{t.name}</span>
-                    </label>
-                  ))
+                  teamsMitAbteilungsLabel.map((t) => {
+                    const ab = t.department_id
+                      ? abteilungen.find((a) => a.id === t.department_id)?.name
+                      : null;
+                    return (
+                      <label
+                        key={t.id}
+                        className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-sm text-zinc-200 hover:bg-zinc-800/80"
+                      >
+                        <Checkbox
+                          checked={koorTeamIds.includes(t.id)}
+                          onCheckedChange={(c) => {
+                            setKoorTeamIds((prev) =>
+                              c === true
+                                ? [...prev, t.id]
+                                : prev.filter((x) => x !== t.id)
+                            );
+                          }}
+                        />
+                        <span
+                          className="size-2.5 shrink-0 rounded-full"
+                          style={{ background: t.farbe ?? "#3b82f6" }}
+                          aria-hidden
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block font-medium">{t.name}</span>
+                          {ab ? (
+                            <span className="text-[11px] text-zinc-500">
+                              {ab}
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-zinc-600">
+                              Ohne Abteilung
+                            </span>
+                          )}
+                        </span>
+                      </label>
+                    );
+                  })
                 )}
               </div>
             </StammdatenFormField>

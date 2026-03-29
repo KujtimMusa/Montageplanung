@@ -112,47 +112,42 @@ export async function PATCH(
   }
 
   if (teamIdsZumSync !== null && teamIdsZumSync.length > 0) {
-    let effDept: string | null | undefined =
-      department_id !== undefined ? department_id : undefined;
-    if (effDept === undefined) {
-      const { data: emp } = await supabase
-        .from("employees")
-        .select("department_id")
-        .eq("id", id)
-        .maybeSingle();
-      effDept = (emp?.department_id as string | null) ?? null;
-    }
+    const teamDeptList: (string | null)[] = [];
     for (const tid of teamIdsZumSync) {
       const { data: teamRow } = await supabase
         .from("teams")
         .select("department_id")
         .eq("id", tid)
         .maybeSingle();
-      const tdep = teamRow?.department_id as string | null | undefined;
-      if (department_id !== undefined && !department_id && tdep) {
-        return NextResponse.json(
-          {
-            fehler:
-              "Team gehört zu einer Abteilung — bitte Abteilung wählen.",
-          },
-          { status: 400 }
-        );
+      teamDeptList.push((teamRow?.department_id as string | null) ?? null);
+    }
+    const distinct = Array.from(
+      new Set(teamDeptList.filter((d): d is string => Boolean(d)))
+    );
+
+    const hauptAbteilungAktiv =
+      body.department_id !== undefined &&
+      department_id !== null &&
+      department_id !== "";
+
+    if (hauptAbteilungAktiv) {
+      const ziel = department_id as string;
+      for (const tdep of teamDeptList) {
+        if (tdep && tdep !== ziel) {
+          return NextResponse.json(
+            {
+              fehler:
+                "Ein gewähltes Team passt nicht zur gewählten Haupt-Abteilung.",
+            },
+            { status: 400 }
+          );
+        }
       }
-      if (effDept && tdep && effDept !== tdep) {
-        return NextResponse.json(
-          { fehler: "Team passt nicht zur gewählten Abteilung." },
-          { status: 400 }
-        );
-      }
-      if (
-        (effDept === null || effDept === undefined) &&
-        department_id === undefined &&
-        tdep
-      ) {
-        return NextResponse.json(
-          { fehler: "Team gehört zu einer Abteilung — bitte Abteilung wählen." },
-          { status: 400 }
-        );
+    } else {
+      if (distinct.length > 1) {
+        update.department_id = null;
+      } else if (distinct.length === 1) {
+        update.department_id = distinct[0] ?? null;
       }
     }
   }

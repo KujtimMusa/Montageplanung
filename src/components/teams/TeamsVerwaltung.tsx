@@ -624,15 +624,7 @@ export function TeamsVerwaltung({
                   }
                 >
                   <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-900/80 text-zinc-100">
-                    <SelectValue placeholder="Abteilung wählen…">
-                      {(() => {
-                        const id = teamF.watch("department_id");
-                        if (!id) return null;
-                        return (
-                          abteilungen.find((a) => a.id === id)?.name ?? id
-                        );
-                      })()}
-                    </SelectValue>
+                    <SelectValue placeholder="Abteilung wählen…" />
                   </SelectTrigger>
                   <SelectContent className="border-zinc-800 bg-zinc-900">
                     <SelectItem value="__none__">Bitte Abteilung wählen</SelectItem>
@@ -677,17 +669,7 @@ export function TeamsVerwaltung({
                   }
                 >
                   <SelectTrigger className="h-10 w-full min-w-0 border-zinc-700/90 bg-zinc-900/80 text-zinc-100">
-                    <SelectValue placeholder="Teamleiter wählen…">
-                      {(() => {
-                        const id = teamF.watch("leader_id");
-                        if (!id) return null;
-                        return (
-                          teamleiterOptionen.find((m) => m.id === id)?.name ??
-                          alleMitarbeiter.find((m) => m.id === id)?.name ??
-                          id
-                        );
-                      })()}
-                    </SelectValue>
+                    <SelectValue placeholder="Teamleiter wählen…" />
                   </SelectTrigger>
                   <SelectContent className="border-zinc-800 bg-zinc-900">
                     <SelectItem value="__none__">Kein Teamleiter</SelectItem>
