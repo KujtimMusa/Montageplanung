@@ -1,23 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import {
-  addDays,
-  endOfWeek,
-  format,
-  parseISO,
-  startOfWeek,
-} from "date-fns";
+import { useMemo } from "react";
+import { addDays, endOfWeek, format } from "date-fns";
 import { de } from "date-fns/locale";
-import { Calendar, GripVertical, HelpCircle, Info, MousePointer, Users } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { GripVertical, Users } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -31,12 +18,10 @@ import { SPEZIALISIERUNGEN, type Dienstleister } from "@/types/dienstleister";
 import type { AbwesenheitRow, EinsatzEvent } from "@/types/planung";
 
 const LEGENDE: { farbe: string; label: string }[] = [
-  { farbe: "#3b82f6", label: "Noch einplanen" },
-  { farbe: "#10b981", label: "Geplant / Aktiv" },
-  { farbe: "#22c55e", label: "Abgeschlossen" },
-  { farbe: "#ef4444", label: "Kritischer Einsatz" },
-  { farbe: "#f97316", label: "Konflikt" },
-  { farbe: "#8b5cf6", label: "Abwesenheit" },
+  { farbe: "bg-zinc-800", label: "Kein Einsatz" },
+  { farbe: "bg-emerald-900/80", label: "Eingeplant" },
+  { farbe: "bg-amber-900/60", label: "Abwesenheit" },
+  { farbe: "bg-orange-900/60", label: "Konflikt" },
 ];
 
 const WOCHE_TAGS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"] as const;
@@ -72,17 +57,6 @@ function teamHatKonflikt(
   return false;
 }
 
-function istDieseKalenderwoche(dateStr: string): boolean {
-  try {
-    const d = parseISO(dateStr);
-    const start = startOfWeek(new Date(), { weekStartsOn: 1 });
-    const end = endOfWeek(new Date(), { weekStartsOn: 1 });
-    return d >= start && d <= end;
-  } catch {
-    return false;
-  }
-}
-
 function naechsterFreierTagLabel(
   teamId: string,
   zuweisungen: EinsatzEvent[]
@@ -110,6 +84,8 @@ type Props = {
   heuteAbwesenheiten: number;
   zuweisungen: EinsatzEvent[];
   abwesenheiten: AbwesenheitRow[];
+  /** Montag der im Kalender sichtbaren Woche */
+  wocheStart: Date;
 };
 
 export function TeamsSidebar({
@@ -120,8 +96,8 @@ export function TeamsSidebar({
   heuteAbwesenheiten,
   zuweisungen,
   abwesenheiten,
+  wocheStart,
 }: Props) {
-  const [hilfeOffen, setHilfeOffen] = useState(false);
   const dienstleisterAktiv = dienstleister.filter(
     (d) => d.status === "aktiv" || d.status === "partner"
   );
@@ -134,52 +110,34 @@ export function TeamsSidebar({
     return m;
   }, [teams]);
 
-  const wocheStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+  const wocheEndeSichtbar = endOfWeek(wocheStart, { weekStartsOn: 1 });
+  const vonIso = format(wocheStart, "yyyy-MM-dd");
+  const bisIso = format(wocheEndeSichtbar, "yyyy-MM-dd");
 
   return (
     <TooltipProvider>
-    <div className="flex h-full min-h-0 flex-col border-l border-zinc-800 bg-zinc-950">
-      <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-3 py-2">
-        <h3 className="text-xs font-semibold tracking-wider text-zinc-500 uppercase">
-          Ressourcen
-        </h3>
-        <Tooltip>
-          <TooltipTrigger className="inline-flex">
-            <button
-              type="button"
-              className="rounded p-1 text-zinc-600 transition-colors hover:text-zinc-400"
-              aria-label="Hilfe zu Teams"
-            >
-              <Info size={13} />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent className="max-w-xs border-zinc-700 bg-zinc-900 text-xs">
-            <p className="mb-1 font-semibold text-zinc-300">Teams zuweisen</p>
-            <p className="text-zinc-500">
-              Ziehe ein Team auf einen bereits geplanten Einsatz im Kalender. Die
-              Farben in der Wochenübersicht zeigen die Auslastung: wenig belegt,
-              mittel oder stark.
-            </p>
-          </TooltipContent>
-        </Tooltip>
-      </div>
-
+    <div className="flex h-full min-h-0 flex-col bg-zinc-950">
       <Tabs defaultValue="teams" className="flex min-h-0 flex-1 flex-col">
-        <TabsList className="mx-2 mt-2 w-[calc(100%-16px)] shrink-0 bg-zinc-900/80">
-          <TabsTrigger value="teams" className="flex-1 gap-1 text-xs">
-            <Users className="size-3 opacity-70" aria-hidden />
-            Teams
-            <Badge variant="secondary" className="h-4 px-1 text-[9px] tabular-nums">
-              {teams.length}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="partner" className="flex-1 text-xs">
-            Partner
-            <Badge variant="secondary" className="h-4 px-1 text-[9px] tabular-nums">
-              {dienstleisterAktiv.length}
-            </Badge>
-          </TabsTrigger>
-        </TabsList>
+        <div className="flex h-[52px] shrink-0 items-center justify-between border-b border-zinc-800/60 px-4">
+          <h2 className="text-xs font-semibold tracking-wider text-zinc-400 uppercase">
+            Ressourcen
+          </h2>
+          <TabsList className="h-8 shrink-0 gap-0.5 bg-zinc-900 p-0.5">
+            <TabsTrigger value="teams" className="gap-1 px-2 py-0.5 text-[10px] font-semibold">
+              <Users className="size-3 opacity-70" aria-hidden />
+              Teams
+              <Badge variant="secondary" className="h-4 px-1 text-[9px] tabular-nums">
+                {teams.length}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger value="partner" className="px-2 py-0.5 text-[10px] font-semibold">
+              Partner
+              <Badge variant="secondary" className="h-4 px-1 text-[9px] tabular-nums">
+                {dienstleisterAktiv.length}
+              </Badge>
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent
           value="teams"
@@ -195,7 +153,9 @@ export function TeamsSidebar({
                 teams.map((team) => {
                   const einsaetzeDieseWoche = zuweisungen.filter(
                     (z) =>
-                      z.team_id === team.id && istDieseKalenderwoche(z.date)
+                      z.team_id === team.id &&
+                      z.date >= vonIso &&
+                      z.date <= bisIso
                   ).length;
                   const auslastung = Math.min(
                     einsaetzeDieseWoche / MAX_TAGE_AUSLASTUNG,
@@ -481,39 +441,21 @@ export function TeamsSidebar({
         </TabsContent>
       </Tabs>
 
-      <Separator className="my-2 shrink-0 bg-zinc-800" />
-
-      <div className="shrink-0 px-3">
-        <button
-          type="button"
-          onClick={() => setHilfeOffen(true)}
-          className="mt-3 mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-800 px-2.5 py-1.5 text-xs text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
-        >
-          <HelpCircle size={13} />
-          Wie funktioniert die Planung?
-        </button>
-      </div>
-
-      <div className="shrink-0 px-3 pb-3">
-        <p className="mb-2 text-[10px] font-semibold uppercase text-zinc-500">
+      <div className="shrink-0 border-t border-zinc-800/60 px-4 py-3">
+        <p className="mb-2 text-[10px] font-semibold tracking-wider text-zinc-600 uppercase">
           Legende
         </p>
-        <div className="space-y-1.5">
+        <div className="space-y-1">
           {LEGENDE.map((e) => (
             <div key={e.label} className="flex items-center gap-2">
-              <div
-                className="size-2.5 shrink-0 rounded-full"
-                style={{ background: e.farbe }}
-              />
-              <span className="text-[10px] text-zinc-500">{e.label}</span>
+              <div className={cn("h-2 w-3 shrink-0 rounded-sm", e.farbe)} />
+              <span className="text-[10px] text-zinc-600">{e.label}</span>
             </div>
           ))}
         </div>
       </div>
 
-      <Separator className="my-2 shrink-0 bg-zinc-800" />
-
-      <div className="shrink-0 px-3 pb-3">
+      <div className="shrink-0 border-t border-zinc-800/60 px-4 py-3">
         <p className="mb-2 text-[10px] font-semibold uppercase text-zinc-500">
           Heute
         </p>
@@ -524,72 +466,6 @@ export function TeamsSidebar({
           {heuteAbwesenheiten} Mitarbeiter abwesend
         </p>
       </div>
-
-      <Dialog open={hilfeOffen} onOpenChange={setHilfeOffen}>
-        <DialogContent className="max-w-lg rounded-2xl border border-zinc-800 bg-zinc-950 p-0">
-          <div className="border-b border-zinc-800/60 px-6 pt-6 pb-4">
-            <DialogTitle className="text-base font-semibold text-zinc-100">
-              So funktioniert die Planung
-            </DialogTitle>
-          </div>
-          <div className="space-y-4 px-6 py-5 text-sm text-zinc-400">
-            <div className="flex gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-blue-900/50 bg-blue-950">
-                <MousePointer size={15} className="text-blue-400" />
-              </div>
-              <div>
-                <p className="mb-1 font-semibold text-zinc-300">
-                  Schritt 1 — Projekt einplanen
-                </p>
-                <p>
-                  Ziehe ein Projekt aus der linken Leiste auf einen Tag im Kalender. Es
-                  wird automatisch als „Geplant“ markiert.
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-green-900/50 bg-green-950">
-                <Users size={15} className="text-green-400" />
-              </div>
-              <div>
-                <p className="mb-1 font-semibold text-zinc-300">
-                  Schritt 2 — Team zuweisen
-                </p>
-                <p>
-                  Ziehe ein Team aus der rechten Leiste auf den Einsatz im Kalender.
-                  Uhrzeit und Ort kannst du direkt auf der Karte einstellen.
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-amber-900/50 bg-amber-950">
-                <Calendar size={15} className="text-amber-400" />
-              </div>
-              <div>
-                <p className="mb-1 font-semibold text-zinc-300">
-                  Mehrere Einsätze pro Projekt
-                </p>
-                <p>
-                  Du kannst dasselbe Projekt an mehreren Tagen einplanen. Jeder Einsatz
-                  kann ein eigenes Team und eigene Zeiten haben.
-                </p>
-              </div>
-            </div>
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-3 text-xs text-zinc-500">
-              Die Legende unten erklärt die Farben der Einsätze im Kalender.
-            </div>
-          </div>
-          <div className="px-6 pb-5">
-            <Button
-              type="button"
-              onClick={() => setHilfeOffen(false)}
-              className="w-full border border-zinc-700 bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
-            >
-              Verstanden
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
     </TooltipProvider>
   );

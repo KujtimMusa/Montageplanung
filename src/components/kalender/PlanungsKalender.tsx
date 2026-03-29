@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   useCallback,
@@ -9,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type DragEvent as ReactDragEvent,
 } from "react";
 import {
   ScheduleComponent,
@@ -54,11 +54,6 @@ import {
   type SyncfusionEvent,
 } from "@/lib/syncfusion/transform";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable";
 import { toast } from "sonner";
 import {
   EinsatzNeuDialog,
@@ -67,6 +62,10 @@ import {
   type TeamOption,
 } from "@/components/kalender/EinsatzNeuDialog";
 import { PlanungsToolbar } from "@/components/kalender/PlanungsToolbar";
+import {
+  PlanungWochenRaster,
+  formatPlanungWocheLabel,
+} from "@/components/kalender/PlanungWochenRaster";
 import { ProjekteSidebar } from "@/components/kalender/ProjekteSidebar";
 import { TeamsSidebar } from "@/components/kalender/TeamsSidebar";
 import { EinsatzEventDetailFloating } from "@/components/kalender/EinsatzEventDetail";
@@ -75,8 +74,6 @@ import {
   subcontractorRowToDienstleister,
   type Dienstleister,
 } from "@/types/dienstleister";
-import { useDefaultLayout } from "react-resizable-panels";
-
 registerSyncfusion();
 
 function teamHatKonflikt(
@@ -433,16 +430,32 @@ export function PlanungsKalender() {
 
   const [zeitraumLabel, setZeitraumLabel] = useState("");
 
-  const { defaultLayout: planungLayout, onLayoutChanged: planungLayoutChanged } =
-    useDefaultLayout({
-      id: "planung-layout-v2",
-      panelIds: ["projekte-sidebar", "kalender-mitte", "teams-sidebar"],
-      storage:
-        typeof window !== "undefined" ? window.localStorage : undefined,
-    });
+  const [wocheAnker, setWocheAnker] = useState(() =>
+    startOfWeek(new Date(), { weekStartsOn: 1 })
+  );
+
+  const projekteById = useMemo(() => {
+    const m = new Map<string, ProjektOption>();
+    for (const p of projekteAktiv) {
+      m.set(p.id, p);
+    }
+    return m;
+  }, [projekteAktiv]);
+
+  const toolbarZeitraum = useMemo(() => {
+    if (kalenderAnsicht === "week") return formatPlanungWocheLabel(wocheAnker);
+    return zeitraumLabel;
+  }, [kalenderAnsicht, wocheAnker, zeitraumLabel]);
+
+  useEffect(() => {
+    if (kalenderAnsicht !== "week") return;
+    const start = wocheAnker;
+    const end = addDays(wocheAnker, 7);
+    setSichtbarerZeitraum({ start, end });
+  }, [kalenderAnsicht, wocheAnker]);
 
   useLayoutEffect(() => {
-    if (!kalenderBereit) return;
+    if (!kalenderBereit || kalenderAnsicht !== "month") return;
     const el = scheduleHostRef.current;
     if (!el) return;
     const sync = () => {
@@ -456,7 +469,7 @@ export function PlanungsKalender() {
     const ro = new ResizeObserver(sync);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [kalenderBereit]);
+  }, [kalenderBereit, kalenderAnsicht]);
 
   const laden = useCallback(async () => {
     try {
@@ -1068,40 +1081,50 @@ export function PlanungsKalender() {
     }
   }, [kalenderAnsicht]);
 
-  const setzeAnsicht = useCallback(
-    (art: "week" | "month") => {
-      setKalenderAnsicht(art);
+  const setzeAnsicht = useCallback((art: "week" | "month") => {
+    if (art === "week") {
       const sch = scheduleRef.current;
-      if (!sch) return;
-      sch.changeView(art === "week" ? "TimelineWeek" : "TimelineMonth");
-    },
-    []
-  );
+      if (sch) {
+        const d = new Date(sch.selectedDate);
+        setWocheAnker(startOfWeek(d, { weekStartsOn: 1 }));
+      }
+    }
+    setKalenderAnsicht(art);
+    if (art === "month") {
+      queueMicrotask(() => {
+        const sch = scheduleRef.current;
+        sch?.changeView("TimelineMonth");
+        sch?.changeDate(new Date(wocheAnker));
+      });
+    }
+  }, [wocheAnker]);
 
   const handlePrev = useCallback(() => {
+    if (kalenderAnsicht === "week") {
+      setWocheAnker((d) => addDays(d, -7));
+      return;
+    }
     const sch = scheduleRef.current;
     if (!sch) return;
     const d = new Date(sch.selectedDate);
-    if (kalenderAnsicht === "week") {
-      sch.changeDate(addDays(d, -7));
-    } else {
-      sch.changeDate(addMonths(d, -1));
-    }
+    sch.changeDate(addMonths(d, -1));
   }, [kalenderAnsicht]);
 
   const handleNext = useCallback(() => {
+    if (kalenderAnsicht === "week") {
+      setWocheAnker((d) => addDays(d, 7));
+      return;
+    }
     const sch = scheduleRef.current;
     if (!sch) return;
     const d = new Date(sch.selectedDate);
-    if (kalenderAnsicht === "week") {
-      sch.changeDate(addDays(d, 7));
-    } else {
-      sch.changeDate(addMonths(d, 1));
-    }
+    sch.changeDate(addMonths(d, 1));
   }, [kalenderAnsicht]);
 
   const handleHeute = useCallback(() => {
-    scheduleRef.current?.changeDate(new Date());
+    const heute = new Date();
+    setWocheAnker(startOfWeek(heute, { weekStartsOn: 1 }));
+    scheduleRef.current?.changeDate(heute);
   }, []);
 
   const beiDragOderResize = useCallback(
@@ -1292,6 +1315,50 @@ export function PlanungsKalender() {
     void laden();
   }
 
+  const oeffneBearbeitenEinsatz = useCallback((z: EinsatzEvent) => {
+    if (!z.team_id && !z.dienstleister_id) return;
+    setVorgaben(null);
+    setBearbeiten({
+      id: z.id,
+      employee_id: z.employee_id,
+      project_id: z.project_id,
+      team_id: z.team_id,
+      dienstleister_id: z.dienstleister_id,
+      date: z.date,
+      start_time: z.start_time,
+      end_time: z.end_time,
+      notes: z.notes,
+      prioritaet: z.prioritaet,
+    });
+    setFormularSchluessel((k) => k + 1);
+    setDialogOffen(true);
+  }, []);
+
+  const loeschenEinsatzSchnell = useCallback(
+    async (z: EinsatzEvent) => {
+      if (!globalThis.confirm("Einsatz wirklich löschen?")) return;
+      const { error } = await supabase.from("assignments").delete().eq("id", z.id);
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      toast.success("Einsatz gelöscht.");
+      void laden();
+    },
+    [supabase, laden]
+  );
+
+  const onEinsatzDragStartHandler = useCallback(
+    (e: ReactDragEvent, z: EinsatzEvent) => {
+      e.dataTransfer.setData(
+        "application/x-planung-einsatz",
+        JSON.stringify({ id: z.id })
+      );
+      e.dataTransfer.effectAllowed = "move";
+    },
+    []
+  );
+
   const dateHeaderTemplate = useCallback(
     (props: { date?: Date }) => {
       const d = props.date;
@@ -1372,21 +1439,150 @@ export function PlanungsKalender() {
 
     const onDragOver = (e: DragEvent) => {
       const types = e.dataTransfer?.types ?? [];
-      if (types.includes("application/json") || types.includes("application/team")) {
+      if (
+        types.includes("application/json") ||
+        types.includes("application/team") ||
+        types.includes("application/x-planung-einsatz")
+      ) {
         e.preventDefault();
-        if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+        if (e.dataTransfer) {
+          e.dataTransfer.dropEffect = types.includes("application/x-planung-einsatz")
+            ? "move"
+            : "copy";
+        }
       }
     };
 
     const onDrop = (e: DragEvent) => {
+      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      if (!el) return;
+
+      const planDrop = el.closest("[data-planung-drop]") as HTMLElement | null;
+      if (planDrop && kalenderAnsicht === "week") {
+        e.preventDefault();
+        const datum = planDrop.dataset.datum;
+        if (!datum) return;
+        const emptyRow = planDrop.dataset.emptyRow === "1";
+        const rowProjektId = planDrop.dataset.projektId;
+
+        const rawEinsatz = e.dataTransfer?.getData("application/x-planung-einsatz");
+        if (rawEinsatz) {
+          let einsatzId: string;
+          try {
+            einsatzId = (JSON.parse(rawEinsatz) as { id: string }).id;
+          } catch {
+            return;
+          }
+          const z = zuweisungen.find((x) => x.id === einsatzId);
+          if (!z) return;
+          const newProjectId = emptyRow
+            ? (z.project_id ?? "")
+            : (rowProjektId ?? z.project_id ?? "");
+          if (!newProjectId || newProjectId === "_leer") {
+            toast.info("Ungültige Zelle.");
+            return;
+          }
+          const tStart = z.start_time ?? "07:00:00";
+          const tEnd = z.end_time ?? "16:00:00";
+          const start = parseISO(
+            `${datum}T${tStart.length === 5 ? `${tStart}:00` : tStart.slice(0, 8)}`
+          );
+          const end = parseISO(
+            `${datum}T${tEnd.length === 5 ? `${tEnd}:00` : tEnd.slice(0, 8)}`
+          );
+          void beiDragOderResize(einsatzId, newProjectId, start, end);
+          return;
+        }
+
+        const rawTeam = e.dataTransfer?.getData("application/team");
+        if (rawTeam) {
+          if (emptyRow || !rowProjektId) {
+            toast.info("Team auf eine Projektzeile ziehen (nicht die untere Freizeile).");
+            return;
+          }
+          let teamPayload: { teamId?: string };
+          try {
+            teamPayload = JSON.parse(rawTeam) as { teamId?: string };
+          } catch {
+            return;
+          }
+          const teamId = teamPayload.teamId;
+          if (!teamId) return;
+          void teamAufZelleLegen(teamId, rowProjektId, datum);
+          return;
+        }
+
+        const raw = e.dataTransfer?.getData("application/json");
+        if (!raw) return;
+        e.preventDefault();
+
+        let parsed: {
+          title?: string;
+          extendedProps?: {
+            projektId?: string;
+            projectId?: string;
+            teamId?: string;
+            typ?: string;
+            dienstleisterId?: string;
+          };
+        };
+        try {
+          parsed = JSON.parse(raw) as typeof parsed;
+        } catch {
+          toast.error("Ungültige Drag-Daten. Bitte erneut ziehen.");
+          return;
+        }
+
+        const ep = parsed.extendedProps ?? {};
+
+        if (ep.typ === "dienstleister" && ep.dienstleisterId) {
+          if (!rowProjektId || rowProjektId === "_leer") {
+            toast.info("Auf eine Projektzeile ziehen.");
+            return;
+          }
+          dialogNeuOeffnen({
+            projekt_id: rowProjektId,
+            dienstleister_id: ep.dienstleisterId,
+            dienstleister_name: parsed.title,
+            date: datum,
+            start_time: "07:00",
+            end_time: "16:00",
+          });
+          return;
+        }
+
+        const teamFromDrag = ep.teamId;
+        if (teamFromDrag) {
+          if (!rowProjektId) {
+            toast.info("Auf eine Projektzeile ziehen.");
+            return;
+          }
+          void teamAufZelleLegen(teamFromDrag, rowProjektId, datum);
+          return;
+        }
+
+        const projectId = ep.projektId ?? ep.projectId;
+        if (!projectId) {
+          toast.error("Kein Projekt in den Drag-Daten.");
+          return;
+        }
+        dialogNeuOeffnen({
+          projekt_id: projectId,
+          team_id: teamsListe[0]?.id,
+          date: datum,
+          start_time: "07:00",
+          end_time: "16:00",
+        });
+        return;
+      }
+
       const sch = scheduleRef.current;
       if (!sch) {
+        if (kalenderAnsicht === "week") return;
         toast.error("Kalender ist noch nicht bereit.");
         return;
       }
 
-      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
-      if (!el) return;
       let td = el.closest("td[data-group-index]") as HTMLElement | null;
       if (!td) {
         td = el.closest("td.e-work-cells") as HTMLElement | null;
@@ -1488,13 +1684,38 @@ export function PlanungsKalender() {
       root.removeEventListener("dragover", onDragOver);
       root.removeEventListener("drop", onDrop);
     };
-  }, [projektRessourcenSf, teamsListe, dialogNeuOeffnen, teamAufZelleLegen]);
+  }, [
+    kalenderAnsicht,
+    projektRessourcenSf,
+    teamsListe,
+    dialogNeuOeffnen,
+    teamAufZelleLegen,
+    zuweisungen,
+    beiDragOderResize,
+  ]);
+
+  const wocheStartSidebar = useMemo(() => {
+    if (sichtbarerZeitraum) {
+      return startOfWeek(sichtbarerZeitraum.start, { weekStartsOn: 1 });
+    }
+    return wocheAnker;
+  }, [sichtbarerZeitraum, wocheAnker]);
 
   const kalenderInhalt = !kalenderBereit ? (
     <div className="space-y-2 py-8">
       <Skeleton className="h-10 w-full bg-zinc-800" />
       <Skeleton className="h-64 w-full bg-zinc-800" />
     </div>
+  ) : kalenderAnsicht === "week" ? (
+    <PlanungWochenRaster
+      wocheStart={wocheAnker}
+      zuweisungen={zuweisungen}
+      projekteById={projekteById}
+      abwesenheitCountProTag={abwesenheitCountProTag}
+      onEinsatzBearbeiten={oeffneBearbeitenEinsatz}
+      onEinsatzLoeschen={loeschenEinsatzSchnell}
+      onEinsatzDragStart={onEinsatzDragStartHandler}
+    />
   ) : (
     <div
       ref={scheduleHostRef}
@@ -1506,7 +1727,8 @@ export function PlanungsKalender() {
         width="100%"
         height={`${scheduleHoehePx}px`}
         firstDayOfWeek={1}
-        currentView={kalenderAnsicht === "week" ? "TimelineWeek" : "TimelineMonth"}
+        selectedDate={new Date(wocheAnker)}
+        currentView="TimelineMonth"
         rowAutoHeight={false}
         showHeaderBar={false}
         showTimeIndicator
@@ -1559,91 +1781,36 @@ export function PlanungsKalender() {
   );
 
   return (
-    <div className="flex h-[calc(100dvh-10rem)] min-h-[520px] flex-col gap-0 md:h-[calc(100dvh-8rem)]">
-      <div className="flex shrink-0 flex-col gap-2 px-1 pb-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-        <div className="flex flex-1 items-center gap-2 rounded-xl border border-zinc-800/90 bg-gradient-to-br from-zinc-900/90 to-zinc-950 px-3 py-2 shadow-sm">
-          <span className="text-sm font-medium text-zinc-200">Kalenderplanung</span>
-        </div>
-        <div className="flex shrink-0 flex-col justify-center gap-1.5 text-right text-xs text-zinc-500 sm:min-w-[9rem]">
-          <Link
-            href="/teams?tab=projekte"
-            className="font-medium text-blue-400 underline-offset-2 hover:underline"
-          >
-            Projekte anlegen
-          </Link>
-          <Link
-            href="/teams?tab=teams"
-            className="font-medium text-blue-400 underline-offset-2 hover:underline"
-          >
-            Teams verwalten
-          </Link>
-        </div>
-      </div>
-
-      <ResizablePanelGroup
-        id="planung-layout-v2"
-        orientation="horizontal"
-        defaultLayout={planungLayout}
-        onLayoutChanged={planungLayoutChanged}
-        className="flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950"
-      >
-        <ResizablePanel
-          id="projekte-sidebar"
-          defaultSize="18%"
-          minSize="14%"
-          maxSize="28%"
-          collapsible
-          className="flex min-h-0 min-w-0 flex-col"
-        >
+    <div className="flex h-[calc(100vh-60px)] min-h-[480px] max-h-[calc(100dvh-4rem)] flex-col gap-0 md:max-h-[calc(100dvh-5rem)]">
+      <div className="flex min-h-0 flex-1 gap-0 overflow-hidden rounded-xl border border-zinc-800/60 bg-zinc-950">
+        <aside className="flex w-56 shrink-0 flex-col border-r border-zinc-800/60 bg-zinc-950">
           <ProjekteSidebar
             projekteAlle={projekteAktiv}
             einsatzCountByProjektWoche={einsatzCountByProjektWoche}
             einsatzCountByProjekt={einsatzCountByProjekt}
           />
-        </ResizablePanel>
+        </aside>
 
-        <ResizableHandle
-          withHandle
-          className="w-px shrink-0 bg-zinc-800 transition-colors hover:bg-zinc-700 data-[resize-handle-active]:bg-blue-500"
-        />
-
-        <ResizablePanel
-          id="kalender-mitte"
-          defaultSize="64%"
-          minSize="44%"
-          className="flex min-h-0 min-w-0 flex-1 flex-col"
-        >
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-zinc-950">
           <div
-            className="planung-sf flex min-h-0 flex-1 flex-col overflow-hidden bg-zinc-900"
+            className="planung-sf flex min-h-0 flex-1 flex-col overflow-hidden"
             id="kalender-container"
           >
             <PlanungsToolbar
-              zeitraumLabel={zeitraumLabel}
+              zeitraumLabel={toolbarZeitraum}
               ansicht={kalenderAnsicht}
               onAnsicht={setzeAnsicht}
               onPrev={handlePrev}
               onNext={handleNext}
               onHeute={handleHeute}
             />
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col p-2 md:p-4">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
               {kalenderInhalt}
             </div>
           </div>
-        </ResizablePanel>
+        </main>
 
-        <ResizableHandle
-          withHandle
-          className="w-px shrink-0 bg-zinc-800 transition-colors hover:bg-zinc-700 data-[resize-handle-active]:bg-blue-500"
-        />
-
-        <ResizablePanel
-          id="teams-sidebar"
-          defaultSize="18%"
-          minSize="14%"
-          maxSize="28%"
-          collapsible
-          className="flex min-h-0 min-w-0 flex-col"
-        >
+        <aside className="flex w-64 shrink-0 flex-col border-l border-zinc-800/60 bg-zinc-950">
           <TeamsSidebar
             teams={teamSidebarEintraege}
             dienstleister={dienstleisterListe}
@@ -1652,9 +1819,10 @@ export function PlanungsKalender() {
             heuteAbwesenheiten={heuteAbwesenheitenAnzahl}
             zuweisungen={zuweisungen}
             abwesenheiten={abwesenheiten}
+            wocheStart={wocheStartSidebar}
           />
-        </ResizablePanel>
-      </ResizablePanelGroup>
+        </aside>
+      </div>
 
       <EinsatzEventDetailFloating
         offen={detailOffen}

@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 type Props = {
   zeitraumLabel: string;
@@ -21,68 +21,60 @@ export function PlanungsToolbar({
   onHeute,
 }: Props) {
   return (
-    <div className="sticky top-0 z-10 flex shrink-0 items-center gap-2 border-b border-zinc-800 bg-zinc-900/95 px-3 py-2 backdrop-blur-sm">
-      <div className="flex items-center gap-1">
-        <Button
+    <div
+      className={cn(
+        "flex h-[52px] shrink-0 items-center justify-between border-b border-zinc-800/60 bg-zinc-950 px-4"
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <button
           type="button"
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
           onClick={onPrev}
+          className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
           title="Zurück"
         >
-          <ChevronLeft size={14} />
-        </Button>
-        <Button
+          <ChevronLeft size={15} />
+        </button>
+        <button
           type="button"
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs"
           onClick={onHeute}
+          className="rounded-md bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-300 transition-colors hover:bg-zinc-700"
         >
           Heute
-        </Button>
-        <Button
+        </button>
+        <button
           type="button"
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
           onClick={onNext}
+          className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
           title="Vor"
         >
-          <ChevronRight size={14} />
-        </Button>
+          <ChevronRight size={15} />
+        </button>
       </div>
 
-      <span className="mx-auto text-sm font-semibold text-zinc-200">
+      <div className="text-sm font-semibold text-zinc-200">
         {zeitraumLabel || "…"}
-      </span>
+      </div>
 
-      <div className="ml-auto flex items-center gap-0.5 rounded-lg bg-zinc-900 p-0.5">
-        <Button
-          type="button"
-          size="sm"
-          className={`h-6 px-2 text-xs ${
-            ansicht === "week"
-              ? "bg-zinc-700 text-zinc-100"
-              : "bg-transparent hover:bg-zinc-800"
-          }`}
-          onClick={() => onAnsicht("week")}
-        >
-          Woche
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          className={`h-6 px-2 text-xs ${
-            ansicht === "month"
-              ? "bg-zinc-700 text-zinc-100"
-              : "bg-transparent hover:bg-zinc-800"
-          }`}
-          onClick={() => onAnsicht("month")}
-        >
-          Monat
-        </Button>
+      <div className="flex gap-1 rounded-lg border border-zinc-800 bg-zinc-900 p-1">
+        {(["Woche", "Monat"] as const).map((a) => {
+          const key = a === "Woche" ? "week" : "month";
+          return (
+            <button
+              key={a}
+              type="button"
+              onClick={() => onAnsicht(key)}
+              className={cn(
+                "rounded-md px-3 py-1 text-xs font-semibold transition-colors",
+                ansicht === key
+                  ? "bg-zinc-700 text-zinc-100"
+                  : "text-zinc-500 hover:text-zinc-300"
+              )}
+            >
+              {a}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
