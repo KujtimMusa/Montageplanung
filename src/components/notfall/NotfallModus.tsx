@@ -715,11 +715,33 @@ export function NotfallModus() {
           "id,date,start_time,end_time,employee_id,team_id,project_title,projects(title)"
         )
         .gte("date", scanVon)
-        .lte("date", scanBis);
+        .lte("date", scanBis)
+        .in("status", ["neu", "geplant", "aktiv"]);
 
       if (aErr) throw aErr;
 
       const rows = (assignments ?? []) as Record<string, unknown>[];
+      const assignmentIds = rows.map((r) => String(r.id));
+
+      // Viele DB-Stände nutzen assignment_employees als Hauptzuweisung.
+      const assignmentEmployeesByAssignment = new Map<string, string[]>();
+      if (assignmentIds.length > 0) {
+        const { data: aeRows, error: aeErr } = await supabase
+          .from("assignment_employees")
+          .select("assignment_id,employee_id")
+          .in("assignment_id", assignmentIds);
+        if (aeErr) throw aeErr;
+        const tmp: Record<string, Set<string>> = {};
+        for (const r of (aeRows ?? []) as { assignment_id: string; employee_id: string }[]) {
+          const aid = String(r.assignment_id);
+          const eid = String(r.employee_id);
+          tmp[aid] ??= new Set<string>();
+          tmp[aid].add(eid);
+        }
+        for (const [aid, set] of Object.entries(tmp)) {
+          assignmentEmployeesByAssignment.set(aid, Array.from(set));
+        }
+      }
 
       const teamIds = Array.from(
         new Set(
@@ -780,25 +802,29 @@ export function NotfallModus() {
       const byKey = new Map<string, Record<string, unknown>[]>();
       for (const r of rows) {
         const date = String(r.date);
+        const assignmentId = String(r.id);
         const empId = r.employee_id == null ? null : String(r.employee_id);
         const teamId = r.team_id == null ? null : String(r.team_id);
+        const empFromPivot = assignmentEmployeesByAssignment.get(assignmentId) ?? [];
 
-        // Direkte Mitarbeiter-Zuweisung
-        if (empId) {
-          const k = `${empId}_${date}`;
+        // Mitarbeiter aus assignments.employee_id + assignment_employees sammeln
+        const alleEmpIds = Array.from(new Set<string>([
+          ...(empId ? [empId] : []),
+          ...empFromPivot,
+        ]));
+        for (const eid of alleEmpIds) {
+          const k = `${eid}_${date}`;
           const arr = byKey.get(k) ?? [];
           arr.push(r);
           byKey.set(k, arr);
-          continue;
         }
 
-        // Team-Slots ohne employee_id: potentielle Konflikte für alle Team-Mitglieder
-        if (teamId) {
+        // Team-Slots ohne konkrete Person: potentieller Konflikt für alle Team-Mitglieder
+        if (alleEmpIds.length === 0 && teamId) {
           const members = teamMembersByTeam.get(teamId) ?? [];
           for (const mid of members) {
             const k = `${mid}_${date}`;
             const arr = byKey.get(k) ?? [];
-            // Markiere als Team-Slot
             arr.push({ ...r, __teamSlot: true, __teamMemberId: mid });
             byKey.set(k, arr);
           }
@@ -867,35 +893,23 @@ export function NotfallModus() {
               ? "Fortbildung"
               : typRaw || "Abwesenheit";
 
-        // Betroffene Einsätze: direkte employee_id Einsätze + Team-Slots (über byKey)
-        const betroffene = (byKey.get(`${empId}_${startDate}`) ?? []).length
-          ? rows.filter((r) => {
-              const rEmp = r.employee_id == null ? null : String(r.employee_id);
-              if (rEmp && rEmp === empId) {
-                const d = String(r.date);
-                return d >= startDate && d <= endDate;
-              }
-              // Team-Slot
-              const teamId = r.team_id == null ? null : String(r.team_id);
-              if (!teamId) return false;
-              const members = teamMembersByTeam.get(teamId) ?? [];
-              if (!members.includes(empId)) return false;
-              const d = String(r.date);
-              return d >= startDate && d <= endDate;
-            })
-          : rows.filter((r) => {
-              const rEmp = r.employee_id == null ? null : String(r.employee_id);
-              if (rEmp && rEmp === empId) {
-                const d = String(r.date);
-                return d >= startDate && d <= endDate;
-              }
-              const teamId = r.team_id == null ? null : String(r.team_id);
-              if (!teamId) return false;
-              const members = teamMembersByTeam.get(teamId) ?? [];
-              if (!members.includes(empId)) return false;
-              const d = String(r.date);
-              return d >= startDate && d <= endDate;
-            });
+        // Betroffene Einsätze: direkte Zuweisung + assignment_employees + Team-Slot
+        const betroffene = rows.filter((r) => {
+          const d = String(r.date);
+          if (!(d >= startDate && d <= endDate)) return false;
+
+          const assignmentId = String(r.id);
+          const rEmp = r.employee_id == null ? null : String(r.employee_id);
+          if (rEmp && rEmp === empId) return true;
+
+          const pivotEmp = assignmentEmployeesByAssignment.get(assignmentId) ?? [];
+          if (pivotEmp.includes(empId)) return true;
+
+          const teamId = r.team_id == null ? null : String(r.team_id);
+          if (!teamId) return false;
+          const members = teamMembersByTeam.get(teamId) ?? [];
+          return members.includes(empId);
+        });
 
         const uniqueDates = Array.from(
           new Set(betroffene.map((x) => String(x.date)))
@@ -927,7 +941,7 @@ export function NotfallModus() {
 
   return (
     <div className="flex h-[calc(100vh-60px)] min-h-0 flex-col gap-3">
-      <div className="min-h-0 overflow-y-auto rounded-2xl border border-zinc-800/60 bg-zinc-950 p-4">
+      <div className="flex-1 min-h-0 overflow-y-auto rounded-2xl border border-zinc-800/60 bg-zinc-950 p-4">
         <div id="notfall-stepper">
           <NotfallSteuerung
             mitarbeiter={mitarbeiter}
@@ -1065,7 +1079,7 @@ export function NotfallModus() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-zinc-800/60 bg-zinc-950">
+      <div className="h-[320px] min-h-[260px] rounded-2xl border border-zinc-800/60 bg-zinc-950">
         <KiNotfallPanel
           kiLaed={kiLaed}
           kiStream={kiStream}

@@ -36,7 +36,7 @@ export function KiNotfallPanel({
   const showStream = kiLaed && kiStream.length > 0 && !kiAntwort;
 
   return (
-    <div className="flex h-full min-h-[480px] flex-col overflow-hidden rounded-2xl border border-zinc-800/60 bg-zinc-900 lg:min-h-[calc(100vh-108px)]">
+    <div className="flex h-full min-h-[260px] flex-col overflow-hidden rounded-2xl border border-zinc-800/60 bg-zinc-900">
       <div className="flex shrink-0 items-center gap-2.5 border-b border-zinc-800/60 p-4">
         <div className="flex size-8 items-center justify-center rounded-xl border border-zinc-700 bg-zinc-800">
           <Bot size={16} className="text-zinc-400" />
