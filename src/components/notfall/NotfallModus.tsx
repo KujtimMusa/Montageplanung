@@ -712,7 +712,7 @@ export function NotfallModus() {
       const { data: assignments, error: aErr } = await supabase
         .from("assignments")
         .select(
-          "id,date,start_time,end_time,employee_id,project_title,projects(title)"
+          "id,date,start_time,end_time,employee_id,team_id,project_title,projects(title)"
         )
         .gte("date", scanVon)
         .lte("date", scanBis);
@@ -720,6 +720,34 @@ export function NotfallModus() {
       if (aErr) throw aErr;
 
       const rows = (assignments ?? []) as Record<string, unknown>[];
+
+      const teamIds = Array.from(
+        new Set(
+          rows
+            .map((r) => (r.team_id == null ? null : String(r.team_id)))
+            .filter((x): x is string => Boolean(x))
+        )
+      );
+
+      const teamMembersByTeam = new Map<string, string[]>();
+      if (teamIds.length > 0) {
+        const { data: tmRows, error: tmErr } = await supabase
+          .from("team_members")
+          .select("team_id,employee_id")
+          .in("team_id", teamIds);
+        if (tmErr) throw tmErr;
+        const acc: Record<string, Set<string>> = {};
+        type TeamMemberRow = { team_id: string; employee_id: string };
+        for (const r of (tmRows ?? []) as TeamMemberRow[]) {
+          const tid = String(r.team_id);
+          const eid = String(r.employee_id);
+          acc[tid] ??= new Set<string>();
+          acc[tid].add(eid);
+        }
+        for (const [tid, set] of Object.entries(acc)) {
+          teamMembersByTeam.set(tid, Array.from(set));
+        }
+      }
 
       // Manche DB-Stände haben `type`, andere `absence_type`.
       let absenceRows: Record<string, unknown>[] = [];
@@ -751,13 +779,30 @@ export function NotfallModus() {
       // 1) Konflikte: gleicher MA, gleiche Tagesdate, überlappende Zeitfenster
       const byKey = new Map<string, Record<string, unknown>[]>();
       for (const r of rows) {
-        const empId = r.employee_id == null ? null : String(r.employee_id);
-        if (!empId) continue;
         const date = String(r.date);
-        const k = `${empId}_${date}`;
-        const arr = byKey.get(k) ?? [];
-        arr.push(r);
-        byKey.set(k, arr);
+        const empId = r.employee_id == null ? null : String(r.employee_id);
+        const teamId = r.team_id == null ? null : String(r.team_id);
+
+        // Direkte Mitarbeiter-Zuweisung
+        if (empId) {
+          const k = `${empId}_${date}`;
+          const arr = byKey.get(k) ?? [];
+          arr.push(r);
+          byKey.set(k, arr);
+          continue;
+        }
+
+        // Team-Slots ohne employee_id: potentielle Konflikte für alle Team-Mitglieder
+        if (teamId) {
+          const members = teamMembersByTeam.get(teamId) ?? [];
+          for (const mid of members) {
+            const k = `${mid}_${date}`;
+            const arr = byKey.get(k) ?? [];
+            // Markiere als Team-Slot
+            arr.push({ ...r, __teamSlot: true, __teamMemberId: mid });
+            byKey.set(k, arr);
+          }
+        }
       }
 
       const konflikte: ScanErgebnisse["konflikte"] = [];
@@ -822,12 +867,35 @@ export function NotfallModus() {
               ? "Fortbildung"
               : typRaw || "Abwesenheit";
 
-        const betroffene = rows.filter((r) => {
-          const rEmp = r.employee_id == null ? null : String(r.employee_id);
-          if (!rEmp || rEmp !== empId) return false;
-          const d = String(r.date);
-          return d >= startDate && d <= endDate;
-        });
+        // Betroffene Einsätze: direkte employee_id Einsätze + Team-Slots (über byKey)
+        const betroffene = (byKey.get(`${empId}_${startDate}`) ?? []).length
+          ? rows.filter((r) => {
+              const rEmp = r.employee_id == null ? null : String(r.employee_id);
+              if (rEmp && rEmp === empId) {
+                const d = String(r.date);
+                return d >= startDate && d <= endDate;
+              }
+              // Team-Slot
+              const teamId = r.team_id == null ? null : String(r.team_id);
+              if (!teamId) return false;
+              const members = teamMembersByTeam.get(teamId) ?? [];
+              if (!members.includes(empId)) return false;
+              const d = String(r.date);
+              return d >= startDate && d <= endDate;
+            })
+          : rows.filter((r) => {
+              const rEmp = r.employee_id == null ? null : String(r.employee_id);
+              if (rEmp && rEmp === empId) {
+                const d = String(r.date);
+                return d >= startDate && d <= endDate;
+              }
+              const teamId = r.team_id == null ? null : String(r.team_id);
+              if (!teamId) return false;
+              const members = teamMembersByTeam.get(teamId) ?? [];
+              if (!members.includes(empId)) return false;
+              const d = String(r.date);
+              return d >= startDate && d <= endDate;
+            });
 
         const uniqueDates = Array.from(
           new Set(betroffene.map((x) => String(x.date)))
@@ -858,8 +926,8 @@ export function NotfallModus() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-60px)] min-h-0 flex-col gap-4">
-      <div className="flex-1 min-h-0 overflow-y-auto rounded-2xl border border-zinc-800/60 bg-zinc-950 p-4">
+    <div className="flex h-[calc(100vh-60px)] min-h-0 flex-col gap-3">
+      <div className="min-h-0 overflow-y-auto rounded-2xl border border-zinc-800/60 bg-zinc-950 p-4">
         <div id="notfall-stepper">
           <NotfallSteuerung
             mitarbeiter={mitarbeiter}
@@ -881,12 +949,14 @@ export function NotfallModus() {
             onResetNotfall={resetNotfall}
             lädt={lädt}
             scannerElement={
-              <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-3">
-                <div className="mb-2 flex items-center gap-2">
-                  <ScanSearch size={13} className="text-zinc-500" />
-                  <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
-                    Konflikt-Scanner
-                  </p>
+              <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ScanSearch size={14} className="text-zinc-500" />
+                    <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                      Konflikt-Scanner
+                    </p>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <input
@@ -927,7 +997,7 @@ export function NotfallModus() {
                   </button>
                 </div>
                 {scanErgebnisse ? (
-                  <div className="mt-2 flex flex-wrap gap-2">
+                  <div className="mt-3 flex flex-wrap gap-2">
                     {[...scanErgebnisse.konflikte, ...scanErgebnisse.abwesenheiten]
                       .slice(0, 30)
                       .map((p, idx) => (
@@ -995,7 +1065,7 @@ export function NotfallModus() {
         </div>
       </div>
 
-      <div className="h-[340px] min-h-[260px] rounded-2xl border border-zinc-800/60 bg-zinc-950 p-0">
+      <div className="rounded-2xl border border-zinc-800/60 bg-zinc-950">
         <KiNotfallPanel
           kiLaed={kiLaed}
           kiStream={kiStream}
