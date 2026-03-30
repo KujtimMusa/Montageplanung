@@ -29,6 +29,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ScanSearch } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -444,7 +445,7 @@ export function NotfallModus() {
   > => {
     const { data, error } = await supabase
       .from("absences")
-      .select("employee_id,start_date,end_date,type")
+      .select("employee_id,start_date,end_date,type,absence_type")
       .lte("start_date", datum)
       .gte("end_date", datum);
     if (error || !data) return [];
@@ -453,13 +454,14 @@ export function NotfallModus() {
         employee_id: string;
         start_date: string;
         end_date: string;
-        type: string;
+        type?: string | null;
+        absence_type?: string | null;
       }[]
     ).map((r) => ({
       employeeId: r.employee_id,
       startDate: r.start_date,
       endDate: r.end_date,
-      type: r.type,
+      type: (r.absence_type ?? r.type ?? "").toString(),
     }));
   }, [datum, supabase]);
 
@@ -679,8 +681,9 @@ export function NotfallModus() {
           "[alleErsatzBestaetigen] Fehlgeschlagen:",
           fehlgeschlagen
         );
+        const first = fehlgeschlagen[0];
         toast.error(
-          `Fehler bei ${fehlgeschlagen.length} Einsatz/Einsätzen. Supabase Console prüfen.`
+          `Fehler bei ${fehlgeschlagen.length} Einsatz/Einsätzen: ${first?.message ?? "Supabase Console prüfen."}`
         );
         return;
       }
@@ -720,7 +723,7 @@ export function NotfallModus() {
 
       const { data: absences, error: abErr } = await supabase
         .from("absences")
-        .select("employee_id,start_date,end_date,type")
+        .select("employee_id,start_date,end_date,type,absence_type")
         .lte("start_date", scanBis)
         .gte("end_date", scanVon);
 
@@ -796,7 +799,11 @@ export function NotfallModus() {
         if (!empId) continue;
         const startDate = String(abw.start_date);
         const endDate = String(abw.end_date);
-        const typRaw = String(abw.type ?? "").toLowerCase();
+        const typRaw = String(
+          (abw as Record<string, unknown>).absence_type ??
+            (abw as Record<string, unknown>).type ??
+            ""
+        ).toLowerCase();
 
         const label = typRaw.includes("krank")
           ? "Krank"
@@ -844,138 +851,128 @@ export function NotfallModus() {
   return (
     <div className="flex h-[calc(100vh-60px)] min-h-0 gap-4">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto">
-        <div className="space-y-4">
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5">
-              <h3 className="mb-4 text-sm font-semibold text-zinc-200">
-                Zeitraum scannen
-              </h3>
-              <div className="grid grid-cols-2 gap-3 mb-4">
-                <div>
-                  <label className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-1.5 block">
-                    Von
-                  </label>
-                  <input
-                    type="date"
-                    value={scanVon}
-                    onChange={(e) => setScanVon(e.target.value)}
-                    className="w-full px-3 py-2.5 text-sm bg-zinc-800 border border-zinc-700 rounded-xl text-zinc-200 [color-scheme:dark] focus:outline-none focus:border-zinc-600"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-1.5 block">
-                    Bis
-                  </label>
-                  <input
-                    type="date"
-                    value={scanBis}
-                    onChange={(e) => setScanBis(e.target.value)}
-                    className="w-full px-3 py-2.5 text-sm bg-zinc-800 border border-zinc-700 rounded-xl text-zinc-200 [color-scheme:dark] focus:outline-none focus:border-zinc-600"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => void globalScanStarten()}
-                disabled={ladeScanner}
-                className={cn(
-                  "w-full py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2",
-                  !ladeScanner
-                    ? "bg-zinc-100 text-zinc-900 hover:bg-white"
-                    : "bg-zinc-800 text-zinc-600 cursor-not-allowed"
-                )}
-              >
-                {ladeScanner ? "Scanne..." : "Vollständigen Scan starten"}
-              </button>
+        <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ScanSearch size={14} className="text-zinc-500" />
+              <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                Konflikt-Scanner
+              </p>
             </div>
-
-            {scanErgebnisse ? (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="rounded-xl bg-zinc-900 border border-zinc-800/60 p-3 text-center">
-                    <p className="text-2xl font-bold tabular-nums text-rose-400">
-                      {scanErgebnisse.konflikte.length}
-                    </p>
-                    <p className="text-[10px] text-zinc-600 mt-0.5">
-                      Konflikte
-                    </p>
-                  </div>
-                  <div className="rounded-xl bg-zinc-900 border border-zinc-800/60 p-3 text-center">
-                    <p className="text-2xl font-bold tabular-nums text-amber-400">
-                      {scanErgebnisse.abwesenheiten.length}
-                    </p>
-                    <p className="text-[10px] text-zinc-600 mt-0.5">
-                      Abwesenheiten
-                    </p>
-                  </div>
-                </div>
-
-                {[...scanErgebnisse.konflikte, ...scanErgebnisse.abwesenheiten]
-                  .slice(0, 20)
-                  .map((p, idx) => (
-                    <div
-                      key={`${p.employee_id}-${p.datum}-${idx}`}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => {
-                        setKiLaed(false);
-                        setKiStream("");
-                        setKiAntwort(null);
-                        setKiErsatz({});
-                        setManuellerErsatz({});
-                        setAusfallId(p.employee_id);
-                        setDatum(p.datum);
-                        document
-                          .getElementById("notfall-stepper")
-                          ?.scrollIntoView({ behavior: "smooth" });
-                      }}
-                      className="rounded-xl bg-zinc-900 border border-zinc-800/60 p-3.5 hover:border-zinc-700 transition-all cursor-pointer"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div
-                          className={cn(
-                            "w-2.5 h-2.5 mt-1 rounded-full flex-shrink-0",
-                            p.typ === "konflikt"
-                              ? "bg-amber-500"
-                              : p.abwesenheitTypLabel === "Krank"
-                                ? "bg-red-400"
-                                : "bg-amber-500"
-                          )}
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-bold text-zinc-200">
-                            {p.mitarbeiterName}
-                          </p>
-                          {p.typ === "abwesenheit" ? (
-                            <p className="mt-0.5 text-[10px] text-zinc-500">
-                              <span
-                                className={cn(
-                                  "font-semibold",
-                                  p.abwesenheitTypLabel === "Krank"
-                                    ? "text-red-400"
-                                    : p.abwesenheitTypLabel === "Urlaub"
-                                      ? "text-amber-400"
-                                      : "text-zinc-400"
-                                )}
-                              >
-                                {p.abwesenheitTypLabel}
-                              </span>
-                            </p>
-                          ) : null}
-                          <p className="text-xs text-zinc-500">
-                            {p.datum} · {p.beschreibung}
-                          </p>
-                        </div>
-                        <div className="text-xs text-zinc-600 flex-shrink-0">
-                          Lösen →
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            ) : null}
           </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={scanVon}
+              onChange={(e) => setScanVon(e.target.value)}
+              className="flex-1 px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded-xl text-zinc-200 [color-scheme:dark] focus:outline-none focus:border-zinc-600"
+            />
+            <span className="text-zinc-700 text-xs">bis</span>
+            <input
+              type="date"
+              value={scanBis}
+              onChange={(e) => setScanBis(e.target.value)}
+              className="flex-1 px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded-xl text-zinc-200 [color-scheme:dark] focus:outline-none focus:border-zinc-600"
+            />
+            <button
+              type="button"
+              onClick={() => void globalScanStarten()}
+              disabled={ladeScanner}
+              className={cn(
+                "px-4 py-2 rounded-xl text-sm font-semibold flex-shrink-0 transition-colors flex items-center gap-1.5",
+                !ladeScanner
+                  ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                  : "bg-zinc-800 text-zinc-600 opacity-60 cursor-not-allowed"
+              )}
+            >
+              {ladeScanner ? (
+                <>
+                  <div className="w-4 h-4 rounded-full border-2 border-zinc-600/30 border-t-zinc-600 animate-spin" />
+                  Scanne
+                </>
+              ) : (
+                <>
+                  <ScanSearch size={13} />
+                  Scannen
+                </>
+              )}
+            </button>
+          </div>
+
+          {scanErgebnisse ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {[...scanErgebnisse.konflikte, ...scanErgebnisse.abwesenheiten]
+                .slice(0, 30)
+                .map((p, idx) => (
+                  <button
+                    key={`${p.employee_id}-${p.datum}-${idx}`}
+                    type="button"
+                    onClick={() => {
+                      setKiLaed(false);
+                      setKiStream("");
+                      setKiAntwort(null);
+                      setKiErsatz({});
+                      setManuellerErsatz({});
+                      setAusfallId(p.employee_id);
+                      setDatum(p.datum);
+                      document
+                        .getElementById("notfall-stepper")
+                        ?.scrollIntoView({ behavior: "smooth" });
+                    }}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 hover:border-zinc-600 transition-all text-xs font-medium text-zinc-300"
+                  >
+                    <div
+                      className={cn(
+                        "w-1.5 h-1.5 rounded-full flex-shrink-0",
+                        p.typ === "konflikt"
+                          ? "bg-amber-500"
+                          : p.abwesenheitTypLabel === "Krank"
+                            ? "bg-red-400"
+                            : "bg-amber-500"
+                      )}
+                    />
+                    <span className="max-w-[120px] truncate">
+                      {p.mitarbeiterName}
+                    </span>
+                    <span className="text-zinc-600 tabular-nums">
+                      {(() => {
+                        try {
+                          return new Date(p.datum + "T00:00:00").toLocaleDateString(
+                            "de-DE",
+                            { day: "2-digit", month: "2-digit" }
+                          );
+                        } catch {
+                          return p.datum;
+                        }
+                      })()}
+                    </span>
+                    {p.typ === "abwesenheit" ? (
+                      <span
+                        className={cn(
+                          "text-[10px] font-semibold",
+                          p.abwesenheitTypLabel === "Krank"
+                            ? "text-red-400"
+                            : p.abwesenheitTypLabel === "Urlaub"
+                              ? "text-amber-400"
+                              : "text-zinc-400"
+                        )}
+                      >
+                        {p.abwesenheitTypLabel}
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
+
+              {[...scanErgebnisse.konflikte, ...scanErgebnisse.abwesenheiten].length ===
+              0 ? (
+                <div className="flex items-center gap-1.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  <p className="text-xs text-zinc-600">Keine Konflikte gefunden</p>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <div id="notfall-stepper">
             <NotfallSteuerung
             mitarbeiter={mitarbeiter}
