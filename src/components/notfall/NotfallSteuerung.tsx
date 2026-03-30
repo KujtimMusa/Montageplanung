@@ -99,6 +99,7 @@ export function NotfallSteuerung({
   onAlleErsatzBestaetigen,
   onResetNotfall,
   lädt,
+  scannerElement,
 }: NotfallSteuerungProps) {
   const ausfall = useMemo(
     () => mitarbeiter.find((m) => m.id === ausfallId),
@@ -196,6 +197,8 @@ export function NotfallSteuerung({
           </span>
         </div>
       </div>
+
+      {scannerElement ? scannerElement : null}
 
       <div className="mb-4 rounded-2xl border border-zinc-800/60 bg-zinc-900 p-4">
         <div className="flex items-center">

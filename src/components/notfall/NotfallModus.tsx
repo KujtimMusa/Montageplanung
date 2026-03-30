@@ -721,15 +721,24 @@ export function NotfallModus() {
 
       const rows = (assignments ?? []) as Record<string, unknown>[];
 
-      const { data: absences, error: abErr } = await supabase
+      // Manche DB-Stände haben `type`, andere `absence_type`.
+      let absenceRows: Record<string, unknown>[] = [];
+      const ab1 = await supabase
         .from("absences")
-        .select("employee_id,start_date,end_date,type,absence_type")
+        .select("employee_id,start_date,end_date,absence_type")
         .lte("start_date", scanBis)
         .gte("end_date", scanVon);
-
-      if (abErr) throw abErr;
-
-      const absenceRows = (absences ?? []) as Record<string, unknown>[];
+      if (ab1.error) {
+        const ab2 = await supabase
+          .from("absences")
+          .select("employee_id,start_date,end_date,type")
+          .lte("start_date", scanBis)
+          .gte("end_date", scanVon);
+        if (ab2.error) throw ab2.error;
+        absenceRows = (ab2.data ?? []) as Record<string, unknown>[];
+      } else {
+        absenceRows = (ab1.data ?? []) as Record<string, unknown>[];
+      }
 
       const zeitZuMinuten = (t: string) => {
         const parts = t.split(":").map((x) => parseInt(x, 10));
@@ -849,132 +858,10 @@ export function NotfallModus() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-60px)] min-h-0 gap-4">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto">
-        <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <ScanSearch size={14} className="text-zinc-500" />
-              <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-                Konflikt-Scanner
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="date"
-              value={scanVon}
-              onChange={(e) => setScanVon(e.target.value)}
-              className="flex-1 px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded-xl text-zinc-200 [color-scheme:dark] focus:outline-none focus:border-zinc-600"
-            />
-            <span className="text-zinc-700 text-xs">bis</span>
-            <input
-              type="date"
-              value={scanBis}
-              onChange={(e) => setScanBis(e.target.value)}
-              className="flex-1 px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded-xl text-zinc-200 [color-scheme:dark] focus:outline-none focus:border-zinc-600"
-            />
-            <button
-              type="button"
-              onClick={() => void globalScanStarten()}
-              disabled={ladeScanner}
-              className={cn(
-                "px-4 py-2 rounded-xl text-sm font-semibold flex-shrink-0 transition-colors flex items-center gap-1.5",
-                !ladeScanner
-                  ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
-                  : "bg-zinc-800 text-zinc-600 opacity-60 cursor-not-allowed"
-              )}
-            >
-              {ladeScanner ? (
-                <>
-                  <div className="w-4 h-4 rounded-full border-2 border-zinc-600/30 border-t-zinc-600 animate-spin" />
-                  Scanne
-                </>
-              ) : (
-                <>
-                  <ScanSearch size={13} />
-                  Scannen
-                </>
-              )}
-            </button>
-          </div>
-
-          {scanErgebnisse ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {[...scanErgebnisse.konflikte, ...scanErgebnisse.abwesenheiten]
-                .slice(0, 30)
-                .map((p, idx) => (
-                  <button
-                    key={`${p.employee_id}-${p.datum}-${idx}`}
-                    type="button"
-                    onClick={() => {
-                      setKiLaed(false);
-                      setKiStream("");
-                      setKiAntwort(null);
-                      setKiErsatz({});
-                      setManuellerErsatz({});
-                      setAusfallId(p.employee_id);
-                      setDatum(p.datum);
-                      document
-                        .getElementById("notfall-stepper")
-                        ?.scrollIntoView({ behavior: "smooth" });
-                    }}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 hover:border-zinc-600 transition-all text-xs font-medium text-zinc-300"
-                  >
-                    <div
-                      className={cn(
-                        "w-1.5 h-1.5 rounded-full flex-shrink-0",
-                        p.typ === "konflikt"
-                          ? "bg-amber-500"
-                          : p.abwesenheitTypLabel === "Krank"
-                            ? "bg-red-400"
-                            : "bg-amber-500"
-                      )}
-                    />
-                    <span className="max-w-[120px] truncate">
-                      {p.mitarbeiterName}
-                    </span>
-                    <span className="text-zinc-600 tabular-nums">
-                      {(() => {
-                        try {
-                          return new Date(p.datum + "T00:00:00").toLocaleDateString(
-                            "de-DE",
-                            { day: "2-digit", month: "2-digit" }
-                          );
-                        } catch {
-                          return p.datum;
-                        }
-                      })()}
-                    </span>
-                    {p.typ === "abwesenheit" ? (
-                      <span
-                        className={cn(
-                          "text-[10px] font-semibold",
-                          p.abwesenheitTypLabel === "Krank"
-                            ? "text-red-400"
-                            : p.abwesenheitTypLabel === "Urlaub"
-                              ? "text-amber-400"
-                              : "text-zinc-400"
-                        )}
-                      >
-                        {p.abwesenheitTypLabel}
-                      </span>
-                    ) : null}
-                  </button>
-                ))}
-
-              {[...scanErgebnisse.konflikte, ...scanErgebnisse.abwesenheiten].length ===
-              0 ? (
-                <div className="flex items-center gap-1.5">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  <p className="text-xs text-zinc-600">Keine Konflikte gefunden</p>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-          <div id="notfall-stepper">
-            <NotfallSteuerung
+    <div className="flex h-[calc(100vh-60px)] min-h-0 flex-col gap-4">
+      <div className="flex-1 min-h-0 overflow-y-auto rounded-2xl border border-zinc-800/60 bg-zinc-950 p-4">
+        <div id="notfall-stepper">
+          <NotfallSteuerung
             mitarbeiter={mitarbeiter}
             ausfallId={ausfallId}
             setAusfallId={setAusfallId}
@@ -993,11 +880,122 @@ export function NotfallModus() {
             onAlleErsatzBestaetigen={() => void alleErsatzBestaetigen()}
             onResetNotfall={resetNotfall}
             lädt={lädt}
-            />
-          </div>
+            scannerElement={
+              <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-3">
+                <div className="mb-2 flex items-center gap-2">
+                  <ScanSearch size={13} className="text-zinc-500" />
+                  <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+                    Konflikt-Scanner
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={scanVon}
+                    onChange={(e) => setScanVon(e.target.value)}
+                    className="flex-1 px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded-xl text-zinc-200 [color-scheme:dark] focus:outline-none focus:border-zinc-600"
+                  />
+                  <span className="text-zinc-700 text-xs">bis</span>
+                  <input
+                    type="date"
+                    value={scanBis}
+                    onChange={(e) => setScanBis(e.target.value)}
+                    className="flex-1 px-3 py-2 text-sm bg-zinc-800 border border-zinc-700 rounded-xl text-zinc-200 [color-scheme:dark] focus:outline-none focus:border-zinc-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void globalScanStarten()}
+                    disabled={ladeScanner}
+                    className={cn(
+                      "px-4 py-2 rounded-xl text-sm font-semibold flex-shrink-0 transition-colors flex items-center gap-1.5",
+                      !ladeScanner
+                        ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                        : "bg-zinc-800 text-zinc-600 opacity-60 cursor-not-allowed"
+                    )}
+                  >
+                    {ladeScanner ? (
+                      <>
+                        <div className="w-4 h-4 rounded-full border-2 border-zinc-600/30 border-t-zinc-600 animate-spin" />
+                        Scanne
+                      </>
+                    ) : (
+                      <>
+                        <ScanSearch size={13} />
+                        Scannen
+                      </>
+                    )}
+                  </button>
+                </div>
+                {scanErgebnisse ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {[...scanErgebnisse.konflikte, ...scanErgebnisse.abwesenheiten]
+                      .slice(0, 30)
+                      .map((p, idx) => (
+                        <button
+                          key={`${p.employee_id}-${p.datum}-${idx}`}
+                          type="button"
+                          onClick={() => {
+                            setKiLaed(false);
+                            setKiStream("");
+                            setKiAntwort(null);
+                            setKiErsatz({});
+                            setManuellerErsatz({});
+                            setAusfallId(p.employee_id);
+                            setDatum(p.datum);
+                            document
+                              .getElementById("notfall-stepper")
+                              ?.scrollIntoView({ behavior: "smooth" });
+                          }}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 hover:border-zinc-600 transition-all text-xs font-medium text-zinc-300"
+                        >
+                          <div
+                            className={cn(
+                              "w-1.5 h-1.5 rounded-full flex-shrink-0",
+                              p.typ === "konflikt"
+                                ? "bg-amber-500"
+                                : p.abwesenheitTypLabel === "Krank"
+                                  ? "bg-red-400"
+                                  : "bg-amber-500"
+                            )}
+                          />
+                          <span className="max-w-[120px] truncate">{p.mitarbeiterName}</span>
+                          <span className="text-zinc-600 tabular-nums">
+                            {(() => {
+                              try {
+                                return new Date(p.datum + "T00:00:00").toLocaleDateString(
+                                  "de-DE",
+                                  { day: "2-digit", month: "2-digit" }
+                                );
+                              } catch {
+                                return p.datum;
+                              }
+                            })()}
+                          </span>
+                          {p.typ === "abwesenheit" ? (
+                            <span
+                              className={cn(
+                                "text-[10px] font-semibold",
+                                p.abwesenheitTypLabel === "Krank"
+                                  ? "text-red-400"
+                                  : p.abwesenheitTypLabel === "Urlaub"
+                                    ? "text-amber-400"
+                                    : "text-zinc-400"
+                              )}
+                            >
+                              {p.abwesenheitTypLabel}
+                            </span>
+                          ) : null}
+                        </button>
+                      ))}
+                  </div>
+                ) : null}
+              </div>
+            }
+          />
         </div>
       </div>
-      <div className="flex w-[420px] shrink-0 min-h-0 flex-col">
+
+      <div className="h-[340px] min-h-[260px] rounded-2xl border border-zinc-800/60 bg-zinc-950 p-0">
         <KiNotfallPanel
           kiLaed={kiLaed}
           kiStream={kiStream}

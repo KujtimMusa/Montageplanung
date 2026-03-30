@@ -1,4 +1,5 @@
 import type { KiErsatzKarte } from "@/types/notfall-ki";
+import type { ReactNode } from "react";
 
 export type NotfallMitarbeiter = {
   id: string;
@@ -49,4 +50,5 @@ export type NotfallSteuerungProps = {
   onAlleErsatzBestaetigen: () => void;
   onResetNotfall: () => void;
   lädt: boolean;
+  scannerElement?: ReactNode;
 };
