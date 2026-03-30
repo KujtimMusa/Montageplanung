@@ -209,6 +209,11 @@ export function NotfallModus() {
                 .from("assignments")
                 .select(sel)
                 .in("team_id", ausfallTeamIds)
+                // Team-Zuordnung allein soll nicht ewig als „betroffen“ gelten:
+                // Ein gelöster Notfall ändert typischerweise den Vertreter
+                // (assignments.employee_id). Daher nehmen wir Team-Einsätze
+                // nur als „betroffen“ an, wenn employee_id leer ist.
+                .is("employee_id", null)
                 .eq("date", datum)
             : null;
 
