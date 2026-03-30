@@ -29,7 +29,6 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarX } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -104,16 +103,18 @@ export function NotfallModus() {
       mitarbeiterName: string;
       datum: string;
       beschreibung: string;
+      typ: "konflikt";
     }[];
     abwesenheiten: {
       employee_id: string;
       mitarbeiterName: string;
       datum: string;
       beschreibung: string;
+      typ: "abwesenheit";
+      abwesenheitTypLabel: string;
     }[];
   };
 
-  const [modus, setModus] = useState<"notfall" | "scanner">("notfall");
   const [scanVon, setScanVon] = useState(() =>
     new Date().toISOString().slice(0, 10)
   );
@@ -303,7 +304,7 @@ export function NotfallModus() {
                 .from("assignments")
                 .select(sel)
                 .in("employee_id", absentInDeptIds)
-                .eq("date", datum)
+                .gte("date", datum)
             : null;
 
         // Team-Slots gelten als “betroffen”, aber nur wenn noch kein employee_id gesetzt ist
@@ -315,7 +316,7 @@ export function NotfallModus() {
                 .select(sel)
                 .in("team_id", relevantTeamIds)
                 .is("employee_id", null)
-                .eq("date", datum)
+                .gte("date", datum)
             : null;
 
         const emptyRes: { data: Record<string, unknown>[]; error: null } = {
@@ -557,6 +558,7 @@ export function NotfallModus() {
           name: first.name,
           employeeId: first.mitarbeiter_id,
           grund: first.grund,
+          score: first.score ?? 0,
         };
       }
       setKiErsatz(map);
@@ -619,43 +621,81 @@ export function NotfallModus() {
   }
 
   async function alleErsatzBestaetigen() {
-    const jobs: Promise<void>[] = [];
-    for (const e of einsätze) {
-      const ki = kiErsatz[e.id];
-      const manual = manuellerErsatz[e.id];
-      const ersatzIdEmp = manual ?? ki?.employeeId;
-      if (!ersatzIdEmp) continue;
-      jobs.push(
-        (async () => {
+    if (einsätze.length === 0) return;
+    setLädt(true);
+
+    try {
+      // Für jeden Einsatz muss ein Ersatz existieren.
+      const ersatzMap: Record<string, string> = {};
+      for (const e of einsätze) {
+        const ki = kiErsatz[e.id];
+        const manual = manuellerErsatz[e.id];
+        const ersatzIdEmp = manual ?? ki?.employeeId;
+        if (ersatzIdEmp) ersatzMap[e.id] = ersatzIdEmp;
+      }
+
+      const ersatzIds = Object.keys(ersatzMap);
+      if (ersatzIds.length === 0) {
+        toast.info(
+          "Keine vollständige Ersatzwahl — bitte alle Einsätze zuweisen."
+        );
+        return;
+      }
+      if (ersatzIds.length < einsätze.length) {
+        toast.error("Bitte für jeden Einsatz einen Ersatz wählen.");
+        return;
+      }
+
+      const fehlgeschlagen: { einsatzId: string; message: string }[] = [];
+
+      // Pro Einsatz einzeln updaten, damit Fehler pro Row sichtbar bleiben.
+      for (const e of einsätze) {
+        const ersatzIdEmp = ersatzMap[e.id];
+        try {
           const { error } = await supabase
             .from("assignments")
             .update({ employee_id: ersatzIdEmp })
             .eq("id", e.id);
-          if (error) throw error;
-        })()
-      );
-    }
-    if (jobs.length === 0) {
-      toast.info("Keine vollständige Ersatzwahl — bitte alle Einsätze zuweisen.");
-      return;
-    }
-    if (jobs.length < einsätze.length) {
-      toast.error("Bitte für jeden Einsatz einen Ersatz wählen.");
-      return;
-    }
-    setLädt(true);
-    try {
-      await Promise.all(jobs);
+
+          if (error) {
+            console.error(
+              `[alleErsatzBestaetigen] Update fehlgeschlagen für ${e.id}:`,
+              error
+            );
+            fehlgeschlagen.push({ einsatzId: e.id, message: error.message });
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(
+            `[alleErsatzBestaetigen] Unerwarteter Fehler für ${e.id}:`,
+            err
+          );
+          fehlgeschlagen.push({ einsatzId: e.id, message: msg });
+        }
+      }
+
+      if (fehlgeschlagen.length > 0) {
+        console.error(
+          "[alleErsatzBestaetigen] Fehlgeschlagen:",
+          fehlgeschlagen
+        );
+        toast.error(
+          `Fehler bei ${fehlgeschlagen.length} Einsatz/Einsätzen. Supabase Console prüfen.`
+        );
+        return;
+      }
+
       await absenceEinmalig();
-      toast.success(`Alle ${jobs.length} Ersatzplanungen übernommen.`);
+
+      toast.success(`Alle ${einsätze.length} Ersatzplanungen übernommen.`);
       setAktiverSchritt(4);
       bereitsAufgelöstAssignmentIdsRef.current = new Set(
         einsätze.map((e) => e.id)
       );
       void betroffeneLaden({ silent: true });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Batch fehlgeschlagen.";
-      toast.error(msg);
+
+      // Fix 7: Planung aktualisieren
+      window.dispatchEvent(new CustomEvent("planung:refresh"));
     } finally {
       setLädt(false);
     }
@@ -745,6 +785,7 @@ export function NotfallModus() {
           mitarbeiterName: name,
           datum,
           beschreibung: `Überschneidungen: ${times}`,
+          typ: "konflikt",
         });
       }
 
@@ -755,16 +796,15 @@ export function NotfallModus() {
         if (!empId) continue;
         const startDate = String(abw.start_date);
         const endDate = String(abw.end_date);
-        const typRaw = String(abw.type ?? "");
+        const typRaw = String(abw.type ?? "").toLowerCase();
 
-        const label =
-          typRaw === "krank"
-            ? "Krank"
-            : typRaw === "urlaub"
-              ? "Urlaub"
-              : typRaw === "fortbildung"
-                ? "Fortbildung"
-                : typRaw || "Abwesenheit";
+        const label = typRaw.includes("krank")
+          ? "Krank"
+          : typRaw.includes("urlaub")
+            ? "Urlaub"
+            : typRaw.includes("fortbildung")
+              ? "Fortbildung"
+              : typRaw || "Abwesenheit";
 
         const betroffene = rows.filter((r) => {
           const rEmp = r.employee_id == null ? null : String(r.employee_id);
@@ -786,6 +826,8 @@ export function NotfallModus() {
             mitarbeiterName: name,
             datum: d,
             beschreibung: `Einsatz während ${label} (${startDate}–${endDate})`,
+            typ: "abwesenheit",
+            abwesenheitTypLabel: label,
           });
         }
       }
@@ -802,38 +844,7 @@ export function NotfallModus() {
   return (
     <div className="flex h-[calc(100vh-60px)] min-h-0 gap-4">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto">
-        <div className="mb-2 rounded-2xl border border-zinc-800/60 bg-zinc-900 p-2">
-          <div className="grid grid-cols-2 gap-1">
-            <button
-              type="button"
-              onClick={() => setModus("notfall")}
-              className={cn(
-                "flex items-center gap-2.5 py-2.5 px-3 rounded-xl text-sm font-semibold transition-all",
-                modus === "notfall"
-                  ? "bg-zinc-800 text-zinc-100 shadow-sm"
-                  : "text-zinc-500 hover:text-zinc-300"
-              )}
-            >
-              <AlertTriangle size={15} />
-              Notfallplan
-            </button>
-            <button
-              type="button"
-              onClick={() => setModus("scanner")}
-              className={cn(
-                "flex items-center gap-2.5 py-2.5 px-3 rounded-xl text-sm font-semibold transition-all",
-                modus === "scanner"
-                  ? "bg-zinc-800 text-zinc-100 shadow-sm"
-                  : "text-zinc-500 hover:text-zinc-300"
-              )}
-            >
-              <CalendarX size={15} />
-              Konflikt-Scanner
-            </button>
-          </div>
-        </div>
-
-        {modus === "scanner" ? (
+        <div className="space-y-4">
           <div className="space-y-4">
             <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5">
               <h3 className="mb-4 text-sm font-semibold text-zinc-200">
@@ -908,7 +919,6 @@ export function NotfallModus() {
                       role="button"
                       tabIndex={0}
                       onClick={() => {
-                        setModus("notfall");
                         setKiLaed(false);
                         setKiStream("");
                         setKiAntwort(null);
@@ -916,15 +926,43 @@ export function NotfallModus() {
                         setManuellerErsatz({});
                         setAusfallId(p.employee_id);
                         setDatum(p.datum);
+                        document
+                          .getElementById("notfall-stepper")
+                          ?.scrollIntoView({ behavior: "smooth" });
                       }}
                       className="rounded-xl bg-zinc-900 border border-zinc-800/60 p-3.5 hover:border-zinc-700 transition-all cursor-pointer"
                     >
                       <div className="flex items-start gap-3">
-                        <div className="w-2.5 h-2.5 mt-1 rounded-full bg-red-400 flex-shrink-0" />
+                        <div
+                          className={cn(
+                            "w-2.5 h-2.5 mt-1 rounded-full flex-shrink-0",
+                            p.typ === "konflikt"
+                              ? "bg-amber-500"
+                              : p.abwesenheitTypLabel === "Krank"
+                                ? "bg-red-400"
+                                : "bg-amber-500"
+                          )}
+                        />
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-bold text-zinc-200">
                             {p.mitarbeiterName}
                           </p>
+                          {p.typ === "abwesenheit" ? (
+                            <p className="mt-0.5 text-[10px] text-zinc-500">
+                              <span
+                                className={cn(
+                                  "font-semibold",
+                                  p.abwesenheitTypLabel === "Krank"
+                                    ? "text-red-400"
+                                    : p.abwesenheitTypLabel === "Urlaub"
+                                      ? "text-amber-400"
+                                      : "text-zinc-400"
+                                )}
+                              >
+                                {p.abwesenheitTypLabel}
+                              </span>
+                            </p>
+                          ) : null}
                           <p className="text-xs text-zinc-500">
                             {p.datum} · {p.beschreibung}
                           </p>
@@ -938,8 +976,8 @@ export function NotfallModus() {
               </div>
             ) : null}
           </div>
-        ) : (
-          <NotfallSteuerung
+          <div id="notfall-stepper">
+            <NotfallSteuerung
             mitarbeiter={mitarbeiter}
             ausfallId={ausfallId}
             setAusfallId={setAusfallId}
@@ -958,8 +996,9 @@ export function NotfallModus() {
             onAlleErsatzBestaetigen={() => void alleErsatzBestaetigen()}
             onResetNotfall={resetNotfall}
             lädt={lädt}
-          />
-        )}
+            />
+          </div>
+        </div>
       </div>
       <div className="flex w-[420px] shrink-0 min-h-0 flex-col">
         <KiNotfallPanel

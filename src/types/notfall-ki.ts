@@ -37,4 +37,5 @@ export type KiErsatzKarte = {
   name: string;
   employeeId: string;
   grund: string;
+  score: number;
 };

@@ -465,6 +465,15 @@ export function PlanungsKalender() {
     void laden();
   }, [laden]);
 
+  // Fix 7: Notfall → Planung: Nach Notfall-Bestätigung neu laden
+  useEffect(() => {
+    const handler = () => {
+      void laden();
+    };
+    window.addEventListener("planung:refresh", handler);
+    return () => window.removeEventListener("planung:refresh", handler);
+  }, [laden]);
+
   useEffect(() => {
     const kanal = supabase
       .channel("kalender-realtime-p5")

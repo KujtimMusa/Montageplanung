@@ -149,7 +149,7 @@ export function KiNotfallPanel({
                         style={{
                           background:
                             einsatz.dringlichkeit === "hoch"
-                              ? "#ef4444"
+                              ? "#f59e0b"
                               : "#f59e0b",
                         }}
                       />
@@ -165,7 +165,7 @@ export function KiNotfallPanel({
                         className={cn(
                           "text-[10px] font-bold px-2 py-0.5 rounded-full",
                           einsatz.dringlichkeit === "hoch"
-                            ? "bg-red-950/60 text-red-400 border border-red-900/50"
+                            ? "bg-amber-950/60 text-amber-400 border border-amber-900/50"
                             : "bg-amber-950/60 text-amber-400 border border-amber-900/50"
                         )}
                       >
@@ -220,12 +220,12 @@ export function KiNotfallPanel({
                               {v.name}
                             </p>
                             {v.konflikt && (
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-950/60 border border-orange-900/50 text-orange-400">
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-950/60 border border-amber-900/50 text-amber-400">
                                 Konflikt
                               </span>
                             )}
                             {!v.verfuegbar && (
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-950/60 border border-red-900/50 text-red-400">
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-500">
                                 Nicht frei
                               </span>
                             )}
@@ -242,14 +242,14 @@ export function KiNotfallPanel({
                               className="text-sm font-bold tabular-nums"
                               style={{
                                 color:
-                                  v.score >= 80
+                                  v.score >= 70
                                     ? "#10b981"
-                                    : v.score >= 60
+                                    : v.score > 0
                                       ? "#f59e0b"
-                                      : "#ef4444",
+                                      : "#52525b",
                               }}
                             >
-                              {v.score}%
+                              {v.score > 0 ? `${v.score}%` : "–"}
                             </p>
                             <p className="text-[9px] text-zinc-700">
                               Match
@@ -291,9 +291,9 @@ export function KiNotfallPanel({
                         {
                           personalengpass: {
                             icon: Users,
-                            color: "#ef4444",
-                            bg: "bg-red-950/30",
-                            border: "border-red-900/40",
+                            color: "#f59e0b",
+                            bg: "bg-amber-950/30",
+                            border: "border-amber-900/40",
                           },
                           konflikt: {
                             icon: AlertTriangle,
@@ -303,15 +303,15 @@ export function KiNotfallPanel({
                           },
                           abwesenheit: {
                             icon: CalendarX,
-                            color: "#6366f1",
-                            bg: "bg-indigo-950/30",
-                            border: "border-indigo-900/40",
+                            color: "#f59e0b",
+                            bg: "bg-amber-950/30",
+                            border: "border-amber-900/40",
                           },
                         }[w.typ] ?? {
                           icon: AlertCircle,
-                          color: "#71717a",
-                          bg: "bg-zinc-800/50",
-                          border: "border-zinc-700/50",
+                          color: "#f59e0b",
+                          bg: "bg-amber-950/30",
+                          border: "border-amber-900/40",
                         };
 
                       const Icon = cfg.icon;

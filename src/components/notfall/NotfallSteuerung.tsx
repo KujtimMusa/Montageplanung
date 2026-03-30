@@ -49,7 +49,7 @@ function vorschlaegeFuerEinsatz(
       id: ki.employeeId,
       name: ki.name,
       kiGrund: ki.grund || "KI-Empfehlung",
-      score: 92,
+      score: ki.score ?? 0,
       quelle: "ki",
     });
     seen.add(ki.employeeId);
@@ -289,7 +289,7 @@ export function NotfallSteuerung({
 
             <div>
               <label className="mb-2 block text-xs font-semibold tracking-wider text-zinc-500 uppercase">
-                Ab wann?
+                Einsätze ab Datum
               </label>
               <input
                 type="date"
@@ -297,6 +297,9 @@ export function NotfallSteuerung({
                 onChange={(e) => setDatum(e.target.value)}
                 className="h-[42px] w-full rounded-xl border border-zinc-700 bg-zinc-800 px-3 text-sm text-zinc-200 transition-colors [color-scheme:dark] focus:border-zinc-600 focus:outline-none"
               />
+              <p className="mt-1 text-[10px] text-zinc-700">
+                Alle Einsätze ab diesem Tag werden analysiert
+              </p>
             </div>
           </div>
 
@@ -490,10 +493,14 @@ export function NotfallSteuerung({
                               className="text-sm font-bold tabular-nums"
                               style={{
                                 color:
-                                  v.score > 80 ? "#10b981" : "#f59e0b",
+                                  v.score >= 70
+                                    ? "#10b981"
+                                    : v.score > 0
+                                      ? "#f59e0b"
+                                      : "#52525b",
                               }}
                             >
-                              {v.score}%
+                              {v.score > 0 ? `${v.score}%` : "–"}
                             </p>
                             <p className="text-[9px] text-zinc-700">Match</p>
                           </div>
