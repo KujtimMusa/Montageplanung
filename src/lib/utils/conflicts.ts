@@ -19,6 +19,8 @@ export async function pruefeEinsatzKonflikt(
     ausserhalbEinsatzId?: string;
     /** Alle IDs, die bei der Prüfung ignoriert werden (z. B. verschobene Gruppe) */
     ausserhalbEinsatzIds?: string[];
+    /** Optional: Team-IDs, die für diese Person ebenfalls als „gebucht“ gelten */
+    teamIds?: string[];
   }
 ): Promise<KonfliktErgebnis> {
   const {
@@ -28,6 +30,7 @@ export async function pruefeEinsatzKonflikt(
     endZeit,
     ausserhalbEinsatzId,
     ausserhalbEinsatzIds,
+    teamIds,
   } = parameter;
 
   const ausserhalb = new Set<string>(ausserhalbEinsatzIds ?? []);
@@ -41,18 +44,38 @@ export async function pruefeEinsatzKonflikt(
     };
   }
 
-  const { data: bestehend, error } = await supabase
+  const { data: bestehendEmp, error: empErr } = await supabase
     .from("assignments")
     .select("id,start_time,end_time,project_title,projects(title)")
     .eq("employee_id", mitarbeiterId)
     .eq("date", datum);
 
-  if (error) {
+  if (empErr) {
     return {
       hatKonflikt: true,
-      nachricht: `Einsätze konnten nicht geprüft werden: ${error.message}`,
+      nachricht: `Einsätze konnten nicht geprüft werden: ${empErr.message}`,
       kollidierendeEinsatzIds: [],
     };
+  }
+
+  let bestehend = (bestehendEmp ?? []) as typeof bestehendEmp;
+
+  if (teamIds && teamIds.length > 0) {
+    const { data: bestehendTeam, error: teamErr } = await supabase
+      .from("assignments")
+      .select("id,start_time,end_time,project_title,projects(title)")
+      .in("team_id", teamIds)
+      .eq("date", datum);
+
+    if (teamErr) {
+      return {
+        hatKonflikt: true,
+        nachricht: `Einsätze konnten nicht geprüft werden: ${teamErr.message}`,
+        kollidierendeEinsatzIds: [],
+      };
+    }
+
+    bestehend = [...(bestehendEmp ?? []), ...(bestehendTeam ?? [])] as typeof bestehendEmp;
   }
 
   const startMin = zeitZuMinuten(startZeit);

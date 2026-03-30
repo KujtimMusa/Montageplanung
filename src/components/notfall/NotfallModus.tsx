@@ -183,52 +183,113 @@ export function NotfallModus() {
       setLädt(true);
       setKandidatenProEinsatz({});
       try {
-        const { data, error } = await supabase
+        // Betroffene Einsätze:
+        // - direkte employee_id-Zuordnung
+        // - Team-Einsätze, bei denen der Ausfall-Mitarbeiter in team_members steckt
+        const { data: tmAusfall } = await supabase
+          .from("team_members")
+          .select("team_id")
+          .eq("employee_id", ausfallId);
+        const ausfallTeamIds = Array.from(
+          new Set((tmAusfall ?? []).map((r: Record<string, unknown>) => String(r.team_id)))
+        );
+
+        const sel =
+          "id,date,start_time,end_time,project_id,project_title, projects(title, farbe), teams(name)";
+
+        const q1 = supabase
           .from("assignments")
-          .select(
-            "id,date,start_time,end_time,project_id,project_title, projects(title, farbe), teams(name)"
-          )
+          .select(sel)
           .eq("employee_id", ausfallId)
           .eq("date", datum);
 
-        if (error) throw error;
+        const q2 =
+          ausfallTeamIds.length > 0
+            ? supabase
+                .from("assignments")
+                .select(sel)
+                .in("team_id", ausfallTeamIds)
+                .eq("date", datum)
+            : null;
 
-        const rows: NotfallEinsatzZeile[] = (data ?? []).map(
-          (row: Record<string, unknown>) => {
-            const p = row.projects;
-            const proj = Array.isArray(p) ? p[0] : p;
-            const projObj = proj as
-              | { title?: string; farbe?: string | null }
-              | null
-              | undefined;
-            const t = row.teams as
-              | { name?: string }
-              | { name?: string }[]
-              | null;
-            const team = Array.isArray(t) ? t[0] : t;
-            return {
-              id: row.id as string,
-              date: row.date as string,
-              start_time: row.start_time as string,
-              end_time: row.end_time as string,
-              project_id: (row.project_id as string | null) ?? null,
-              project_title: (row.project_title as string | null) ?? null,
-              projects: projObj?.title
-                ? { title: projObj.title, farbe: projObj.farbe ?? null }
-                : null,
-              teamName: team?.name ? String(team.name) : null,
-            };
-          }
-        );
+        const [q1res, q2res] = await Promise.all([q1, q2]);
+
+        if (q1res.error) throw q1res.error;
+        if (q2res && q2res.error) throw q2res.error;
+
+        const combined = [
+          ...(q1res.data ?? []),
+          ...((q2res?.data ?? []) as Record<string, unknown>[]),
+        ] as Record<string, unknown>[];
+
+        const rows: NotfallEinsatzZeile[] = Array.from(
+          new Map(combined.map((r) => [String(r.id), r] as const)).values()
+        ).map((row: Record<string, unknown>) => {
+          const p = row.projects;
+          const proj = Array.isArray(p) ? p[0] : p;
+          const projObj = proj as
+            | { title?: string; farbe?: string | null }
+            | null
+            | undefined;
+          const t = row.teams as
+            | { name?: string }
+            | { name?: string }[]
+            | null;
+          const team = Array.isArray(t) ? t[0] : t;
+          return {
+            id: row.id as string,
+            date: row.date as string,
+            start_time: row.start_time as string,
+            end_time: row.end_time as string,
+            project_id: (row.project_id as string | null) ?? null,
+            project_title: (row.project_title as string | null) ?? null,
+            projects: projObj?.title
+              ? { title: projObj.title, farbe: projObj.farbe ?? null }
+              : null,
+            teamName: team?.name ? String(team.name) : null,
+          };
+        });
 
         setEinsätze(rows);
         setBetroffeneGeladen(true);
 
         const dept = ausfall?.department_id;
+
+        // Kandidaten nur, wenn sie am Tag nicht abwesend sind
+        const { data: abwRows } = await supabase
+          .from("absences")
+          .select("employee_id")
+          .lte("start_date", datum)
+          .gte("end_date", datum);
+        const abwesendIds = new Set<string>(
+          (abwRows ?? []).map((r: Record<string, unknown>) => String(r.employee_id))
+        );
+
         const kandidatenBasis = mitarbeiter.filter(
           (m) =>
             m.id !== ausfallId && m.department_id && m.department_id === dept
+            && !abwesendIds.has(m.id)
         );
+
+        // Team-IDs je Kandidat, damit Team-Einsätze auch als Konflikt zählen
+        const kandIds = kandidatenBasis.map((k) => k.id);
+        const teamIdsByEmployee: Record<string, string[]> = {};
+        if (kandIds.length > 0) {
+          const { data: tmRows } = await supabase
+            .from("team_members")
+            .select("employee_id,team_id")
+            .in("employee_id", kandIds);
+          const map: Record<string, Set<string>> = {};
+          for (const r of tmRows ?? []) {
+            const emp = String((r as Record<string, unknown>).employee_id);
+            const tid = String((r as Record<string, unknown>).team_id);
+            if (!map[emp]) map[emp] = new Set<string>();
+            map[emp].add(tid);
+          }
+          for (const [emp, set] of Object.entries(map)) {
+            teamIdsByEmployee[emp] = Array.from(set);
+          }
+        }
 
         const map: KandidatenMap = {};
         for (const e of rows) {
@@ -239,6 +300,7 @@ export function NotfallModus() {
               datum,
               startZeit: e.start_time,
               endZeit: e.end_time,
+              teamIds: teamIdsByEmployee[k.id] ?? [],
             });
             if (!pr.hatKonflikt) {
               ok.push({ id: k.id, name: k.name });
@@ -308,6 +370,11 @@ export function NotfallModus() {
 
     const abw = await abwesenheitenFuerDatum();
     const ausfallMitarbeiter = ausfall;
+    const ausfallHatAbwesenheit = abw.some(
+      (a) => a.employeeId === ausfallId
+    );
+    const ausfallAbwesenheitTyp =
+      abw.find((a) => a.employeeId === ausfallId)?.type ?? null;
     const payload = {
       ausfallMitarbeiter: {
         id: ausfallMitarbeiter?.id ?? ausfallId,
@@ -315,6 +382,8 @@ export function NotfallModus() {
         abteilung: ausfallMitarbeiter?.abteilung ?? "",
         qualifikationen: ausfallMitarbeiter?.qualifikationen ?? [],
       },
+      ausfallHatAbwesenheit,
+      ausfallAbwesenheitTyp,
       datum,
       betroffeneEinsaetze: rows.map((e) => ({
         id: e.id,

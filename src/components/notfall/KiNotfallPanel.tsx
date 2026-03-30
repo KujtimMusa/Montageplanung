@@ -3,7 +3,6 @@
 import { Bot, Copy, MessageCircle, RefreshCw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -28,10 +27,9 @@ function KINachricht({
     <div
       className={cn(
         "rounded-2xl px-4 py-3 text-sm leading-relaxed",
-        typ === "ki"
-          ? "border border-zinc-700/50 bg-zinc-800/80 text-zinc-300"
-          : "border border-zinc-800/50 bg-zinc-900 text-zinc-500"
+        "border border-zinc-800/70 bg-zinc-900 text-zinc-300"
       )}
+      data-typ={typ}
     >
       <ReactMarkdown
         components={{
@@ -54,12 +52,12 @@ function KINachricht({
             </li>
           ),
           h3: ({ children }) => (
-            <h3 className="mt-3 mb-1.5 text-xs font-bold tracking-wider text-zinc-400 uppercase first:mt-0">
+            <h3 className="mt-3 mb-1.5 text-xs font-semibold text-zinc-400 first:mt-0">
               {children}
             </h3>
           ),
           h2: ({ children }) => (
-            <h2 className="mt-3 mb-1.5 text-sm font-bold text-zinc-200 first:mt-0">
+            <h2 className="mt-3 mb-1.5 text-sm font-semibold text-zinc-200 first:mt-0">
               {children}
             </h2>
           ),
@@ -148,15 +146,17 @@ export function KiNotfallPanel({
 
           {showStream ? (
             <>
-              <KINachricht text={kiStream} typ="ki" />
-              <div className="flex w-fit gap-1 rounded-2xl border border-zinc-700/50 bg-zinc-800/80 px-4 py-3">
-                {[0, 1, 2].map((i) => (
-                  <div
-                    key={i}
-                    className="size-1.5 animate-bounce rounded-full bg-zinc-500"
-                    style={{ animationDelay: `${i * 150}ms` }}
-                  />
-                ))}
+              <div className="flex items-center gap-2 rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3">
+                <div className="flex gap-1">
+                  {[0, 1, 2].map((i) => (
+                    <div
+                      key={i}
+                      className="size-1.5 animate-bounce rounded-full bg-zinc-500"
+                      style={{ animationDelay: `${i * 150}ms` }}
+                    />
+                  ))}
+                </div>
+                <span className="text-xs text-zinc-500">KI analysiert…</span>
               </div>
             </>
           ) : null}
@@ -173,7 +173,7 @@ export function KiNotfallPanel({
               {kiAntwort.empfehlungen?.map((emp, i) => (
                 <div
                   key={`${emp.einsatzId}-${i}`}
-                  className="rounded-xl border border-zinc-800 bg-zinc-800/40 p-3"
+                  className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3"
                 >
                   <div className="mb-1.5 flex items-center gap-2">
                     <div className="flex size-6 items-center justify-center rounded-full bg-zinc-700 text-[10px] font-bold text-zinc-300">
@@ -182,9 +182,9 @@ export function KiNotfallPanel({
                     <p className="text-sm font-semibold text-zinc-200">
                       {emp.name}
                     </p>
-                    <Badge className="ml-auto bg-emerald-500/20 text-[10px] text-emerald-400">
-                      Empfohlen
-                    </Badge>
+                    <span className="ml-auto text-[10px] font-semibold text-zinc-500">
+                      Empfehlung
+                    </span>
                   </div>
                   <KINachricht text={emp.begruendung} typ="system" />
                   <p className="mt-2 text-[10px] text-zinc-600">
@@ -194,14 +194,14 @@ export function KiNotfallPanel({
               ))}
 
               {kiAntwort.risiken?.length ? (
-                <div className="rounded-xl border border-orange-900/40 bg-orange-950/25 p-3">
-                  <p className="mb-1.5 text-xs font-semibold text-orange-400">
-                    Risiko-Hinweise
+                <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
+                  <p className="mb-1.5 text-xs font-semibold text-zinc-400">
+                    Risiken
                   </p>
                   {kiAntwort.risiken.map((r, i) => (
                     <p
                       key={i}
-                      className="text-xs leading-relaxed text-orange-200/80"
+                      className="text-xs leading-relaxed text-zinc-300"
                     >
                       • {r}
                     </p>
@@ -210,9 +210,9 @@ export function KiNotfallPanel({
               ) : null}
 
               {kiAntwort.kommunikation ? (
-                <div className="rounded-xl border border-blue-900/40 bg-blue-950/25 p-3">
-                  <p className="mb-1.5 text-xs font-semibold text-blue-400">
-                    Empfohlene Benachrichtigung
+                <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
+                  <p className="mb-1.5 text-xs font-semibold text-zinc-400">
+                    Nachrichtsvorschlag
                   </p>
                   <KINachricht
                     text={kiAntwort.kommunikation}

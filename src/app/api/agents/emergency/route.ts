@@ -20,22 +20,28 @@ Deine Ausgabe ist IMMER valides JSON (ohne Markdown-Fences, ohne Codeblöcke) mi
   "kommunikation": "string"
 }
 
-Inhaltlich darfst du in den STRING-Feldern Markdown nutzen:
-- **fett** für Namen und Kernpunkte
-- ### kurze Zwischenüberschriften (z. B. "### Betroffene Einsätze")
-- Aufzählungen mit -
+In den STRING-Feldern **kurzes Markdown** erlaubt:
+- **fett** für Namen/Kernpunkte
+- "###" für maximal 3 sehr kurze Zwischenüberschriften
 
 Strukturvorschlag für "zusammenfassung":
 ### Betroffene Einsätze
-Kurze Übersicht.
+Kurze Übersicht (max 2 Sätze).
 
 ### Meine Empfehlung
-**Projekt X am Datum** — wer übernimmt und warum.
+Kurzer Überblick über das Vorgehen (max 2 Sätze).
 
 ### Hinweise
-Wichtige Planungs-Hinweise.
+Wichtigste Hinweise (max 2 Sätze).
 
 In "empfehlungen[].begruendung" ebenfalls **fett** für Namen erlaubt.
+
+WICHTIG:
+- Liefere für **jeden Eintrag** aus "betroffeneEinsaetze" genau **eine** Empfehlung in "empfehlungen".
+- Nutze **nur** employeeIds aus "verfuegbareKraefte" (genau dort sind Kandidaten inkl. hatKonflikt-Info).
+- Wenn "ausfallHatAbwesenheit" true ist, beschreibe es als Risiko/Problem und priorisiere trotzdem eine praktikable Lösung.
+- Jede "begruendung" max. 1 Satz, "risiken" max. 2 Items.
+- "kommunikation" max. 5 Zeilen, direkt nutzbar.
 
 Priorisiere:
 1. Gleiche Abteilung wie Ausgefallener
