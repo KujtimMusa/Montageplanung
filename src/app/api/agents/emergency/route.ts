@@ -40,6 +40,10 @@ WICHTIG:
 - Liefere für **jeden Eintrag** aus "betroffeneEinsaetze" genau **eine** Empfehlung in "empfehlungen".
 - Nutze **nur** employeeIds aus "verfuegbareKraefte" (genau dort sind Kandidaten inkl. hatKonflikt-Info).
 - Wenn "ausfallHatAbwesenheit" true ist, beschreibe es als Risiko/Problem und priorisiere trotzdem eine praktikable Lösung.
+- Wenn "ausfallHatAbwesenheit" true ist:
+  - setze in "risiken" mindestens 1 Item, der klar auf die Abwesenheit des Ausfall-Mitarbeiters eingeht
+  - erwähne die Abwesenheit in "zusammenfassung" und gib in "kommunikation" einen Satz dazu, warum Ersatz nötig ist
+- Wenn "ausfallHatAbwesenheit" false ist: mache dazu keine Abwesenheits-Risiken.
 - Jede "begruendung" max. 1 Satz, "risiken" max. 2 Items.
 - "kommunikation" max. 5 Zeilen, direkt nutzbar.
 
