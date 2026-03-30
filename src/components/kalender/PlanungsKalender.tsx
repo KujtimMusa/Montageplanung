@@ -668,7 +668,7 @@ export function PlanungsKalender() {
       });
       if (k.hatKonflikt) {
         toast.warning(k.nachricht);
-        return;
+        // Wir blockieren das Speichern nicht: Notfall-Plan übernimmt ggf. die Umplanung.
       }
       const insertPayload: Record<string, unknown> = {
         employee_id: empId,
@@ -830,7 +830,7 @@ export function PlanungsKalender() {
         });
         if (k.hatKonflikt) {
           toast.warning(k.nachricht);
-          return false;
+          // Wir blockieren das Verschieben nicht: Notfall-Plan übernimmt ggf. die Umplanung.
         }
       }
 

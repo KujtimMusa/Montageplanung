@@ -383,7 +383,7 @@ export function EinsatzNeuDialog({
       });
       if (abwText) {
         setAbwesenheitWarnung(abwText);
-        return;
+        // Abwesenheiten blockieren das Speichern nicht (Notfall-Plan übernimmt ggf. die Umplanung).
       }
       for (const tag of tage) {
         const d = format(tag, "yyyy-MM-dd");
@@ -396,7 +396,7 @@ export function EinsatzNeuDialog({
         });
         if (k.hatKonflikt) {
           setKonfliktText(`${k.nachricht} (Datum ${format(tag, "dd.MM.yyyy")})`);
-          return;
+          // Konflikte blockieren das Speichern nicht (Notfall-Plan übernimmt ggf. die Umplanung).
         }
       }
     }
