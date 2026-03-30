@@ -593,16 +593,23 @@ export function NotfallModus() {
 
   async function absenceEinmalig() {
     if (absenceEingetragenRef.current) return;
-    const { error } = await supabase.from("absences").insert({
-      employee_id: ausfallId,
-      type: "krank",
-      start_date: datum,
-      end_date: datum,
-      status: "genehmigt",
-      notes: "Notfall-Ausfall (Planung)",
-      is_emergency: true,
-      quelle: "manuell",
-    });
+    const { error } = await supabase.from("absences").upsert(
+      {
+        employee_id: ausfallId,
+        type: "krank",
+        absence_type: "krank",
+        start_date: datum,
+        end_date: datum,
+        status: "genehmigt",
+        notes: "Notfall-Ausfall (Planung)",
+        is_emergency: true,
+        quelle: "manuell",
+      },
+      {
+        onConflict: "employee_id,start_date,absence_type",
+        ignoreDuplicates: true,
+      }
+    );
     if (!error) absenceEingetragenRef.current = true;
   }
 

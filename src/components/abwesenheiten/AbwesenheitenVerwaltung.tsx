@@ -12,10 +12,11 @@ import {
   Pencil,
   Plus,
   Search,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
-import { differenceInCalendarDays, format, parseISO } from "date-fns";
+import { addDays, differenceInCalendarDays, format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -348,6 +349,15 @@ function StatusBadge({ status }: { status: AbwesenheitStatus }) {
 
 type FilterTyp = "all" | "urlaub" | "krank" | "sonstige";
 
+type KiAbwesenheitVorschlag = {
+  mitarbeiter: { id: string; name: string; abteilung: string }[];
+  typ: "krankheit" | "urlaub" | "sonstiges";
+  start_date: string;
+  end_date: string;
+  tage: number;
+  begruendung: string;
+};
+
 export function AbwesenheitenVerwaltung() {
   const supabase = useMemo(() => createClient(), []);
   const [abwesenheiten, setAbwesenheiten] = useState<Abwesenheit[]>([]);
@@ -379,6 +389,11 @@ export function AbwesenheitenVerwaltung() {
     name: string;
   } | null>(null);
   const [maComboOffen, setMaComboOffen] = useState(false);
+  const [kiEingabe, setKiEingabe] = useState("");
+  const [kiLaed, setKiLaed] = useState(false);
+  const [kiVorschlag, setKiVorschlag] = useState<KiAbwesenheitVorschlag | null>(
+    null
+  );
 
   const ladenDaten = useCallback(async () => {
     try {
@@ -564,6 +579,7 @@ export function AbwesenheitenVerwaltung() {
       const payload = {
         employee_id: werte.employee_id,
         type: werte.type,
+        absence_type: werte.type,
         start_date: toDateKey(werte.start_date),
         end_date: toDateKey(werte.end_date),
         status: werte.status,
@@ -579,6 +595,20 @@ export function AbwesenheitenVerwaltung() {
         if (error) throw error;
         toast.success("Abwesenheit gespeichert.");
       } else {
+        const { data: existing } = await supabase
+          .from("absences")
+          .select("id")
+          .eq("employee_id", payload.employee_id)
+          .eq("start_date", payload.start_date)
+          .eq("absence_type", payload.type)
+          .maybeSingle();
+        if (existing) {
+          toast.error(
+            "Für diesen Mitarbeiter existiert bereits eine Abwesenheit an diesem Datum."
+          );
+          return;
+        }
+
         const { error } = await supabase.from("absences").insert(payload);
         if (error) throw error;
         toast.success("Abwesenheit erfasst.");
@@ -747,6 +777,78 @@ export function AbwesenheitenVerwaltung() {
     filter.typ === "all" &&
     filter.status === "all" &&
     filter.abteilung === "all";
+
+  async function kiAbwesenheitAnalysieren() {
+    if (!kiEingabe.trim()) return;
+    setKiLaed(true);
+    setKiVorschlag(null);
+    try {
+      const heute = format(new Date(), "yyyy-MM-dd");
+      const res = await fetch("/api/abwesenheit/ki-parse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eingabe: kiEingabe,
+          mitarbeiter: mitarbeiter.map((m) => ({
+            id: m.id,
+            name: m.name,
+            abteilung: m.department ?? "unbekannt",
+          })),
+          heute,
+          morgen: format(addDays(new Date(), 1), "yyyy-MM-dd"),
+        }),
+      });
+      if (!res.ok) {
+        toast.error("KI konnte die Eingabe nicht verstehen. Bitte präziser formulieren.");
+        return;
+      }
+      const v = (await res.json()) as KiAbwesenheitVorschlag;
+      setKiVorschlag(v);
+    } catch {
+      toast.error("KI konnte die Eingabe nicht verstehen. Bitte präziser formulieren.");
+    } finally {
+      setKiLaed(false);
+    }
+  }
+
+  async function kiAbwesenheitBestaetigen(v: KiAbwesenheitVorschlag) {
+    let fehler = 0;
+    const typMapped: AbwesenheitTyp =
+      v.typ === "krankheit" ? "krank" : v.typ === "urlaub" ? "urlaub" : "sonstiges";
+
+    for (const ma of v.mitarbeiter) {
+      const { error } = await supabase.from("absences").upsert(
+        {
+          employee_id: ma.id,
+          start_date: toDateKey(v.start_date),
+          end_date: toDateKey(v.end_date),
+          type: typMapped,
+          absence_type: typMapped,
+          status: "genehmigt",
+          notes: v.begruendung || null,
+          quelle: "manuell",
+        },
+        {
+          onConflict: "employee_id,start_date,absence_type",
+          ignoreDuplicates: true,
+        }
+      );
+      if (error) {
+        console.error("[KI Abwesenheit]", error);
+        fehler++;
+      }
+    }
+
+    if (fehler > 0) {
+      toast.error(`${fehler} Einträge fehlgeschlagen`);
+      return;
+    }
+
+    toast.success(`${v.mitarbeiter.length} Abwesenheit(en) eingetragen`);
+    setKiVorschlag(null);
+    setKiEingabe("");
+    void ladenDaten();
+  }
 
   return (
     <div>
@@ -1005,6 +1107,158 @@ export function AbwesenheitenVerwaltung() {
             </tbody>
           </table>
         )}
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800">
+            <Sparkles size={13} className="text-zinc-400" />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-zinc-200">KI-Schnelleingabe</p>
+            <p className="text-xs text-zinc-600">
+              Beschreibe die Abwesenheit in natürlicher Sprache
+            </p>
+          </div>
+        </div>
+
+        <div className="relative">
+          <textarea
+            value={kiEingabe}
+            onChange={(e) => setKiEingabe(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void kiAbwesenheitAnalysieren();
+              }
+            }}
+            placeholder={`Beispiele:\n"Ali ist ab morgen 3 Tage krank"\n"Jackson nimmt nächste Woche Urlaub, Montag bis Freitag"\n"Das SHK-Team hat am 15. April frei"`}
+            rows={3}
+            className="w-full resize-none rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-3 text-sm leading-relaxed text-zinc-200 placeholder:text-zinc-600 transition-colors focus:border-zinc-600 focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={() => void kiAbwesenheitAnalysieren()}
+            disabled={!kiEingabe.trim() || kiLaed}
+            className={cn(
+              "absolute right-3 bottom-3 flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
+              kiEingabe.trim() && !kiLaed
+                ? "bg-zinc-700 text-zinc-200 hover:bg-zinc-600"
+                : "cursor-not-allowed bg-zinc-800 text-zinc-600"
+            )}
+          >
+            {kiLaed ? (
+              <div className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-600/30 border-t-zinc-500" />
+            ) : (
+              <>
+                <Sparkles size={11} />
+                Analysieren
+              </>
+            )}
+          </button>
+        </div>
+
+        {kiVorschlag ? (
+          <div className="mt-3 rounded-xl border border-zinc-700/50 bg-zinc-800/60 p-4">
+            <div className="mb-3 flex items-start justify-between">
+              <p className="text-[10px] font-semibold tracking-wider text-zinc-500 uppercase">
+                KI hat verstanden
+              </p>
+              <button
+                type="button"
+                onClick={() => setKiVorschlag(null)}
+                className="text-zinc-600 transition-colors hover:text-zinc-400"
+              >
+                <X size={13} />
+              </button>
+            </div>
+
+            <div className="mb-4 space-y-2">
+              <div className="flex items-start gap-3">
+                <p className="mt-0.5 w-20 shrink-0 text-[10px] font-semibold tracking-wider text-zinc-600 uppercase">
+                  Mitarbeiter
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {kiVorschlag.mitarbeiter.map((m) => (
+                    <div
+                      key={m.id}
+                      className="flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-2 py-1"
+                    >
+                      <div className="flex h-5 w-5 items-center justify-center rounded-full bg-zinc-700 text-[9px] font-bold text-zinc-400">
+                        {m.name.slice(0, 2).toUpperCase()}
+                      </div>
+                      <span className="text-xs font-semibold text-zinc-300">
+                        {m.name}
+                      </span>
+                      <span className="text-[10px] text-zinc-600">
+                        {m.abteilung}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <p className="w-20 shrink-0 text-[10px] font-semibold tracking-wider text-zinc-600 uppercase">
+                  Typ
+                </p>
+                <span
+                  className={cn(
+                    "rounded-full border px-2.5 py-1 text-xs font-bold",
+                    kiVorschlag.typ === "krankheit"
+                      ? "border-red-900/50 bg-red-950/60 text-red-400"
+                      : kiVorschlag.typ === "urlaub"
+                        ? "border-blue-900/50 bg-blue-950/60 text-blue-400"
+                        : "border-zinc-700 bg-zinc-800 text-zinc-400"
+                  )}
+                >
+                  {kiVorschlag.typ === "krankheit"
+                    ? "Krank"
+                    : kiVorschlag.typ === "urlaub"
+                      ? "Urlaub"
+                      : "Sonstiges"}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <p className="w-20 shrink-0 text-[10px] font-semibold tracking-wider text-zinc-600 uppercase">
+                  Zeitraum
+                </p>
+                <p className="text-sm font-semibold tabular-nums text-zinc-300">
+                  {format(new Date(kiVorschlag.start_date), "dd.MM.yyyy", {
+                    locale: de,
+                  })}
+                  {kiVorschlag.start_date !== kiVorschlag.end_date ? (
+                    <>
+                      {" "}
+                      -{" "}
+                      {format(new Date(kiVorschlag.end_date), "dd.MM.yyyy", {
+                        locale: de,
+                      })}
+                    </>
+                  ) : null}
+                  <span className="ml-2 font-normal text-zinc-600">
+                    ({kiVorschlag.tage} {kiVorschlag.tage === 1 ? "Tag" : "Tage"})
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            <p className="mb-3 text-[10px] text-zinc-700">
+              Stimmt etwas nicht? Passe die Felder oben an oder starte neu.
+            </p>
+
+            <button
+              type="button"
+              onClick={() => void kiAbwesenheitBestaetigen(kiVorschlag)}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-100 py-2.5 text-sm font-bold text-zinc-900 transition-all hover:bg-white"
+            >
+              <Check size={14} />
+              {kiVorschlag.mitarbeiter.length} Abwesenheit
+              {kiVorschlag.mitarbeiter.length > 1 ? "en" : ""} eintragen
+            </button>
+          </div>
+        ) : null}
       </div>
 
       <Sheet open={sheetOffen} onOpenChange={setSheetOffen}>
