@@ -34,7 +34,6 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { pruefeEinsatzKonflikt } from "@/lib/utils/conflicts";
-import { parseKiAntwort } from "@/lib/notfall/parse-ki-antwort";
 import type { KiErsatzKarte, KiNotfallAntwort } from "@/types/notfall-ki";
 import { NotfallSteuerung } from "@/components/notfall/NotfallSteuerung";
 import { KiNotfallPanel } from "@/components/notfall/KiNotfallPanel";
@@ -534,22 +533,7 @@ export function NotfallModus() {
         return;
       }
 
-      const reader = res.body?.getReader();
-      if (!reader) {
-        setKiLaed(false);
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let volltext = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        volltext += decoder.decode(value, { stream: true });
-        setKiStream(volltext);
-      }
-
-      const parsed = parseKiAntwort(volltext);
+      const parsed = (await res.json()) as KiNotfallAntwort;
       setKiAntwort(parsed);
 
       const map: Record<string, KiErsatzKarte> = {};
@@ -971,8 +955,8 @@ export function NotfallModus() {
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-60px)] flex-col gap-3">
-      <div className="rounded-2xl border border-zinc-800/60 bg-zinc-950 p-4">
+    <div className="flex h-[calc(100vh-var(--navbar-height,60px))] gap-4 overflow-hidden p-6">
+      <div className="flex-1 min-w-0 overflow-y-auto rounded-2xl border border-zinc-800/60 bg-zinc-950 p-4">
         <div id="notfall-stepper">
           <NotfallSteuerung
             mitarbeiter={mitarbeiter}
@@ -1110,7 +1094,7 @@ export function NotfallModus() {
         </div>
       </div>
 
-      <div className="flex-1 min-h-[460px] rounded-2xl border border-zinc-800/60 bg-zinc-950">
+      <div className="w-[360px] flex-shrink-0 rounded-2xl border border-zinc-800/60 bg-zinc-950 overflow-hidden">
         <KiNotfallPanel
           kiLaed={kiLaed}
           kiStream={kiStream}
