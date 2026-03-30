@@ -76,6 +76,9 @@ export function NotfallModus() {
   );
 
   const absenceEingetragenRef = useRef(false);
+  // Verhindert „Endlosanalyse“: Nach dem Bestätigen einer Notfall-Auflösung
+  // blenden wir die aktuell betroffenen assignment IDs bei erneuter Analyse aus.
+  const bereitsAufgelöstAssignmentIdsRef = useRef<Set<string>>(new Set());
 
   const ausfall = useMemo(
     () => mitarbeiter.find((m) => m.id === ausfallId),
@@ -112,6 +115,7 @@ export function NotfallModus() {
     setKiErsatz({});
     setManuellerErsatz({});
     absenceEingetragenRef.current = false;
+    bereitsAufgelöstAssignmentIdsRef.current = new Set();
   }, []);
 
   const ladenMitarbeiter = useCallback(async () => {
@@ -209,11 +213,6 @@ export function NotfallModus() {
                 .from("assignments")
                 .select(sel)
                 .in("team_id", ausfallTeamIds)
-                // Team-Zuordnung allein soll nicht ewig als „betroffen“ gelten:
-                // Ein gelöster Notfall ändert typischerweise den Vertreter
-                // (assignments.employee_id). Daher nehmen wir Team-Einsätze
-                // nur als „betroffen“ an, wenn employee_id leer ist.
-                .is("employee_id", null)
                 .eq("date", datum)
             : null;
 
@@ -255,7 +254,13 @@ export function NotfallModus() {
           };
         });
 
-        setEinsätze(rows);
+        const bereitsAufgelöst = bereitsAufgelöstAssignmentIdsRef.current;
+        const finalRows =
+          bereitsAufgelöst.size > 0
+            ? rows.filter((r) => !bereitsAufgelöst.has(r.id))
+            : rows;
+
+        setEinsätze(finalRows);
         setBetroffeneGeladen(true);
 
         const dept = ausfall?.department_id;
@@ -297,7 +302,7 @@ export function NotfallModus() {
         }
 
         const map: KandidatenMap = {};
-        for (const e of rows) {
+        for (const e of finalRows) {
           const ok: { id: string; name: string }[] = [];
           for (const k of kandidatenBasis) {
             const pr = await pruefeEinsatzKonflikt(supabase, {
@@ -318,7 +323,7 @@ export function NotfallModus() {
         if (rows.length === 0 && !opts?.silent) {
           toast.info("Keine Einsätze an diesem Tag für diesen Mitarbeiter.");
         }
-        return { rows, kandidaten: map };
+        return { rows: finalRows, kandidaten: map };
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Laden fehlgeschlagen.";
         toast.error(msg);
@@ -545,6 +550,9 @@ export function NotfallModus() {
       await absenceEinmalig();
       toast.success(`Alle ${jobs.length} Ersatzplanungen übernommen.`);
       setAktiverSchritt(4);
+      bereitsAufgelöstAssignmentIdsRef.current = new Set(
+        einsätze.map((e) => e.id)
+      );
       void betroffeneLaden({ silent: true });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Batch fehlgeschlagen.";

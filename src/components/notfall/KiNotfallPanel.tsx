@@ -199,12 +199,31 @@ export function KiNotfallPanel({
                     Risiken
                   </p>
                   {kiAntwort.risiken.map((r, i) => (
-                    <p
-                      key={i}
-                      className="text-xs leading-relaxed text-zinc-300"
-                    >
-                      • {r}
-                    </p>
+                    <div key={i} className="text-xs leading-relaxed text-zinc-300">
+                      <ReactMarkdown
+                        components={{
+                          p: ({ children }) => (
+                            <p className="mb-2 last:mb-0">{children}</p>
+                          ),
+                          strong: ({ children }) => (
+                            <strong className="font-bold text-zinc-200">
+                              {children}
+                            </strong>
+                          ),
+                          ul: ({ children }) => (
+                            <ul className="my-2 list-disc pl-4">{children}</ul>
+                          ),
+                          ol: ({ children }) => (
+                            <ol className="my-2 list-decimal pl-4">
+                              {children}
+                            </ol>
+                          ),
+                          li: ({ children }) => <li>{children}</li>,
+                        }}
+                      >
+                        {r}
+                      </ReactMarkdown>
+                    </div>
                   ))}
                 </div>
               ) : null}
