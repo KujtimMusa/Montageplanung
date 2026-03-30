@@ -613,6 +613,31 @@ export function PlanungsKalender() {
     return ids.size;
   }, [abwesenheiten]);
 
+  // Damit es für die Planung „nach Ablauf eines Tags“ konsistent ist:
+  // Projekte gelten (UI-seitig), sobald es keine Zuordnungen mehr in die Zukunft gibt.
+  // Manuell in der DB auf „abgeschlossen“ gesetzte Projekte werden nicht überschrieben.
+  const projekteEffektiv = useMemo(() => {
+    const heuteStr = format(new Date(), "yyyy-MM-dd");
+    const projektHatZukunft = new Map<string, boolean>();
+    for (const z of zuweisungen) {
+      if (!z.project_id) continue;
+      const pid = z.project_id;
+      const hat = z.date >= heuteStr;
+      if (hat) projektHatZukunft.set(pid, true);
+      else if (!projektHatZukunft.has(pid)) projektHatZukunft.set(pid, false);
+    }
+
+    return projekteAktiv.map((p) => {
+      const raw = (p.status ?? "neu").toLowerCase();
+      if (raw === "abgeschlossen" || raw === "fertig") return p;
+      const cnt = einsatzCountByProjekt[p.id] ?? 0;
+      if (cnt <= 0) return p;
+      const hatZukunft = projektHatZukunft.get(p.id) ?? false;
+      if (!hatZukunft) return { ...p, status: "abgeschlossen" };
+      return p;
+    });
+  }, [projekteAktiv, zuweisungen, einsatzCountByProjekt]);
+
   const teamAufZelleLegen = useCallback(
     async (teamId: string, projectId: string, datum: string): Promise<void> => {
       if (projectId === "_leer") return;
@@ -1150,7 +1175,7 @@ export function PlanungsKalender() {
       <div className="flex min-h-0 flex-1 gap-0 overflow-hidden rounded-xl border border-zinc-800/60 bg-zinc-950">
         <aside className="flex w-56 shrink-0 flex-col border-r border-zinc-800/60 bg-zinc-950 md:w-60">
           <ProjekteSidebar
-            projekteAlle={projekteAktiv}
+            projekteAlle={projekteEffektiv}
             einsatzCountByProjektImRaster={einsatzCountByProjektImRaster}
             einsatzCountByProjekt={einsatzCountByProjekt}
             rasterZeitraumLabel={rasterZeitraumLabel}

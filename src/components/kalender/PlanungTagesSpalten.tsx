@@ -80,6 +80,9 @@ export function PlanungTagesSpalten({
         return (
           <div
             key={iso}
+            data-planung-drop
+            data-datum={iso}
+            data-empty-row="1"
             className={cn(
               "flex min-h-0 min-w-0 flex-col bg-zinc-950/80",
               heute ? "bg-zinc-900/50" : ""
