@@ -198,8 +198,6 @@ export function NotfallSteuerung({
         </div>
       </div>
 
-      {scannerElement ? scannerElement : null}
-
       <div className="mb-4 rounded-2xl border border-zinc-800/60 bg-zinc-900 p-4">
         <div className="flex items-center">
           {schritte.map((s, i) => {
@@ -260,6 +258,7 @@ export function NotfallSteuerung({
 
       {aktiverSchritt === 1 ? (
         <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5">
+          {scannerElement ? <div className="mb-4">{scannerElement}</div> : null}
           <h3 className="mb-4 text-sm font-semibold text-zinc-200">
             Ausgefallener Mitarbeiter
           </h3>

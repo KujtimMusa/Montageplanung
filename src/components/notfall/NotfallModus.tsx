@@ -713,7 +713,7 @@ export function NotfallModus() {
       const q1 = await supabase
         .from("assignments")
         .select(
-          "id,date,start_time,end_time,employee_id,team_id,project_title,projects(title)"
+          "id,date,start_time,end_time,employee_id,team_id,project_title,status"
         )
         .gte("date", scanVon)
         .lte("date", scanBis)
@@ -724,7 +724,7 @@ export function NotfallModus() {
         const q2 = await supabase
           .from("assignments")
           .select(
-            "id,date,start_time,end_time,employee_id,team_id,project_title,projects(title)"
+            "id,date,start_time,end_time,employee_id,team_id,project_title,status"
           )
           .gte("date", scanVon)
           .lte("date", scanBis);
@@ -744,16 +744,22 @@ export function NotfallModus() {
           .from("assignment_employees")
           .select("assignment_id,employee_id")
           .in("assignment_id", assignmentIds);
-        if (aeErr) throw aeErr;
-        const tmp: Record<string, Set<string>> = {};
-        for (const r of (aeRows ?? []) as { assignment_id: string; employee_id: string }[]) {
-          const aid = String(r.assignment_id);
-          const eid = String(r.employee_id);
-          tmp[aid] ??= new Set<string>();
-          tmp[aid].add(eid);
-        }
-        for (const [aid, set] of Object.entries(tmp)) {
-          assignmentEmployeesByAssignment.set(aid, Array.from(set));
+        if (!aeErr) {
+          const tmp: Record<string, Set<string>> = {};
+          for (const r of (aeRows ?? []) as {
+            assignment_id: string;
+            employee_id: string;
+          }[]) {
+            const aid = String(r.assignment_id);
+            const eid = String(r.employee_id);
+            tmp[aid] ??= new Set<string>();
+            tmp[aid].add(eid);
+          }
+          for (const [aid, set] of Object.entries(tmp)) {
+            assignmentEmployeesByAssignment.set(aid, Array.from(set));
+          }
+        } else {
+          console.warn("[Scanner] assignment_employees nicht verfügbar:", aeErr.message);
         }
       }
 
@@ -771,17 +777,20 @@ export function NotfallModus() {
           .from("team_members")
           .select("team_id,employee_id")
           .in("team_id", teamIds);
-        if (tmErr) throw tmErr;
-        const acc: Record<string, Set<string>> = {};
-        type TeamMemberRow = { team_id: string; employee_id: string };
-        for (const r of (tmRows ?? []) as TeamMemberRow[]) {
-          const tid = String(r.team_id);
-          const eid = String(r.employee_id);
-          acc[tid] ??= new Set<string>();
-          acc[tid].add(eid);
-        }
-        for (const [tid, set] of Object.entries(acc)) {
-          teamMembersByTeam.set(tid, Array.from(set));
+        if (!tmErr) {
+          const acc: Record<string, Set<string>> = {};
+          type TeamMemberRow = { team_id: string; employee_id: string };
+          for (const r of (tmRows ?? []) as TeamMemberRow[]) {
+            const tid = String(r.team_id);
+            const eid = String(r.employee_id);
+            acc[tid] ??= new Set<string>();
+            acc[tid].add(eid);
+          }
+          for (const [tid, set] of Object.entries(acc)) {
+            teamMembersByTeam.set(tid, Array.from(set));
+          }
+        } else {
+          console.warn("[Scanner] team_members nicht verfügbar:", tmErr.message);
         }
       }
 
@@ -798,8 +807,12 @@ export function NotfallModus() {
           .select("employee_id,start_date,end_date,type")
           .lte("start_date", scanBis)
           .gte("end_date", scanVon);
-        if (ab2.error) throw ab2.error;
-        absenceRows = (ab2.data ?? []) as Record<string, unknown>[];
+        if (ab2.error) {
+          console.warn("[Scanner] absences nicht verfügbar:", ab2.error.message);
+          absenceRows = [];
+        } else {
+          absenceRows = (ab2.data ?? []) as Record<string, unknown>[];
+        }
       } else {
         absenceRows = (ab1.data ?? []) as Record<string, unknown>[];
       }
@@ -945,8 +958,12 @@ export function NotfallModus() {
       }
 
       setScanErgebnisse({ konflikte, abwesenheiten });
+      if (konflikte.length === 0 && abwesenheiten.length === 0) {
+        toast.info("Scanner: keine Konflikte im Zeitraum gefunden.");
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Scanner fehlgeschlagen.";
+      console.error("[Scanner] Fehler:", e);
       toast.error(msg);
     } finally {
       setLadeScanner(false);
@@ -1093,7 +1110,7 @@ export function NotfallModus() {
         </div>
       </div>
 
-      <div className="flex-1 min-h-[360px] rounded-2xl border border-zinc-800/60 bg-zinc-950">
+      <div className="flex-1 min-h-[460px] rounded-2xl border border-zinc-800/60 bg-zinc-950">
         <KiNotfallPanel
           kiLaed={kiLaed}
           kiStream={kiStream}
