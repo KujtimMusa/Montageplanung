@@ -45,7 +45,6 @@ import {
   SPEZIALISIERUNGEN,
   subcontractorRowToDienstleister,
   type Dienstleister,
-  type DienstleisterStatus,
   type Spezialisierung,
 } from "@/types/dienstleister";
 
@@ -88,8 +87,6 @@ export function DienstleisterVerwaltung() {
   const [maxParallelBeiBearbeitung, setMaxParallelBeiBearbeitung] = useState(2);
   const [filter, setFilter] = useState({
     suche: "",
-    status: "alle" as "alle" | DienstleisterStatus,
-    spezialisierung: "alle" as "alle" | Spezialisierung,
   });
   const [regelnOffen, setRegelnOffen] = useState(false);
   const [regelnFuerId, setRegelnFuerId] = useState<string | null>(null);
@@ -141,16 +138,11 @@ export function DienstleisterVerwaltung() {
   const gefiltert = useMemo(() => {
     const q = filter.suche.trim().toLowerCase();
     return dienstleister.filter((d) => {
-      if (filter.status !== "alle" && d.status !== filter.status) return false;
-      if (
-        filter.spezialisierung !== "alle" &&
-        !d.spezialisierung.includes(filter.spezialisierung)
-      ) {
-        return false;
-      }
       if (!q) return true;
       if (d.firma.toLowerCase().includes(q)) return true;
       if (d.ansprechpartner?.toLowerCase().includes(q)) return true;
+      if (d.spezialisierung.some((s) => String(s).toLowerCase().includes(q)))
+        return true;
       return false;
     });
   }, [dienstleister, filter]);
@@ -174,11 +166,6 @@ export function DienstleisterVerwaltung() {
     const sum = dienstleister.reduce((a, d) => a + d.vorlauf_tage, 0);
     return Math.round(sum / dienstleister.length);
   }, [dienstleister]);
-
-  const filterAktiv =
-    filter.suche.trim() !== "" ||
-    filter.status !== "alle" ||
-    filter.spezialisierung !== "alle";
 
   function toggleSpezialisierung(v: Spezialisierung) {
     const cur = form.getValues("spezialisierung");
@@ -317,14 +304,8 @@ export function DienstleisterVerwaltung() {
       date: string;
       start_time: string;
       end_time: string;
-      projects:
-        | { title: string; adresse?: string | null }
-        | Array<{ title: string; adresse?: string | null }>
-        | null;
-      teams:
-        | { name: string }
-        | Array<{ name: string }>
-        | null;
+      projects: Array<{ title: string; adresse?: string | null }>;
+      teams: Array<{ name: string }>;
     } | null;
   };
 
@@ -358,13 +339,34 @@ export function DienstleisterVerwaltung() {
     const partnerIds = dienstleister.map((d) => d.id);
     setLadeAnfragen(true);
     try {
+      type ProjectEmbed = { title?: string | null; adresse?: string | null };
+      type TeamEmbed = { name?: string | null };
       type AssignmentRow = {
+        id: string;
         dienstleister_id: string | null;
         date: string;
-        projects?:
-          | { title?: string | null }
-          | Array<{ title?: string | null }>
-          | null;
+        start_time: string;
+        end_time: string;
+        projects?: ProjectEmbed | ProjectEmbed[] | null;
+        teams?: TeamEmbed | TeamEmbed[] | null;
+      };
+
+      type PivotRow = {
+        id: string;
+        subcontractor_id: string;
+        assignment_id: string;
+        status: string;
+        email_gesendet_at: string | null;
+        bestaetigt_at: string | null;
+        notiz: string | null;
+        created_at: string;
+      };
+
+      const firstOrNull = <T,>(
+        v: T | T[] | null | undefined
+      ): T | null => {
+        if (!v) return null;
+        return Array.isArray(v) ? v[0] ?? null : v;
       };
 
       // 1) Letzter Einsatz pro Partner
@@ -373,49 +375,96 @@ export function DienstleisterVerwaltung() {
         .select(
           "id,dienstleister_id,date,start_time,end_time,projects(title,adresse),teams(name)"
         )
-        .not("dienstleister_id", "is", null)
         .in("dienstleister_id", partnerIds)
         .order("date", { ascending: false });
       if (aErr) throw aErr;
 
       const tmpLast: Record<string, { datum: string; titel: string | null }> =
         {};
-      for (const row of assignmentRows ?? []) {
-        const dlId = (row as AssignmentRow).dienstleister_id;
+      for (const row of (assignmentRows ?? []) as AssignmentRow[]) {
+        const dlId = row.dienstleister_id;
         if (!dlId) continue;
         if (tmpLast[dlId]) continue;
-        const datum = (row as AssignmentRow).date;
-        const prj = (row as AssignmentRow).projects;
-        const p0 = Array.isArray(prj) ? prj[0] : prj;
+        const datum = row.date;
+        const p0 = firstOrNull(row.projects);
         const titel = p0?.title ?? null;
         tmpLast[dlId] = { datum, titel };
       }
       setLetzterEinsatzByPartner(tmpLast);
 
-      // 2) Pivot-Anfragen pro Partner
+      // 2) Pivot-Anfragen pro Partner (ohne Embed, dann 2. Query für assignments)
       const { data: apRows, error: pErr } = await supabase
         .from("assignment_subcontractors")
         .select(
-          "id,subcontractor_id,status,email_gesendet_at,bestaetigt_at,notiz,created_at,assignment:assignment_id(id,date,start_time,end_time,projects(title,adresse),teams(name))"
+          "id,subcontractor_id,assignment_id,status,email_gesendet_at,bestaetigt_at,notiz,created_at"
         )
         .in("subcontractor_id", partnerIds)
         .order("created_at", { ascending: false });
       if (pErr) throw pErr;
 
-      type PivotRow = {
-        subcontractor_id: string;
-      };
+      const pivot = (apRows ?? []) as PivotRow[];
+      const assignmentIds = Array.from(
+        new Set(pivot.map((x) => x.assignment_id))
+      ).filter(Boolean);
+
+      if (assignmentIds.length === 0) {
+        setAssignmentSubsByPartner({});
+        return;
+      }
+
+      const { data: assignmentByIdRows, error: a2Err } = await supabase
+        .from("assignments")
+        .select("id,date,start_time,end_time,projects(title,adresse),teams(name)")
+        .in("id", assignmentIds);
+      if (a2Err) throw a2Err;
+
+      const assignmentById: Record<string, AssignmentSubcontractor["assignment"]> =
+        {};
+      for (const row of (assignmentByIdRows ?? []) as AssignmentRow[]) {
+        const p0 = firstOrNull(row.projects);
+        const t0 = firstOrNull(row.teams);
+        assignmentById[row.id] = {
+          id: row.id,
+          date: row.date,
+          start_time: row.start_time,
+          end_time: row.end_time,
+          projects: p0?.title
+            ? [
+                {
+                  title: p0.title,
+                  adresse: p0.adresse ?? null,
+                },
+              ]
+            : [],
+          teams: t0?.name ? [{ name: t0.name }] : [],
+        };
+      }
 
       const byPartner: Record<string, AssignmentSubcontractor[]> = {};
-      for (const r of apRows ?? []) {
-        const subId = (r as PivotRow).subcontractor_id;
-        byPartner[subId] ??= [];
-        byPartner[subId].push(r as unknown as AssignmentSubcontractor);
+      for (const r of pivot) {
+        const assignment = assignmentById[r.assignment_id] ?? null;
+        const status = r.status as AssignmentSubcontractor["status"];
+        byPartner[r.subcontractor_id] ??= [];
+        byPartner[r.subcontractor_id].push({
+          id: r.id,
+          status,
+          email_gesendet_at: r.email_gesendet_at,
+          bestaetigt_at: r.bestaetigt_at,
+          notiz: r.notiz,
+          created_at: r.created_at,
+          assignment,
+        });
       }
       setAssignmentSubsByPartner(byPartner);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Laden fehlgeschlagen.";
-      toast.error(msg);
+      // Die Tabelle selbst ist bereits geladen; Zusatzdaten (Anfragen/Einsätze)
+      // dürfen nicht die gesamte Seite “rot” machen.
+      console.warn(
+        "[DienstleisterVerwaltung] Laden Partner-Metadaten fehlgeschlagen:",
+        e
+      );
+      setLetzterEinsatzByPartner({});
+      setAssignmentSubsByPartner({});
     } finally {
       setLadeAnfragen(false);
     }
@@ -446,9 +495,7 @@ export function DienstleisterVerwaltung() {
 
   function pickProjectTitle(a: AssignmentSubcontractor["assignment"]) {
     if (!a) return null;
-    const prj = a.projects;
-    const p0 = Array.isArray(prj) ? prj[0] : prj;
-    return p0?.title ?? null;
+    return a.projects[0]?.title ?? null;
   }
 
   function emailVorbereiten(p: Dienstleister, tpl: EmailTemplateTyp) {
@@ -465,9 +512,7 @@ export function DienstleisterVerwaltung() {
     const zeit = chosen?.start_time
       ? `${chosen.start_time}–${chosen.end_time}`
       : "–";
-    const prj = chosen?.projects;
-    const p0 = Array.isArray(prj) ? prj[0] : prj;
-    const adresse = p0?.adresse ?? "";
+    const adresse = chosen?.projects[0]?.adresse ?? "";
 
     const templates: Record<EmailTemplateTyp, { betreff: string; body: string }> =
       {
@@ -640,7 +685,7 @@ export function DienstleisterVerwaltung() {
           <div className="flex items-center gap-2 mb-4">
             <div className="relative flex-1 max-w-xs">
               <Input
-                placeholder="Firma oder Ansprechpartner…"
+                placeholder="Dienstleister"
                 className="w-full pl-8 pr-3 py-2 text-sm bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-700 transition-colors"
                 value={filter.suche}
                 onChange={(e) =>
@@ -651,59 +696,6 @@ export function DienstleisterVerwaltung() {
                 <Eye size={13} />
               </div>
             </div>
-
-            <Select
-              value={filter.status}
-              onValueChange={(v) =>
-                setFilter((f) => ({ ...f, status: v as typeof f.status }))
-              }
-            >
-              <SelectTrigger className="px-3 py-2 text-sm bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 focus:outline-none appearance-none">
-                <SelectValue placeholder="Alle Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="alle">Alle Status</SelectItem>
-                <SelectItem value="aktiv">Aktiv</SelectItem>
-                <SelectItem value="partner">Partner</SelectItem>
-                <SelectItem value="inaktiv">Inaktiv</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select
-              value={filter.spezialisierung}
-              onValueChange={(v) =>
-                setFilter((f) => ({
-                  ...f,
-                  spezialisierung: v as typeof f.spezialisierung,
-                }))
-              }
-            >
-              <SelectTrigger className="px-3 py-2 text-sm bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 focus:outline-none appearance-none">
-                <SelectValue placeholder="Alle Spezialiserungen" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="alle">Alle Spezialiserungen</SelectItem>
-                {SPEZIALISIERUNGEN.map((s) => (
-                  <SelectItem key={s.value} value={s.value}>
-                    {s.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {filterAktiv ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() =>
-                  setFilter({ suche: "", status: "alle", spezialisierung: "alle" })
-                }
-                className="text-zinc-500 hover:text-zinc-300"
-              >
-                Zurücksetzen
-              </Button>
-            ) : null}
           </div>
 
           {/* TABELLE */}
