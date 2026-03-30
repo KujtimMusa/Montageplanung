@@ -709,7 +709,8 @@ export function NotfallModus() {
     setScanErgebnisse(null);
 
     try {
-      const { data: assignments, error: aErr } = await supabase
+      // Primär mit Status-Filter, Fallback ohne Status-Filter (für ältere DB-Stände).
+      const q1 = await supabase
         .from("assignments")
         .select(
           "id,date,start_time,end_time,employee_id,team_id,project_title,projects(title)"
@@ -718,9 +719,22 @@ export function NotfallModus() {
         .lte("date", scanBis)
         .in("status", ["neu", "geplant", "aktiv"]);
 
-      if (aErr) throw aErr;
+      let assignments: Record<string, unknown>[] = [];
+      if (q1.error) {
+        const q2 = await supabase
+          .from("assignments")
+          .select(
+            "id,date,start_time,end_time,employee_id,team_id,project_title,projects(title)"
+          )
+          .gte("date", scanVon)
+          .lte("date", scanBis);
+        if (q2.error) throw q2.error;
+        assignments = (q2.data ?? []) as Record<string, unknown>[];
+      } else {
+        assignments = (q1.data ?? []) as Record<string, unknown>[];
+      }
 
-      const rows = (assignments ?? []) as Record<string, unknown>[];
+      const rows = assignments;
       const assignmentIds = rows.map((r) => String(r.id));
 
       // Viele DB-Stände nutzen assignment_employees als Hauptzuweisung.
@@ -940,8 +954,8 @@ export function NotfallModus() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-60px)] min-h-0 flex-col gap-3">
-      <div className="flex-1 min-h-0 overflow-y-auto rounded-2xl border border-zinc-800/60 bg-zinc-950 p-4">
+    <div className="flex min-h-[calc(100vh-60px)] flex-col gap-3">
+      <div className="rounded-2xl border border-zinc-800/60 bg-zinc-950 p-4">
         <div id="notfall-stepper">
           <NotfallSteuerung
             mitarbeiter={mitarbeiter}
@@ -1079,7 +1093,7 @@ export function NotfallModus() {
         </div>
       </div>
 
-      <div className="h-[320px] min-h-[260px] rounded-2xl border border-zinc-800/60 bg-zinc-950">
+      <div className="flex-1 min-h-[360px] rounded-2xl border border-zinc-800/60 bg-zinc-950">
         <KiNotfallPanel
           kiLaed={kiLaed}
           kiStream={kiStream}
