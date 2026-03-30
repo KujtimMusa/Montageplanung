@@ -117,8 +117,9 @@ export function NotfallModus() {
   const ladenMitarbeiter = useCallback(async () => {
     const { data, error } = await supabase
       .from("employees")
-      .select("id,name,department_id,qualifikationen,phone,whatsapp,departments(name)")
-      .eq("active", true)
+      .select(
+        "id,name,department_id,qualifikationen,phone,whatsapp, departments!department_id(name)"
+      )
       .order("name");
     if (error) {
       toast.error(error.message);

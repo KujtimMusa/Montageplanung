@@ -1,32 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   ArrowRight,
   Check,
   CheckCircle2,
-  CheckIcon,
   ChevronDown,
-  ChevronsUpDownIcon,
   Search,
   UserX,
   Zap,
 } from "lucide-react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -115,8 +100,6 @@ export function NotfallSteuerung({
   onResetNotfall,
   lädt,
 }: NotfallSteuerungProps) {
-  const [comboOffen, setComboOffen] = useState(false);
-
   const ausfall = useMemo(
     () => mitarbeiter.find((m) => m.id === ausfallId),
     [mitarbeiter, ausfallId]
@@ -283,67 +266,25 @@ export function NotfallSteuerung({
               <label className="mb-2 block text-xs font-semibold tracking-wider text-zinc-500 uppercase">
                 Mitarbeiter
               </label>
-              <Popover open={comboOffen} onOpenChange={setComboOffen}>
-                <PopoverTrigger
-                  className={cn(
-                    "inline-flex h-[42px] w-full cursor-pointer appearance-none items-center justify-between rounded-xl border border-zinc-700 bg-zinc-800 px-3 text-sm text-zinc-200 transition-colors",
-                    "hover:border-zinc-600 focus-visible:border-zinc-600 focus-visible:outline-none"
-                  )}
-                  nativeButton
-                >
-                  <span className="flex min-w-0 flex-1 items-center gap-2 truncate">
-                    {ausfall ? (
-                      <>
-                        <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-zinc-600 bg-zinc-700 text-xs font-bold text-zinc-300">
-                          {ausfall.name.slice(0, 2).toUpperCase()}
-                        </span>
-                        <span className="truncate">{ausfall.name}</span>
-                      </>
-                    ) : (
-                      <span className="text-zinc-500">Mitarbeiter wählen…</span>
-                    )}
-                  </span>
-                  <ChevronsUpDownIcon className="size-4 shrink-0 opacity-50" />
-                </PopoverTrigger>
-                <PopoverContent
-                  className="w-[var(--anchor-width)] p-0"
-                  align="start"
-                >
-                  <Command>
-                    <CommandInput placeholder="Suchen…" />
-                    <CommandList>
-                      <CommandEmpty>Kein Treffer.</CommandEmpty>
-                      <CommandGroup>
-                        {mitarbeiter.map((m) => (
-                          <CommandItem
-                            key={m.id}
-                            value={`${m.name} ${m.abteilung ?? ""}`}
-                            onSelect={() => {
-                              setAusfallId(m.id);
-                              setComboOffen(false);
-                            }}
-                          >
-                            <CheckIcon
-                              className={cn(
-                                "mr-2 size-4",
-                                ausfallId === m.id ? "opacity-100" : "opacity-0"
-                              )}
-                            />
-                            <div>
-                              <p className="text-sm">{m.name}</p>
-                              {m.abteilung ? (
-                                <p className="text-[10px] text-zinc-500">
-                                  {m.abteilung}
-                                </p>
-                              ) : null}
-                            </div>
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
+              <select
+                value={ausfallId}
+                onChange={(e) => setAusfallId(e.target.value)}
+                className="h-[42px] w-full cursor-pointer rounded-xl border border-zinc-700 bg-zinc-800 px-3 text-sm text-zinc-200 transition-colors hover:border-zinc-600 focus:border-zinc-600 focus:outline-none"
+              >
+                <option value="">Mitarbeiter wählen…</option>
+                {mitarbeiter.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                    {m.abteilung ? ` (${m.abteilung})` : ""}
+                  </option>
+                ))}
+              </select>
+              {mitarbeiter.length === 0 ? (
+                <p className="mt-2 text-xs text-amber-500">
+                  Keine Mitarbeiter geladen — bitte Stammdaten prüfen oder Seite neu
+                  laden.
+                </p>
+              ) : null}
             </div>
 
             <div>
