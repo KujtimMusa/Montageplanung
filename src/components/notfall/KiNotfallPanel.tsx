@@ -14,6 +14,9 @@ type Props = {
   kiAntwort: KiNotfallAntwort | null;
   onNeuAnalysieren: () => void;
   kommunikationWhatsapp?: string | null;
+  zusammenfassungOverride?: string | null;
+  risikenOverride?: string[] | null;
+  kommunikationOverride?: string | null;
 };
 
 function KINachricht({
@@ -80,8 +83,22 @@ export function KiNotfallPanel({
   kiAntwort,
   onNeuAnalysieren,
   kommunikationWhatsapp,
+  zusammenfassungOverride,
+  risikenOverride,
+  kommunikationOverride,
 }: Props) {
   const showStream = kiLaed && kiStream.length > 0 && !kiAntwort;
+
+  const zusammenfassungText = zusammenfassungOverride
+    ? zusammenfassungOverride
+    : kiAntwort?.zusammenfassung ?? "";
+
+  const risikenToShow =
+    risikenOverride != null ? risikenOverride : kiAntwort?.risiken ?? [];
+
+  const kommunikationText = (
+    kommunikationOverride ?? kiAntwort?.kommunikation ?? ""
+  ).trim();
 
   async function kopiere(text: string) {
     try {
@@ -167,7 +184,7 @@ export function KiNotfallPanel({
                 <p className="mb-2 text-xs font-semibold text-zinc-500">
                   KI-Analyse
                 </p>
-                <KINachricht text={kiAntwort.zusammenfassung} typ="ki" />
+                <KINachricht text={zusammenfassungText} typ="ki" />
               </div>
 
               {kiAntwort.empfehlungen?.map((emp, i) => (
@@ -193,48 +210,22 @@ export function KiNotfallPanel({
                 </div>
               ))}
 
-              {kiAntwort.risiken?.length ? (
-                <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
-                  <p className="mb-1.5 text-xs font-semibold text-zinc-400">
-                    Risiken
-                  </p>
-                  {kiAntwort.risiken.map((r, i) => (
-                    <div key={i} className="text-xs leading-relaxed text-zinc-300">
-                      <ReactMarkdown
-                        components={{
-                          p: ({ children }) => (
-                            <p className="mb-2 last:mb-0">{children}</p>
-                          ),
-                          strong: ({ children }) => (
-                            <strong className="font-bold text-zinc-200">
-                              {children}
-                            </strong>
-                          ),
-                          ul: ({ children }) => (
-                            <ul className="my-2 list-disc pl-4">{children}</ul>
-                          ),
-                          ol: ({ children }) => (
-                            <ol className="my-2 list-decimal pl-4">
-                              {children}
-                            </ol>
-                          ),
-                          li: ({ children }) => <li>{children}</li>,
-                        }}
-                      >
-                        {r}
-                      </ReactMarkdown>
-                    </div>
-                  ))}
-                </div>
+              {risikenToShow.length ? (
+                <KINachricht
+                  text={`### Risiken\n${risikenToShow
+                    .map((r) => `- ${r}`)
+                    .join("\n")}`}
+                  typ="system"
+                />
               ) : null}
 
-              {kiAntwort.kommunikation ? (
+              {kommunikationText ? (
                 <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
                   <p className="mb-1.5 text-xs font-semibold text-zinc-400">
                     Nachrichtsvorschlag
                   </p>
                   <KINachricht
-                    text={kiAntwort.kommunikation}
+                    text={kommunikationText}
                     typ="system"
                   />
                   <div className="mt-2 flex flex-wrap gap-2">
@@ -242,14 +233,14 @@ export function KiNotfallPanel({
                       type="button"
                       size="sm"
                       variant="outline"
-                      className="h-7 border-zinc-700 text-[10px] text-zinc-300 hover:bg-zinc-800"
-                      onClick={() => void kopiere(kiAntwort.kommunikation)}
+                      className="h-7 border-zinc-700 text-xs text-zinc-300 hover:bg-zinc-800"
+                      onClick={() => void kopiere(kommunikationText)}
                     >
                       <Copy size={10} className="mr-1" /> Kopieren
                     </Button>
                     {kommunikationWhatsapp ? (
                       <a
-                        href={`https://wa.me/${kommunikationWhatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(kiAntwort.kommunikation)}`}
+                        href={`https://wa.me/${kommunikationWhatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(kommunikationText)}`}
                         target="_blank"
                         rel="noopener noreferrer"
                       >
@@ -257,7 +248,7 @@ export function KiNotfallPanel({
                           type="button"
                           size="sm"
                           variant="outline"
-                          className="h-7 border-zinc-700 text-[10px] text-emerald-400 hover:bg-zinc-800"
+                          className="h-7 border-zinc-700 text-xs text-emerald-400 hover:bg-zinc-800"
                         >
                           <MessageCircle size={10} className="mr-1" /> WhatsApp
                         </Button>

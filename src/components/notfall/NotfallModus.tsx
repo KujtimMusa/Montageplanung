@@ -85,11 +85,20 @@ export function NotfallModus() {
     [mitarbeiter, ausfallId]
   );
 
+  const [abwesenheitenHeute, setAbwesenheitenHeute] = useState<
+    { employeeId: string; startDate: string; endDate: string; type: string }[]
+  >([]);
+
   const kommunikationWhatsapp = useMemo(() => {
-    const first = kiAntwort?.empfehlungen?.[0];
-    if (!first?.employeeId) return null;
-    return mitarbeiter.find((m) => m.id === first.employeeId)?.whatsapp ?? null;
-  }, [kiAntwort, mitarbeiter]);
+    const firstEinsatz = einsätze[0];
+    if (!firstEinsatz) return null;
+
+    const repId =
+      manuellerErsatz[firstEinsatz.id] ?? kiErsatz[firstEinsatz.id]?.employeeId;
+    if (!repId) return null;
+
+    return mitarbeiter.find((m) => m.id === repId)?.whatsapp ?? null;
+  }, [einsätze, manuellerErsatz, kiErsatz, mitarbeiter]);
 
   useEffect(() => {
     setBetroffeneGeladen(false);
@@ -99,6 +108,7 @@ export function NotfallModus() {
     setKiStream("");
     setKiErsatz({});
     setManuellerErsatz({});
+    setAbwesenheitenHeute([]);
     setAktiverSchritt(1);
     absenceEingetragenRef.current = false;
   }, [ausfallId, datum]);
@@ -116,6 +126,7 @@ export function NotfallModus() {
     setManuellerErsatz({});
     absenceEingetragenRef.current = false;
     bereitsAufgelöstAssignmentIdsRef.current = new Set();
+    setAbwesenheitenHeute([]);
   }, []);
 
   const ladenMitarbeiter = useCallback(async () => {
@@ -187,43 +198,102 @@ export function NotfallModus() {
       setLädt(true);
       setKandidatenProEinsatz({});
       try {
-        // Betroffene Einsätze:
-        // - direkte employee_id-Zuordnung
-        // - Team-Einsätze, bei denen der Ausfall-Mitarbeiter in team_members steckt
-        const { data: tmAusfall } = await supabase
-          .from("team_members")
-          .select("team_id")
-          .eq("employee_id", ausfallId);
-        const ausfallTeamIds = Array.from(
-          new Set((tmAusfall ?? []).map((r: Record<string, unknown>) => String(r.team_id)))
+        const dept = ausfall?.department_id;
+
+        // Abwesenheiten am Tag (wichtig: Betroffene Einsätze sollen nicht nur vom ausgewählten Mitarbeiter abhängen)
+        const { data: abwRows } = await supabase
+          .from("absences")
+          .select("employee_id")
+          .lte("start_date", datum)
+          .gte("end_date", datum);
+
+        const abwesendIdsAll = new Set<string>(
+          (abwRows ?? []).map((r: Record<string, unknown>) =>
+            String(r.employee_id)
+          )
+        );
+
+        // Nur Abwesenheiten im gleichen Department zählen für “betroffen”
+        const absentInDeptIds =
+          dept != null
+            ? mitarbeiter
+                .filter(
+                  (m) =>
+                    abwesendIdsAll.has(m.id) &&
+                    m.department_id != null &&
+                    m.department_id === dept
+                )
+                .map((m) => m.id)
+            : Array.from(abwesendIdsAll);
+
+        // Relevante Teams (Teams des ausgewählten Mitarbeiters + Teams der abwesenden Mitarbeiter im Dept)
+        const relevantEmpIds = Array.from(
+          new Set<string>([ausfallId, ...absentInDeptIds])
+        );
+
+        const { data: tmRelevant } = relevantEmpIds.length
+          ? await supabase
+              .from("team_members")
+              .select("employee_id,team_id")
+              .in("employee_id", relevantEmpIds)
+          : { data: [] as { employee_id: string; team_id: string }[] };
+
+        const relevantTeamIds = Array.from(
+          new Set(
+            (tmRelevant ?? []).map((r: Record<string, unknown>) =>
+              String(r.team_id)
+            )
+          )
         );
 
         const sel =
           "id,date,start_time,end_time,project_id,project_title, projects(title, farbe), teams(name)";
 
-        const q1 = supabase
+        const qAusfall = supabase
           .from("assignments")
           .select(sel)
           .eq("employee_id", ausfallId)
           .eq("date", datum);
 
-        const q2 =
-          ausfallTeamIds.length > 0
+        const qAbsentEmployees =
+          absentInDeptIds.length > 0
             ? supabase
                 .from("assignments")
                 .select(sel)
-                .in("team_id", ausfallTeamIds)
+                .in("employee_id", absentInDeptIds)
                 .eq("date", datum)
             : null;
 
-        const [q1res, q2res] = await Promise.all([q1, q2]);
+        // Team-Slots gelten als “betroffen”, aber nur wenn noch kein employee_id gesetzt ist
+        // (sonst bekommst du Einsätze, die schon einem anderen (anwesenden) Vertreter zugewiesen sind)
+        const qTeamUnassigned =
+          relevantTeamIds.length > 0
+            ? supabase
+                .from("assignments")
+                .select(sel)
+                .in("team_id", relevantTeamIds)
+                .is("employee_id", null)
+                .eq("date", datum)
+            : null;
 
-        if (q1res.error) throw q1res.error;
-        if (q2res && q2res.error) throw q2res.error;
+        const emptyRes: { data: Record<string, unknown>[]; error: null } = {
+          data: [],
+          error: null,
+        };
+        const [qAusfallRes, qAbsentRes, qTeamRes] = await Promise.all([
+          qAusfall,
+          qAbsentEmployees ? qAbsentEmployees : Promise.resolve(emptyRes),
+          qTeamUnassigned ? qTeamUnassigned : Promise.resolve(emptyRes),
+        ]);
+
+        if (qAusfallRes.error) throw qAusfallRes.error;
+        if (qAbsentRes?.error) throw qAbsentRes.error;
+        if (qTeamRes?.error) throw qTeamRes.error;
 
         const combined = [
-          ...(q1res.data ?? []),
-          ...((q2res?.data ?? []) as Record<string, unknown>[]),
+          ...(qAusfallRes.data ?? []),
+          ...((qAbsentRes?.data ?? []) as Record<string, unknown>[]),
+          ...((qTeamRes?.data ?? []) as Record<string, unknown>[]),
         ] as Record<string, unknown>[];
 
         const rows: NotfallEinsatzZeile[] = Array.from(
@@ -263,17 +333,8 @@ export function NotfallModus() {
         setEinsätze(finalRows);
         setBetroffeneGeladen(true);
 
-        const dept = ausfall?.department_id;
-
         // Kandidaten nur, wenn sie am Tag nicht abwesend sind
-        const { data: abwRows } = await supabase
-          .from("absences")
-          .select("employee_id")
-          .lte("start_date", datum)
-          .gte("end_date", datum);
-        const abwesendIds = new Set<string>(
-          (abwRows ?? []).map((r: Record<string, unknown>) => String(r.employee_id))
-        );
+        const abwesendIds = abwesendIdsAll;
 
         const kandidatenBasis = mitarbeiter.filter(
           (m) =>
@@ -379,6 +440,7 @@ export function NotfallModus() {
     const { rows, kandidaten } = geladen;
 
     const abw = await abwesenheitenFuerDatum();
+    setAbwesenheitenHeute(abw);
     const ausfallMitarbeiter = ausfall;
     const ausfallHatAbwesenheit = abw.some(
       (a) => a.employeeId === ausfallId
@@ -562,6 +624,131 @@ export function NotfallModus() {
     }
   }
 
+  const employeeNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const emp of mitarbeiter) m.set(emp.id, emp.name);
+    return m;
+  }, [mitarbeiter]);
+
+  const formatDate = useCallback((isoDate: string) => {
+    const [y, m, d] = isoDate.split("-");
+    return `${d}.${m}.${y}`;
+  }, []);
+
+  const typeLabel = useCallback((t: string) => {
+    if (t === "urlaub") return "Urlaub";
+    if (t === "krank") return "Krank";
+    if (t === "fortbildung") return "Fortbildung";
+    return t;
+  }, []);
+
+  const risikenFakten = useMemo(() => {
+    const risks: string[] = [];
+
+    if (abwesenheitenHeute.length > 0) {
+      const first = abwesenheitenHeute.slice(0, 2);
+      for (const a of first) {
+        const name = employeeNameById.get(a.employeeId) ?? a.employeeId;
+        risks.push(
+          `${name} ist vom ${formatDate(a.startDate)} bis ${formatDate(
+            a.endDate
+          )} abwesend (${typeLabel(a.type)}).`
+        );
+      }
+    }
+
+    if (einsätze.length > 0) {
+      risks.push(
+        `Ersatzbedarf: ${einsätze.length} betroffene Einsatz(e) am ${datum}.`
+      );
+    }
+
+    const ohneKonfliktfreienErsatz = einsätze.find(
+      (e) => (kandidatenProEinsatz[e.id] ?? []).length === 0
+    );
+    if (ohneKonfliktfreienErsatz) {
+      risks.push(
+        `Für "${ohneKonfliktfreienErsatz.project_title ?? "Einsatz"}" sind keine konfliktfreien Ersatzkräfte verfügbar.`
+      );
+    }
+
+    return risks;
+  }, [
+    abwesenheitenHeute,
+    employeeNameById,
+    formatDate,
+    typeLabel,
+    einsätze,
+    kandidatenProEinsatz,
+    datum,
+  ]);
+
+  const zusammenfassungFakten = useMemo(() => {
+    const n = einsätze.length;
+    const abwCount = abwesenheitenHeute.length;
+
+    const beispiellines = einsätze.slice(0, 3).map((e) => {
+      const proj = e.project_title ?? "Einsatz";
+      const team = e.teamName ? ` (${e.teamName})` : "";
+      return `- ${proj}${team} ${e.start_time}-${e.end_time}`;
+    });
+
+    const beispielRest = n > 3 ? `\n- + ${n - 3} weitere Einsätze` : "";
+
+    const abwesenText =
+      abwCount > 0
+        ? abwesenheitenHeute
+            .slice(0, 2)
+            .map((a) => {
+              const name = employeeNameById.get(a.employeeId) ?? a.employeeId;
+              return `${name} (${typeLabel(a.type)})`;
+            })
+            .join(", ")
+        : "Keine Abwesenheiten am Tag hinterlegt.";
+
+    return `### Betroffene Einsätze\n${
+      n > 0 ? `Es sind ${n} Einsatz(e) betroffen am ${datum}.` : `Keine Einsätze gefunden am ${datum}.`
+    }\n${beispiellines.join("\n")}${beispielRest}\n\n### Abwesenheiten\n${abwesenText}\n\n### Vorgehen\nFür jeden betroffenen Einsatz eine konfliktfreie Ersatzkraft zuweisen und anschließend bestätigen.`;
+  }, [
+    einsätze,
+    abwesenheitenHeute,
+    datum,
+    employeeNameById,
+    typeLabel,
+  ]);
+
+  const kommunikationFakten = useMemo(() => {
+    if (einsätze.length === 0) return "";
+
+    const maxLines = 10;
+    const lines = einsätze.slice(0, maxLines).map((e) => {
+      const proj = e.project_title ?? "Einsatz";
+      const team = e.teamName ? ` (${e.teamName})` : "";
+
+      const repId = manuellerErsatz[e.id] ?? kiErsatz[e.id]?.employeeId;
+      const repName =
+        repId != null
+          ? employeeNameById.get(repId) ?? kiErsatz[e.id]?.name ?? repId
+          : kiErsatz[e.id]?.name ?? null;
+
+      return `- ${proj}${team} ${e.start_time}-${e.end_time}: ${
+        repName ? repName : "noch offen"
+      }`;
+    });
+
+    const rest = einsätze.length > maxLines ? `\n- + ${einsätze.length - maxLines} weitere Einsätze` : "";
+
+    return `Bitte ab ${datum} folgende Einsätze übernehmen (Ersatzplan):\n${lines.join(
+      "\n"
+    )}${rest}`;
+  }, [
+    einsätze,
+    datum,
+    manuellerErsatz,
+    kiErsatz,
+    employeeNameById,
+  ]);
+
   return (
     <div className="flex h-[calc(100vh-60px)] min-h-0 gap-4">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto">
@@ -593,6 +780,9 @@ export function NotfallModus() {
           kiAntwort={kiAntwort}
           onNeuAnalysieren={() => void notfallAusloesen()}
           kommunikationWhatsapp={kommunikationWhatsapp}
+          zusammenfassungOverride={zusammenfassungFakten}
+          risikenOverride={risikenFakten}
+          kommunikationOverride={kommunikationFakten}
         />
       </div>
     </div>
