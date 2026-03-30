@@ -439,11 +439,20 @@ export function EinsatzNeuDialog({
       for (const tag of tage) {
         const d = format(tag, "yyyy-MM-dd");
         const payload: Record<string, unknown> = { ...insertBase, date: d };
-        const { error } = await supabase.from("assignments").insert(payload);
+        const {
+          data: insertedAssignment,
+          error,
+        } = await supabase
+          .from("assignments")
+          .insert(payload)
+          .select("id")
+          .single();
         if (error) {
           if (error.message.includes("prioritaet") || error.code === "42703") {
             delete payload.prioritaet;
-            const { error: e2 } = await supabase.from("assignments").insert(payload);
+            const { error: e2 } = await supabase
+              .from("assignments")
+              .insert(payload);
             if (e2) {
               toast.error(e2.message);
               return;
@@ -453,7 +462,9 @@ export function EinsatzNeuDialog({
             error.code === "42703"
           ) {
             delete payload.dienstleister_id;
-            const { error: e2 } = await supabase.from("assignments").insert(payload);
+            const { error: e2 } = await supabase
+              .from("assignments")
+              .insert(payload);
             if (e2) {
               toast.error(e2.message);
               return;
@@ -461,6 +472,24 @@ export function EinsatzNeuDialog({
           } else {
             toast.error(error.message);
             return;
+          }
+        }
+
+        // Partner-Einsatz: automatisch Anfrage-Pivot anlegen
+        // (UI zeigt diese Einträge später als "Anfragen" + Status).
+        const dlId = einDl;
+        const assignmentId = insertedAssignment?.id as string | undefined;
+        if (dlId && assignmentId) {
+          const { error: upErr } = await supabase
+            .from("assignment_subcontractors")
+            .upsert({
+              assignment_id: assignmentId,
+              subcontractor_id: dlId,
+              status: "angefragt",
+            });
+          if (upErr) {
+            // nicht blockieren, weil Einsatz-Planung priorisiert ist
+            console.warn("[EinsatzNeuDialog] pivot upsert fehlgeschlagen:", upErr);
           }
         }
         insgesamt += 1;

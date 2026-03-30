@@ -5,9 +5,7 @@ import { useForm, Controller, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/client";
-import { outlookKalenderLink } from "@/lib/utils/outlook";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -27,16 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-} from "@/components/ui/card";
-import {
-  Tooltip,
-  TooltipContent,
   TooltipProvider,
-  TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import {
@@ -44,22 +33,16 @@ import {
   CalendarPlus,
   Clock,
   Eye,
-  ExternalLink,
-  ListOrdered,
   Mail,
   MessageCircle,
   Pencil,
   Phone,
   Plus,
   Trash2,
-  User,
-  Wrench,
 } from "lucide-react";
 import { BuchungsregelnDialog } from "@/components/dienstleister/BuchungsregelnDialog";
-import { DienstleisterDetail } from "@/components/dienstleister/DienstleisterDetail";
 import {
   SPEZIALISIERUNGEN,
-  STATUS_CONFIG,
   subcontractorRowToDienstleister,
   type Dienstleister,
   type DienstleisterStatus,
@@ -110,7 +93,7 @@ export function DienstleisterVerwaltung() {
   });
   const [regelnOffen, setRegelnOffen] = useState(false);
   const [regelnFuerId, setRegelnFuerId] = useState<string | null>(null);
-  const [regelnFuerName, setRegelnFuerName] = useState("");
+  const [regelnFuerName] = useState("");
 
   const form = useForm<FormWerte>({
     resolver: zodResolver(formSchema) as Resolver<FormWerte>,
@@ -322,351 +305,839 @@ export function DienstleisterVerwaltung() {
     ? dienstleister.find((x) => x.id === detailId) ?? null
     : null;
 
+  type AssignmentSubcontractor = {
+    id: string;
+    status: "angefragt" | "bestaetigt" | "abgelehnt";
+    email_gesendet_at: string | null;
+    bestaetigt_at: string | null;
+    notiz: string | null;
+    created_at: string;
+    assignment: {
+      id: string;
+      date: string;
+      start_time: string;
+      end_time: string;
+      projects:
+        | { title: string; adresse?: string | null }
+        | Array<{ title: string; adresse?: string | null }>
+        | null;
+      teams:
+        | { name: string }
+        | Array<{ name: string }>
+        | null;
+    } | null;
+  };
+
+  const [assignmentSubsByPartner, setAssignmentSubsByPartner] = useState<
+    Record<string, AssignmentSubcontractor[]>
+  >({});
+  const [letzterEinsatzByPartner, setLetzterEinsatzByPartner] = useState<
+    Record<string, { datum: string; titel: string | null }>
+  >({});
+
+  const [, setLadeAnfragen] = useState(false);
+
+  type EmailTemplateTyp =
+    | "einsatz_anfrage"
+    | "bestaetigung"
+    | "absage"
+    | "allgemein";
+
+  const [emailDialogOffen, setEmailDialogOffen] = useState(false);
+  const [emailTemplateTyp, setEmailTemplateTyp] =
+    useState<EmailTemplateTyp>("allgemein");
+  const [emailPartner, setEmailPartner] = useState<Dienstleister | null>(null);
+  const [emailAssignment, setEmailAssignment] =
+    useState<AssignmentSubcontractor["assignment"] | null>(null);
+  const [emailBetreff, setEmailBetreff] = useState("");
+  const [emailBody, setEmailBody] = useState("");
+  const [emailSendet, setEmailSendet] = useState(false);
+
+  const ladenPartnerMetadaten = useCallback(async () => {
+    if (dienstleister.length === 0) return;
+    const partnerIds = dienstleister.map((d) => d.id);
+    setLadeAnfragen(true);
+    try {
+      type AssignmentRow = {
+        dienstleister_id: string | null;
+        date: string;
+        projects?:
+          | { title?: string | null }
+          | Array<{ title?: string | null }>
+          | null;
+      };
+
+      // 1) Letzter Einsatz pro Partner
+      const { data: assignmentRows, error: aErr } = await supabase
+        .from("assignments")
+        .select(
+          "id,dienstleister_id,date,start_time,end_time,projects(title,adresse),teams(name)"
+        )
+        .not("dienstleister_id", "is", null)
+        .in("dienstleister_id", partnerIds)
+        .order("date", { ascending: false });
+      if (aErr) throw aErr;
+
+      const tmpLast: Record<string, { datum: string; titel: string | null }> =
+        {};
+      for (const row of assignmentRows ?? []) {
+        const dlId = (row as AssignmentRow).dienstleister_id;
+        if (!dlId) continue;
+        if (tmpLast[dlId]) continue;
+        const datum = (row as AssignmentRow).date;
+        const prj = (row as AssignmentRow).projects;
+        const p0 = Array.isArray(prj) ? prj[0] : prj;
+        const titel = p0?.title ?? null;
+        tmpLast[dlId] = { datum, titel };
+      }
+      setLetzterEinsatzByPartner(tmpLast);
+
+      // 2) Pivot-Anfragen pro Partner
+      const { data: apRows, error: pErr } = await supabase
+        .from("assignment_subcontractors")
+        .select(
+          "id,subcontractor_id,status,email_gesendet_at,bestaetigt_at,notiz,created_at,assignment:assignment_id(id,date,start_time,end_time,projects(title,adresse),teams(name))"
+        )
+        .in("subcontractor_id", partnerIds)
+        .order("created_at", { ascending: false });
+      if (pErr) throw pErr;
+
+      type PivotRow = {
+        subcontractor_id: string;
+      };
+
+      const byPartner: Record<string, AssignmentSubcontractor[]> = {};
+      for (const r of apRows ?? []) {
+        const subId = (r as PivotRow).subcontractor_id;
+        byPartner[subId] ??= [];
+        byPartner[subId].push(r as unknown as AssignmentSubcontractor);
+      }
+      setAssignmentSubsByPartner(byPartner);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Laden fehlgeschlagen.";
+      toast.error(msg);
+    } finally {
+      setLadeAnfragen(false);
+    }
+  }, [dienstleister, supabase]);
+
+  useEffect(() => {
+    void ladenPartnerMetadaten();
+  }, [ladenPartnerMetadaten]);
+
+  const gesamteOffeneAnfragen = useMemo(() => {
+    return Object.values(assignmentSubsByPartner)
+      .flat()
+      .filter((x) => x.status === "angefragt").length;
+  }, [assignmentSubsByPartner]);
+
+  function formatDate(dateTxt: string) {
+    try {
+      const dt = new Date(dateTxt + "T00:00:00");
+      return new Intl.DateTimeFormat("de-DE", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      }).format(dt);
+    } catch {
+      return dateTxt;
+    }
+  }
+
+  function pickProjectTitle(a: AssignmentSubcontractor["assignment"]) {
+    if (!a) return null;
+    const prj = a.projects;
+    const p0 = Array.isArray(prj) ? prj[0] : prj;
+    return p0?.title ?? null;
+  }
+
+  function emailVorbereiten(p: Dienstleister, tpl: EmailTemplateTyp) {
+    const requests = (assignmentSubsByPartner[p.id] ?? []).filter(
+      (x) => x.status === "angefragt"
+    );
+    const chosen = requests[0]?.assignment ?? null;
+    setEmailPartner(p);
+    setEmailTemplateTyp(tpl);
+    setEmailAssignment(chosen);
+
+    const titel = pickProjectTitle(chosen);
+    const datum = chosen?.date ? formatDate(chosen.date) : "–";
+    const zeit = chosen?.start_time
+      ? `${chosen.start_time}–${chosen.end_time}`
+      : "–";
+    const prj = chosen?.projects;
+    const p0 = Array.isArray(prj) ? prj[0] : prj;
+    const adresse = p0?.adresse ?? "";
+
+    const templates: Record<EmailTemplateTyp, { betreff: string; body: string }> =
+      {
+        einsatz_anfrage: {
+          betreff: `Einsatz-Anfrage: ${titel ?? "Einsatz"} am ${datum}`,
+          body: `Sehr geehrte/r ${p.ansprechpartner ?? p.firma},\n\nwir möchten Sie für folgenden Einsatz anfragen:\n\n📋 Projekt: ${titel ?? "–"}\n📅 Datum: ${datum}\n⏰ Zeit: ${zeit}\n📍 Adresse: ${adresse || "–"}\n\nMit freundlichen Grüßen`,
+        },
+        bestaetigung: {
+          betreff: `Bestätigung: Einsatz am ${datum}`,
+          body: `Sehr geehrte/r ${p.ansprechpartner ?? p.firma},\n\nder folgende Einsatz ist bestätigt:\n\n📋 ${titel ?? "–"}\n📅 ${datum}\n⏰ ${zeit}\n\nVielen Dank für die Zusammenarbeit.`,
+        },
+        absage: {
+          betreff: `Absage: Anfrage vom ${formatDate(new Date().toISOString().slice(0, 10))}`,
+          body: `Sehr geehrte/r ${p.ansprechpartner ?? p.firma},\n\nleider müssen wir die folgende Anfrage absagen:\n\n📋 ${titel ?? "–"}\n📅 ${chosen?.date ?? "–"}\n\nWir hoffen auf zukünftige Zusammenarbeit.`,
+        },
+        allgemein: {
+          betreff: `Anfrage für Kooperation`,
+          body: `Sehr geehrte/r ${p.ansprechpartner ?? p.firma},\n\nwir würden gerne mit Ihnen in Kontakt treten.\n\nMit freundlichen Grüßen`,
+        },
+      };
+
+    setEmailBetreff(templates[tpl].betreff);
+    setEmailBody(templates[tpl].body);
+    setEmailDialogOffen(true);
+  }
+
+  async function emailSenden() {
+    if (!emailPartner) return;
+    if (!emailPartner.email?.trim()) {
+      toast.error("Keine E-Mail-Adresse hinterlegt.");
+      return;
+    }
+    setEmailSendet(true);
+    try {
+      const tpl = emailTemplateTyp;
+      const an = emailPartner.email.trim();
+      const assignmentId = emailAssignment?.id ?? undefined;
+
+      const payload = {
+        an,
+        betreff: emailBetreff,
+        body: emailBody,
+        partner_id: emailPartner.id,
+        assignment_id: assignmentId,
+        template_typ: tpl,
+      };
+
+      const res = await fetch("/api/email/senden", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        enabled?: boolean;
+        reason?: string;
+      };
+
+      if (!res.ok || json.enabled === false) {
+        // TODO: Wenn RESEND_API_KEY gesetzt ist, echten Versand aktivieren.
+        const mailto = `mailto:${encodeURIComponent(an)}?subject=${encodeURIComponent(
+          emailBetreff
+        )}&body=${encodeURIComponent(emailBody)}`;
+        window.open(mailto, "_blank");
+
+        // Optimistisch Pivot aktualisieren (damit UI sofort korrekt ist)
+        if (assignmentId) {
+          const nextStatus =
+            tpl === "bestaetigung"
+              ? "bestaetigt"
+              : tpl === "absage"
+                ? "abgelehnt"
+                : "angefragt";
+          await supabase
+            .from("assignment_subcontractors")
+            .update({
+              status: nextStatus,
+              email_gesendet_at: new Date().toISOString(),
+              bestaetigt_at: tpl === "bestaetigung" ? new Date().toISOString() : null,
+            })
+            .eq("assignment_id", assignmentId)
+            .eq("subcontractor_id", emailPartner.id);
+        }
+
+        toast.success("E-Mail über mailto vorbereitet (TODO: Resend aktivieren).");
+        setEmailDialogOffen(false);
+        void ladenPartnerMetadaten();
+        return;
+      }
+
+      toast.success("E-Mail gesendet/ausgelöst.");
+      setEmailDialogOffen(false);
+      void ladenPartnerMetadaten();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "E-Mail Senden fehlgeschlagen.";
+      toast.error(msg);
+    } finally {
+      setEmailSendet(false);
+    }
+  }
+
   return (
     <TooltipProvider>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-zinc-50">Dienstleister</h1>
-            <p className="mt-1 text-sm text-zinc-400">
-              Externe Partner verwalten, einplanen und direkt kontaktieren.
-            </p>
-          </div>
-          <Button
-            type="button"
-            onClick={() => {
-              setBearbeitenId(null);
-              oeffnenNeu();
-            }}
-          >
-            <Plus size={16} className="mr-2" /> Dienstleister hinzufügen
-          </Button>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-            <div className="flex items-center justify-between">
-              <Building2 className="text-emerald-400" size={22} />
-              <span className="text-2xl font-bold text-zinc-100">
-                {statAktivePartner}
-              </span>
+      <div className="flex gap-4 h-[calc(100vh-60px)] p-6">
+        {/* HAUPTBEREICH */}
+        <div className="flex-1 flex flex-col gap-4 min-w-0 overflow-y-auto">
+          <div className="flex items-start justify-between mb-2">
+            <div>
+              <h1 className="text-2xl font-bold text-zinc-100">Dienstleister</h1>
             </div>
-            <p className="mt-2 text-xs text-zinc-500">Aktive Partner</p>
-          </div>
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-            <div className="flex items-center justify-between">
-              <Wrench className="text-blue-400" size={22} />
-              <span className="text-2xl font-bold text-zinc-100">
-                {statSpezCount}
-              </span>
-            </div>
-            <p className="mt-2 text-xs text-zinc-500">Spezialisierungen</p>
-          </div>
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-            <div className="flex items-center justify-between">
-              <Clock className="text-orange-400" size={22} />
-              <span className="text-2xl font-bold text-zinc-100">
-                {statVorlauf}
-              </span>
-            </div>
-            <p className="mt-2 text-xs text-zinc-500">Ø Vorlauf (Tage)</p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Input
-            placeholder="Firma oder Ansprechpartner…"
-            className="w-56 border-zinc-800 bg-zinc-950"
-            value={filter.suche}
-            onChange={(e) => setFilter((f) => ({ ...f, suche: e.target.value }))}
-          />
-          <Select
-            value={filter.status}
-            onValueChange={(v) =>
-              setFilter((f) => ({
-                ...f,
-                status: v as typeof f.status,
-              }))
-            }
-          >
-            <SelectTrigger className="w-[160px] border-zinc-800 bg-zinc-950">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="alle">Alle Status</SelectItem>
-              <SelectItem value="aktiv">Aktiv</SelectItem>
-              <SelectItem value="partner">Partner</SelectItem>
-              <SelectItem value="inaktiv">Inaktiv</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select
-            value={filter.spezialisierung}
-            onValueChange={(v) =>
-              setFilter((f) => ({
-                ...f,
-                spezialisierung: v as typeof f.spezialisierung,
-              }))
-            }
-          >
-            <SelectTrigger className="w-[200px] border-zinc-800 bg-zinc-950">
-              <SelectValue placeholder="Spezialisierung" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="alle">Alle Spezialisierungen</SelectItem>
-              {SPEZIALISIERUNGEN.map((s) => (
-                <SelectItem key={s.value} value={s.value}>
-                  {s.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {filterAktiv ? (
             <Button
               type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() =>
-                setFilter({
-                  suche: "",
-                  status: "alle",
-                  spezialisierung: "alle",
-                })
+              onClick={() => {
+                setBearbeitenId(null);
+                oeffnenNeu();
+              }}
+              className="bg-zinc-100 text-zinc-900 hover:bg-white font-semibold text-sm px-4 py-2 rounded-xl flex items-center gap-1.5 transition-colors"
+            >
+              <Plus size={15} /> Dienstleister hinzufügen
+            </Button>
+          </div>
+
+          {/* STAT-KARTEN */}
+          <div className="grid grid-cols-4 gap-3 mb-2">
+            {[
+              {
+                label: "AKTIVE PARTNER",
+                wert: statAktivePartner,
+                sub: "Aktuell verfügbar",
+                akzent: undefined as string | undefined,
+              },
+              {
+                label: "SPEZIALISIERUNGEN",
+                wert: statSpezCount,
+                sub: "Verschiedene Fachgebiete",
+                akzent: undefined as string | undefined,
+              },
+              {
+                label: "OFFENE ANFRAGEN",
+                wert: gesamteOffeneAnfragen,
+                sub: "Warten auf Bestätigung",
+                akzent: gesamteOffeneAnfragen > 0 ? "#f59e0b" : undefined,
+              },
+              {
+                label: "Ø VORLAUF",
+                wert: `${statVorlauf}d`,
+                sub: "Durchschnittliche Reaktionszeit",
+                akzent: undefined as string | undefined,
+              },
+            ].map((k) => (
+              <div
+                key={k.label}
+                className="rounded-2xl bg-zinc-900 border border-zinc-800/60 p-5 hover:border-zinc-700/60 transition-all"
+              >
+                <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4">
+                  {k.label}
+                </p>
+                <p
+                  className="text-4xl font-bold tabular-nums mb-1"
+                  style={{ color: k.akzent ?? "#f4f4f5" }}
+                >
+                  {String(k.wert)}
+                </p>
+                <p className="text-xs text-zinc-600">{k.sub}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* FILTER */}
+          <div className="flex items-center gap-2 mb-4">
+            <div className="relative flex-1 max-w-xs">
+              <Input
+                placeholder="Firma oder Ansprechpartner…"
+                className="w-full pl-8 pr-3 py-2 text-sm bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-700 transition-colors"
+                value={filter.suche}
+                onChange={(e) =>
+                  setFilter((f) => ({ ...f, suche: e.target.value }))
+                }
+              />
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none">
+                <Eye size={13} />
+              </div>
+            </div>
+
+            <Select
+              value={filter.status}
+              onValueChange={(v) =>
+                setFilter((f) => ({ ...f, status: v as typeof f.status }))
               }
             >
-              Filter zurücksetzen
-            </Button>
-          ) : null}
-        </div>
+              <SelectTrigger className="px-3 py-2 text-sm bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 focus:outline-none appearance-none">
+                <SelectValue placeholder="Alle Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="alle">Alle Status</SelectItem>
+                <SelectItem value="aktiv">Aktiv</SelectItem>
+                <SelectItem value="partner">Partner</SelectItem>
+                <SelectItem value="inaktiv">Inaktiv</SelectItem>
+              </SelectContent>
+            </Select>
 
-        {laden ? (
-          <p className="text-sm text-zinc-500">Laden…</p>
-        ) : gefiltert.length === 0 ? (
-          dienstleister.length > 0 ? (
-            <p className="py-12 text-center text-sm text-zinc-500">
-              Keine Treffer für die aktuellen Filter.
-            </p>
-          ) : (
+            <Select
+              value={filter.spezialisierung}
+              onValueChange={(v) =>
+                setFilter((f) => ({
+                  ...f,
+                  spezialisierung: v as typeof f.spezialisierung,
+                }))
+              }
+            >
+              <SelectTrigger className="px-3 py-2 text-sm bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 focus:outline-none appearance-none">
+                <SelectValue placeholder="Alle Spezialiserungen" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="alle">Alle Spezialiserungen</SelectItem>
+                {SPEZIALISIERUNGEN.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {filterAktiv ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  setFilter({ suche: "", status: "alle", spezialisierung: "alle" })
+                }
+                className="text-zinc-500 hover:text-zinc-300"
+              >
+                Zurücksetzen
+              </Button>
+            ) : null}
+          </div>
+
+          {/* TABELLE */}
+          {laden ? (
+            <p className="text-sm text-zinc-500">Laden…</p>
+          ) : gefiltert.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20">
               <Building2 size={48} className="mb-4 text-zinc-700" />
-              <p className="text-base font-medium text-zinc-400">
-                Noch keine Dienstleister
-              </p>
+              <p className="text-base font-medium text-zinc-400">Noch keine Treffer</p>
               <p className="mt-1 text-sm text-zinc-600">
-                Füge externe Partner hinzu um sie in der Planung einzusetzen
+                Füge externe Partner hinzu, um sie in der Planung einzusetzen.
               </p>
               <Button type="button" className="mt-4" onClick={() => oeffnenNeu()}>
                 <Plus size={16} className="mr-2" /> Ersten Dienstleister hinzufügen
               </Button>
             </div>
-          )
-        ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {gefiltert.map((d) => (
-              <Card
-                key={d.id}
-                className="cursor-pointer overflow-hidden rounded-xl border-zinc-800 bg-zinc-900/50 transition-all hover:border-zinc-700"
-              >
-                <CardHeader
-                  className="cursor-pointer p-4 pb-3"
-                  onClick={() => setDetailId(d.id)}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="text-sm font-semibold leading-tight text-zinc-100">
-                      {d.firma}
-                    </h3>
-                    <Badge
-                      className={`shrink-0 text-xs ${STATUS_CONFIG[d.status].farbe}`}
-                    >
-                      {STATUS_CONFIG[d.status].label}
-                    </Badge>
-                  </div>
-                  {d.ansprechpartner ? (
-                    <p className="mt-0.5 flex items-center gap-1 text-xs text-zinc-500">
-                      <User size={10} />
-                      {d.ansprechpartner}
-                    </p>
-                  ) : null}
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {d.spezialisierung.slice(0, 3).map((s) => (
-                      <Badge
-                        key={s}
-                        variant="outline"
-                        className="border-zinc-700 px-1.5 py-0 text-[10px] text-zinc-400"
+          ) : (
+            <div className="rounded-2xl border border-zinc-800/60 overflow-hidden">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-zinc-800/60 bg-zinc-900/40">
+                    {[
+                      "Firma",
+                      "Spezialisierung",
+                      "Kontakt",
+                      "Letzter Einsatz",
+                      "Status",
+                      "Anfragen",
+                      "Aktionen",
+                    ].map((h) => (
+                      <th
+                        key={h}
+                        className="text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider py-3 px-4"
                       >
-                        {SPEZIALISIERUNGEN.find((x) => x.value === s)?.label}
-                      </Badge>
+                        {h}
+                      </th>
                     ))}
-                    {d.spezialisierung.length > 3 ? (
-                      <Badge
-                        variant="outline"
-                        className="border-zinc-700 px-1.5 py-0 text-[10px]"
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-800/40">
+                  {gefiltert.map((p) => {
+                    const offeneAnfragenPartner = (
+                      assignmentSubsByPartner[p.id] ?? []
+                    ).filter((ap) => ap.status === "angefragt").length;
+                    const letzte = letzterEinsatzByPartner[p.id];
+                    return (
+                      <tr
+                        key={p.id}
+                        className="hover:bg-zinc-900/40 transition-colors group cursor-pointer"
+                        onClick={() => setDetailId(p.id)}
                       >
-                        +{d.spezialisierung.length - 3}
-                      </Badge>
-                    ) : null}
+                        <td className="px-4 py-3.5">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-zinc-800 border border-zinc-700/50 flex items-center justify-center text-sm font-bold text-zinc-400 flex-shrink-0">
+                              {p.firma?.slice(0, 2).toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-zinc-200">
+                                {p.firma}
+                              </p>
+                              {p.vorlauf_tage > 0 ? (
+                                <p className="text-xs text-zinc-600">
+                                  Ø {p.vorlauf_tage}d Vorlauf
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3.5">
+                          <div className="flex flex-wrap gap-1">
+                            {p.spezialisierung?.slice(0, 2).map((s) => (
+                              <span
+                                key={s}
+                                className="text-xs px-2 py-0.5 rounded-full bg-zinc-800 border border-zinc-700/50 text-zinc-400 font-medium"
+                              >
+                                {SPEZIALISIERUNGEN.find((x) => x.value === s)?.label ??
+                                  s}
+                              </span>
+                            ))}
+                            {(p.spezialisierung?.length ?? 0) > 2 ? (
+                              <span className="text-xs text-zinc-600">
+                                +{p.spezialisierung.length - 2}
+                              </span>
+                            ) : null}
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3.5">
+                          <p className="text-sm text-zinc-400">
+                            {p.ansprechpartner ?? "–"}
+                          </p>
+                          <p className="text-xs text-zinc-600 truncate max-w-36">
+                            {p.email ?? ""}
+                          </p>
+                        </td>
+
+                        <td className="px-4 py-3.5">
+                          {letzte?.datum ? (
+                            <>
+                              <p className="text-sm text-zinc-400 tabular-nums">
+                                {formatDate(letzte.datum)}
+                              </p>
+                              <p className="text-xs text-zinc-600 truncate max-w-28">
+                                {letzte.titel ?? "–"}
+                              </p>
+                            </>
+                          ) : (
+                            <span className="text-zinc-700 text-sm">–</span>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3.5">
+                          <div className="flex items-center gap-1.5">
+                            <div
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                p.status === "aktiv" || p.status === "partner"
+                                  ? "bg-emerald-500"
+                                  : "bg-zinc-600"
+                              }`}
+                            />
+                            <span className="text-xs font-medium text-zinc-400">
+                              {p.status === "aktiv" || p.status === "partner"
+                                ? "Aktiv"
+                                : "Inaktiv"}
+                            </span>
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3.5">
+                          {offeneAnfragenPartner > 0 ? (
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                              <span className="text-xs font-bold text-amber-400">
+                                {offeneAnfragenPartner} offen
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-zinc-700">–</span>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3.5">
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                emailVorbereiten(p, "einsatz_anfrage");
+                              }}
+                              className="flex items-center gap-1 px-2 py-1.5 rounded-md bg-zinc-800 hover:bg-blue-950 text-zinc-500 hover:text-blue-400 border border-zinc-700 hover:border-blue-800 text-xs font-semibold transition-all"
+                            >
+                              <Mail size={11} />
+                              E-Mail
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                oeffnenBearbeiten(p);
+                              }}
+                              className="p-1.5 rounded-md hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-colors"
+                            >
+                              <Pencil size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void loeschen(p.id);
+                              }}
+                              className="p-1.5 rounded-md hover:bg-red-950 text-zinc-500 hover:text-red-400 transition-colors"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* RECHTES PANEL */}
+        <div className="w-80 flex-shrink-0 flex flex-col gap-3">
+          {!detailD ? (
+            <div className="rounded-2xl bg-zinc-900 border border-zinc-800/60 flex items-center justify-center p-8 flex-1">
+              <div className="text-center">
+                <Building2 size={28} className="text-zinc-700 mx-auto mb-2" />
+                <p className="text-sm text-zinc-600">Partner auswählen</p>
+                <p className="text-xs text-zinc-700 mt-1">Klicke auf einen Dienstleister</p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3 flex-1 overflow-y-auto">
+              <div className="rounded-2xl bg-zinc-900 border border-zinc-800/60 p-4">
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-11 h-11 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center text-base font-bold text-zinc-400 flex-shrink-0">
+                    {detailD.firma?.slice(0, 2).toUpperCase()}
                   </div>
-                </CardHeader>
-                <Separator className="bg-zinc-800" />
-                <CardContent className="p-0">
-                  <div className="flex flex-wrap items-center gap-1 px-3 py-2">
-                    {d.phone ? (
-                      <Tooltip>
-                        <TooltipTrigger className="inline-flex">
-                          <a href={`tel:${d.phone}`}>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-zinc-500 hover:bg-emerald-500/10 hover:text-emerald-400"
-                            >
-                              <Phone size={13} />
-                            </Button>
-                          </a>
-                        </TooltipTrigger>
-                        <TooltipContent>{d.phone}</TooltipContent>
-                      </Tooltip>
-                    ) : null}
-                    {d.whatsapp ? (
-                      <Tooltip>
-                        <TooltipTrigger className="inline-flex">
-                          <a
-                            href={`https://wa.me/${d.whatsapp.replace(/\D/g, "")}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-zinc-500 hover:bg-green-500/10 hover:text-green-400"
-                            >
-                              <MessageCircle size={13} />
-                            </Button>
-                          </a>
-                        </TooltipTrigger>
-                        <TooltipContent>WhatsApp: {d.whatsapp}</TooltipContent>
-                      </Tooltip>
-                    ) : null}
-                    {d.email ? (
-                      <Tooltip>
-                        <TooltipTrigger className="inline-flex">
-                          <a href={`mailto:${d.email}`}>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-zinc-500 hover:bg-blue-500/10 hover:text-blue-400"
-                            >
-                              <Mail size={13} />
-                            </Button>
-                          </a>
-                        </TooltipTrigger>
-                        <TooltipContent>{d.email}</TooltipContent>
-                      </Tooltip>
-                    ) : null}
-                    {d.email ? (
-                      <Tooltip>
-                        <TooltipTrigger className="inline-flex">
-                          <a
-                            href={outlookKalenderLink(d)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-zinc-500 hover:bg-indigo-500/10 hover:text-indigo-400"
-                            >
-                              <CalendarPlus size={13} />
-                            </Button>
-                          </a>
-                        </TooltipTrigger>
-                        <TooltipContent>Outlook-Termin erstellen</TooltipContent>
-                      </Tooltip>
-                    ) : null}
-                    {d.website?.trim() ? (
-                      <Tooltip>
-                        <TooltipTrigger className="inline-flex">
-                          <a
-                            href={
-                              /^https?:\/\//i.test(d.website!.trim())
-                                ? d.website!.trim()
-                                : `https://${d.website!.trim()}`
-                            }
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-zinc-500 hover:bg-zinc-700 hover:text-zinc-300"
-                            >
-                              <ExternalLink size={13} />
-                            </Button>
-                          </a>
-                        </TooltipTrigger>
-                        <TooltipContent>Website öffnen</TooltipContent>
-                      </Tooltip>
-                    ) : null}
-                    {d.vorlauf_tage > 0 ? (
-                      <div className="ml-auto flex items-center gap-1 text-[10px] text-zinc-600">
-                        <Clock size={9} />
-                        {d.vorlauf_tage}T Vorlauf
-                      </div>
-                    ) : null}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-base font-bold text-zinc-200">{detailD.firma}</p>
+                    <p className="text-xs text-zinc-600">{detailD.ansprechpartner ?? "–"}</p>
                   </div>
-                </CardContent>
-                <CardFooter className="flex flex-col gap-2 px-3 pb-3 pt-0">
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 flex-1 border-zinc-700 text-xs hover:border-zinc-600"
-                      onClick={() => setDetailId(d.id)}
-                    >
-                      <Eye size={11} className="mr-1" /> Details
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-zinc-500"
-                      title="Buchungsregeln"
-                      onClick={() => {
-                        setRegelnFuerId(d.id);
-                        setRegelnFuerName(d.firma);
-                        setRegelnOffen(true);
-                      }}
-                    >
-                      <ListOrdered size={12} />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-zinc-500"
-                      onClick={() => oeffnenBearbeiten(d)}
-                    >
-                      <Pencil size={12} />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-zinc-600 hover:text-destructive"
-                      onClick={() => void loeschen(d.id)}
-                    >
-                      <Trash2 size={12} />
-                    </Button>
+                  <div className="flex items-center gap-1">
+                    <div
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        detailD.status === "aktiv" || detailD.status === "partner"
+                          ? "bg-emerald-500"
+                          : "bg-zinc-600"
+                      }`}
+                    />
+                    <span className="text-xs text-zinc-500">
+                      {detailD.status === "aktiv" || detailD.status === "partner" ? "Aktiv" : "Inaktiv"}
+                    </span>
                   </div>
-                </CardFooter>
-              </Card>
-            ))}
+                </div>
+
+                <div className="space-y-2">
+                  {detailD.email ? (
+                    <div className="flex items-center gap-2">
+                      <Mail size={12} className="text-zinc-600 flex-shrink-0" />
+                      <p className="text-xs text-zinc-500 truncate">{detailD.email}</p>
+                    </div>
+                  ) : null}
+                  {detailD.phone ? (
+                    <div className="flex items-center gap-2">
+                      <Phone size={12} className="text-zinc-600 flex-shrink-0" />
+                      <p className="text-xs text-zinc-500">{detailD.phone}</p>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="flex flex-wrap gap-1 mt-3">
+                  {detailD.spezialisierung?.map((s) => (
+                    <span
+                      key={s}
+                      className="text-xs px-2 py-0.5 rounded-full bg-zinc-800 border border-zinc-700/50 text-zinc-400 font-medium"
+                    >
+                      {SPEZIALISIERUNGEN.find((x) => x.value === s)?.label ?? s}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* EINSATZ-ANFRAGEN */}
+              <div className="rounded-2xl bg-zinc-900 border border-zinc-800/60 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                    Einsatz-Anfragen
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  {(assignmentSubsByPartner[detailD.id] ?? []).length ? (
+                    (assignmentSubsByPartner[detailD.id] ?? []).map((ap) => {
+                      const statusFarbe =
+                        ap.status === "bestaetigt"
+                          ? "#10b981"
+                          : ap.status === "abgelehnt"
+                            ? "#ef4444"
+                            : "#f59e0b";
+                      const proj = pickProjectTitle(ap.assignment);
+                      const datum = ap.assignment?.date
+                        ? formatDate(ap.assignment.date)
+                        : "–";
+                      const zeit = ap.assignment?.start_time
+                        ? `${ap.assignment.start_time}–${ap.assignment.end_time}`
+                        : "–";
+                      return (
+                        <div
+                          key={ap.id}
+                          className="flex items-start gap-2.5 p-2.5 rounded-xl bg-zinc-800/50 border border-zinc-800"
+                        >
+                          <div
+                            className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0"
+                            style={{ background: statusFarbe }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-zinc-300 truncate">
+                              {proj ?? "Projekt"}
+                            </p>
+                            <p className="text-[10px] text-zinc-600 tabular-nums">
+                              {datum} · {zeit}
+                            </p>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p
+                              className="text-[10px] font-semibold"
+                              style={{ color: statusFarbe }}
+                            >
+                              {ap.status === "bestaetigt"
+                                ? "Bestätigt"
+                                : ap.status === "abgelehnt"
+                                  ? "Abgelehnt"
+                                  : "Ausstehend"}
+                            </p>
+                            {ap.email_gesendet_at ? (
+                              <p className="text-[9px] text-zinc-700">
+                                E-Mail: {new Date(ap.email_gesendet_at).toLocaleString("de-DE")}
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <p className="text-xs text-zinc-700 text-center py-3">
+                      Noch keine Anfragen
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* E-MAIL SCHNELL-SENDEN */}
+              <div className="rounded-2xl bg-zinc-900 border border-zinc-800/60 p-4">
+                <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">
+                  E-Mail senden
+                </p>
+                <div className="space-y-2 mb-3">
+                  {(
+                    [
+                      { label: "Einsatz-Anfrage", template: "einsatz_anfrage", icon: CalendarPlus },
+                      { label: "Einsatz-Bestätigung", template: "bestaetigung", icon: Eye },
+                      { label: "Einsatz-Absage", template: "absage", icon: Trash2 },
+                      { label: "Allgemeine Anfrage", template: "allgemein", icon: MessageCircle },
+                    ] as const
+                  ).map((t) => (
+                    <button
+                      key={t.template}
+                      type="button"
+                      onClick={() => emailVorbereiten(detailD, t.template)}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-zinc-800/50 border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800 transition-all text-left group"
+                    >
+                      <t.icon size={14} className="text-zinc-600 group-hover:text-zinc-400 transition-colors flex-shrink-0" />
+                      <span className="text-sm font-medium text-zinc-400 group-hover:text-zinc-200 transition-colors">
+                        {t.label}
+                      </span>
+                      <span className="ml-auto text-xs text-zinc-600 group-hover:text-zinc-400">
+                        →
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* E-MAIL DIALOG */}
+        {emailDialogOffen ? (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-xl shadow-2xl">
+              <div className="flex items-center justify-between p-5 border-b border-zinc-800">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center">
+                    <Mail size={14} className="text-zinc-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-zinc-200">
+                      E-Mail an {emailPartner?.firma ?? "Partner"}
+                    </p>
+                    <p className="text-xs text-zinc-600">{emailPartner?.email ?? ""}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEmailDialogOffen(false)}
+                  className="p-1.5 rounded-md hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-colors"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5 block">
+                    Betreff
+                  </label>
+                  <Input
+                    value={emailBetreff}
+                    onChange={(e) => setEmailBetreff(e.target.value)}
+                    className="w-full px-3 py-2.5 text-sm bg-zinc-800 border border-zinc-700 rounded-xl text-zinc-200 focus:outline-none focus:border-zinc-600 transition-colors"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1.5 block">
+                    Nachricht
+                  </label>
+                  <Textarea
+                    value={emailBody}
+                    onChange={(e) => setEmailBody(e.target.value)}
+                    rows={10}
+                    className="w-full px-3 py-2.5 text-sm bg-zinc-800 border border-zinc-700 rounded-xl text-zinc-200 focus:outline-none focus:border-zinc-600 transition-colors resize-none font-mono leading-relaxed"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between px-5 pb-5 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setEmailDialogOffen(false)}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-400 transition-colors"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void emailSenden()}
+                  disabled={emailSendet || !emailBetreff.trim()}
+                  className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all ${
+                    emailBetreff && !emailSendet
+                      ? "bg-zinc-100 text-zinc-900 hover:bg-white"
+                      : "bg-zinc-800 text-zinc-600 cursor-not-allowed"
+                  }`}
+                >
+                  {emailSendet ? (
+                    <span className="flex items-center gap-2">
+                      <Clock size={14} /> Senden...
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      <Mail size={14} /> E-Mail senden
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
-        )}
+        ) : null}
 
         <Sheet
           open={sheetOffen}
@@ -866,18 +1337,6 @@ export function DienstleisterVerwaltung() {
             </form>
           </SheetContent>
         </Sheet>
-
-        <DienstleisterDetail
-          offen={detailId !== null}
-          onOffenChange={(o) => {
-            if (!o) setDetailId(null);
-          }}
-          d={detailD}
-          onBearbeiten={(d) => {
-            setDetailId(null);
-            oeffnenBearbeiten(d);
-          }}
-        />
 
         <BuchungsregelnDialog
           offen={regelnOffen}
