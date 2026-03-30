@@ -1,10 +1,40 @@
 "use client";
 
+/**
+ * ANALYSE (Notfall-Kontext, laufender Code):
+ *
+ * 1) Nach `alleErsatzBestaetigen()`:
+ *    - DB-Write: `assignments` wird pro `einsatz.id` mit neuem `employee_id` updated.
+ *    - Danach: `setAktiverSchritt(4)` -> `NotfallSteuerung` rendert den Success-State.
+ *    - Anschließend: `betroffeneLaden({ silent: true })` lädt erneut `einsätze`/Kandidaten,
+ *      aber setzt keinen Step zurück (weil `ausfallId`/`datum` sich nicht ändern).
+ *    - Kein `router.refresh()` und kein `window.location.reload()` in diesem Flow.
+ *
+ * 2) Gemini-Antwort Parsing:
+ *    - Client-seitig in `parseKiAntwortRoh()` (siehe `src/lib/notfall/parse-ki-antwort.ts`).
+ *    - Dort wird `JSON.parse` in einem try/catch benutzt.
+ *    - Entfernt wird nur dann ein ```json ... ``` Code-Fence, wenn die gesamte Antwort
+ *      exakt auf das Regex-Muster passt; ansonsten wird nicht robust JSON aus Text extrahiert.
+ *
+ * 3) "Ab wann?" (State `datum`) in DB-Queries:
+ *    - `betroffeneLaden()` lädt betroffene Einsätze aktuell mit `.eq("date", datum)` (nur dieser Tag),
+ *      nicht mit `.gte("date", abDatum)`.
+ *    - Abwesenheiten werden ebenfalls day-specific geholt:
+ *      `.lte("start_date", datum)` und `.gte("end_date", datum)`.
+ *
+ * 4) Globale Konflikt-Suche:
+ *    - Es gibt keine separate globale Scanner-Logik im Notfall-Code.
+ *    - Konflikte werden pro Kandidat pro Einsatz über `pruefeEinsatzKonflikt()` geprüft
+ *      (siehe `src/lib/utils/conflicts.ts`).
+ */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, CalendarX } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { pruefeEinsatzKonflikt } from "@/lib/utils/conflicts";
-import { parseKiAntwortRoh } from "@/lib/notfall/parse-ki-antwort";
+import { parseKiAntwort } from "@/lib/notfall/parse-ki-antwort";
 import type { KiErsatzKarte, KiNotfallAntwort } from "@/types/notfall-ki";
 import { NotfallSteuerung } from "@/components/notfall/NotfallSteuerung";
 import { KiNotfallPanel } from "@/components/notfall/KiNotfallPanel";
@@ -67,6 +97,35 @@ export function NotfallModus() {
   const [betroffeneGeladen, setBetroffeneGeladen] = useState(false);
   const [aktiverSchritt, setAktiverSchritt] = useState(1);
 
+  // Globaler Konflikt-Scanner (Fix 4)
+  type ScanErgebnisse = {
+    konflikte: {
+      employee_id: string;
+      mitarbeiterName: string;
+      datum: string;
+      beschreibung: string;
+    }[];
+    abwesenheiten: {
+      employee_id: string;
+      mitarbeiterName: string;
+      datum: string;
+      beschreibung: string;
+    }[];
+  };
+
+  const [modus, setModus] = useState<"notfall" | "scanner">("notfall");
+  const [scanVon, setScanVon] = useState(() =>
+    new Date().toISOString().slice(0, 10)
+  );
+  const [scanBis, setScanBis] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 14);
+    return d.toISOString().slice(0, 10);
+  });
+  const [ladeScanner, setLadeScanner] = useState(false);
+  const [scanErgebnisse, setScanErgebnisse] =
+    useState<ScanErgebnisse | null>(null);
+
   const [kiLaed, setKiLaed] = useState(false);
   const [kiStream, setKiStream] = useState("");
   const [kiAntwort, setKiAntwort] = useState<KiNotfallAntwort | null>(null);
@@ -85,21 +144,6 @@ export function NotfallModus() {
     [mitarbeiter, ausfallId]
   );
 
-  const [abwesenheitenHeute, setAbwesenheitenHeute] = useState<
-    { employeeId: string; startDate: string; endDate: string; type: string }[]
-  >([]);
-
-  const kommunikationWhatsapp = useMemo(() => {
-    const firstEinsatz = einsätze[0];
-    if (!firstEinsatz) return null;
-
-    const repId =
-      manuellerErsatz[firstEinsatz.id] ?? kiErsatz[firstEinsatz.id]?.employeeId;
-    if (!repId) return null;
-
-    return mitarbeiter.find((m) => m.id === repId)?.whatsapp ?? null;
-  }, [einsätze, manuellerErsatz, kiErsatz, mitarbeiter]);
-
   useEffect(() => {
     setBetroffeneGeladen(false);
     setEinsätze([]);
@@ -108,7 +152,6 @@ export function NotfallModus() {
     setKiStream("");
     setKiErsatz({});
     setManuellerErsatz({});
-    setAbwesenheitenHeute([]);
     setAktiverSchritt(1);
     absenceEingetragenRef.current = false;
   }, [ausfallId, datum]);
@@ -126,7 +169,6 @@ export function NotfallModus() {
     setManuellerErsatz({});
     absenceEingetragenRef.current = false;
     bereitsAufgelöstAssignmentIdsRef.current = new Set();
-    setAbwesenheitenHeute([]);
   }, []);
 
   const ladenMitarbeiter = useCallback(async () => {
@@ -253,7 +295,7 @@ export function NotfallModus() {
           .from("assignments")
           .select(sel)
           .eq("employee_id", ausfallId)
-          .eq("date", datum);
+          .gte("date", datum);
 
         const qAbsentEmployees =
           absentInDeptIds.length > 0
@@ -440,7 +482,6 @@ export function NotfallModus() {
     const { rows, kandidaten } = geladen;
 
     const abw = await abwesenheitenFuerDatum();
-    setAbwesenheitenHeute(abw);
     const ausfallMitarbeiter = ausfall;
     const ausfallHatAbwesenheit = abw.some(
       (a) => a.employeeId === ausfallId
@@ -505,22 +546,18 @@ export function NotfallModus() {
         setKiStream(volltext);
       }
 
-      const parsed = parseKiAntwortRoh(volltext);
+      const parsed = parseKiAntwort(volltext);
       setKiAntwort(parsed);
 
       const map: Record<string, KiErsatzKarte> = {};
-      for (const emp of parsed.empfehlungen) {
-        if (emp.einsatzId && emp.employeeId) {
-          const grund =
-            emp.begruendung.length > 40
-              ? `${emp.begruendung.slice(0, 37)}…`
-              : emp.begruendung;
-          map[emp.einsatzId] = {
-            name: emp.name,
-            employeeId: emp.employeeId,
-            grund,
-          };
-        }
+      for (const einsatz of parsed.einsaetze ?? []) {
+        const first = einsatz.vorschlaege?.[0];
+        if (!first?.mitarbeiter_id) continue;
+        map[einsatz.id] = {
+          name: first.name,
+          employeeId: first.mitarbeiter_id,
+          grund: first.grund,
+        };
       }
       setKiErsatz(map);
 
@@ -624,154 +661,305 @@ export function NotfallModus() {
     }
   }
 
-  const employeeNameById = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const emp of mitarbeiter) m.set(emp.id, emp.name);
-    return m;
-  }, [mitarbeiter]);
+  async function globalScanStarten() {
+    setLadeScanner(true);
+    setScanErgebnisse(null);
 
-  const formatDate = useCallback((isoDate: string) => {
-    const [y, m, d] = isoDate.split("-");
-    return `${d}.${m}.${y}`;
-  }, []);
+    try {
+      const { data: assignments, error: aErr } = await supabase
+        .from("assignments")
+        .select(
+          "id,date,start_time,end_time,employee_id,project_title,projects(title)"
+        )
+        .gte("date", scanVon)
+        .lte("date", scanBis);
 
-  const typeLabel = useCallback((t: string) => {
-    if (t === "urlaub") return "Urlaub";
-    if (t === "krank") return "Krank";
-    if (t === "fortbildung") return "Fortbildung";
-    return t;
-  }, []);
+      if (aErr) throw aErr;
 
-  const risikenFakten = useMemo(() => {
-    const risks: string[] = [];
+      const rows = (assignments ?? []) as Record<string, unknown>[];
 
-    if (abwesenheitenHeute.length > 0) {
-      const first = abwesenheitenHeute.slice(0, 2);
-      for (const a of first) {
-        const name = employeeNameById.get(a.employeeId) ?? a.employeeId;
-        risks.push(
-          `${name} ist vom ${formatDate(a.startDate)} bis ${formatDate(
-            a.endDate
-          )} abwesend (${typeLabel(a.type)}).`
-        );
+      const { data: absences, error: abErr } = await supabase
+        .from("absences")
+        .select("employee_id,start_date,end_date,type")
+        .lte("start_date", scanBis)
+        .gte("end_date", scanVon);
+
+      if (abErr) throw abErr;
+
+      const absenceRows = (absences ?? []) as Record<string, unknown>[];
+
+      const zeitZuMinuten = (t: string) => {
+        const parts = t.split(":").map((x) => parseInt(x, 10));
+        const h = Number.isFinite(parts[0]) ? parts[0]! : 0;
+        const m = Number.isFinite(parts[1]) ? parts[1]! : 0;
+        const s = Number.isFinite(parts[2]) ? parts[2]! : 0;
+        return h * 60 + m + s / 60;
+      };
+
+      // 1) Konflikte: gleicher MA, gleiche Tagesdate, überlappende Zeitfenster
+      const byKey = new Map<string, Record<string, unknown>[]>();
+      for (const r of rows) {
+        const empId = r.employee_id == null ? null : String(r.employee_id);
+        if (!empId) continue;
+        const date = String(r.date);
+        const k = `${empId}_${date}`;
+        const arr = byKey.get(k) ?? [];
+        arr.push(r);
+        byKey.set(k, arr);
       }
+
+      const konflikte: ScanErgebnisse["konflikte"] = [];
+      const byKeyEntries = Array.from(byKey.entries());
+      for (const [k, list] of byKeyEntries) {
+        if (list.length < 2) continue;
+        let hasOverlap = false;
+        for (let i = 0; i < list.length && !hasOverlap; i++) {
+          for (let j = i + 1; j < list.length; j++) {
+            const a = list[i];
+            const b = list[j];
+            const aStart = zeitZuMinuten(String(a.start_time ?? "00:00:00"));
+            const aEnd = zeitZuMinuten(String(a.end_time ?? "00:00:00"));
+            const bStart = zeitZuMinuten(String(b.start_time ?? "00:00:00"));
+            const bEnd = zeitZuMinuten(String(b.end_time ?? "00:00:00"));
+            if (aStart < bEnd && aEnd > bStart) {
+              hasOverlap = true;
+              break;
+            }
+          }
+        }
+        if (!hasOverlap) continue;
+
+        const [employee_id, datum] = k.split("_");
+        const name =
+          mitarbeiter.find((m) => m.id === employee_id)?.name ??
+          employee_id;
+
+        const times = list
+          .map(
+            (x) => `${String(x.start_time)}–${String(x.end_time)}`
+          )
+          .join(", ");
+
+        konflikte.push({
+          employee_id,
+          mitarbeiterName: name,
+          datum,
+          beschreibung: `Überschneidungen: ${times}`,
+        });
+      }
+
+      // 2) Abwesenheits-Konflikte: Abwesenheit im Zeitraum UND Einsatz an einem Tag dazwischen
+      const abwesenheiten: ScanErgebnisse["abwesenheiten"] = [];
+      for (const abw of absenceRows) {
+        const empId = abw.employee_id == null ? null : String(abw.employee_id);
+        if (!empId) continue;
+        const startDate = String(abw.start_date);
+        const endDate = String(abw.end_date);
+        const typRaw = String(abw.type ?? "");
+
+        const label =
+          typRaw === "krank"
+            ? "Krank"
+            : typRaw === "urlaub"
+              ? "Urlaub"
+              : typRaw === "fortbildung"
+                ? "Fortbildung"
+                : typRaw || "Abwesenheit";
+
+        const betroffene = rows.filter((r) => {
+          const rEmp = r.employee_id == null ? null : String(r.employee_id);
+          if (!rEmp || rEmp !== empId) return false;
+          const d = String(r.date);
+          return d >= startDate && d <= endDate;
+        });
+
+        const uniqueDates = Array.from(
+          new Set(betroffene.map((x) => String(x.date)))
+        );
+
+        for (const d of uniqueDates) {
+          if (!d) continue;
+          const name =
+            mitarbeiter.find((m) => m.id === empId)?.name ?? empId;
+          abwesenheiten.push({
+            employee_id: empId,
+            mitarbeiterName: name,
+            datum: d,
+            beschreibung: `Einsatz während ${label} (${startDate}–${endDate})`,
+          });
+        }
+      }
+
+      setScanErgebnisse({ konflikte, abwesenheiten });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Scanner fehlgeschlagen.";
+      toast.error(msg);
+    } finally {
+      setLadeScanner(false);
     }
-
-    if (einsätze.length > 0) {
-      risks.push(
-        `Ersatzbedarf: ${einsätze.length} betroffene Einsatz(e) am ${datum}.`
-      );
-    }
-
-    const ohneKonfliktfreienErsatz = einsätze.find(
-      (e) => (kandidatenProEinsatz[e.id] ?? []).length === 0
-    );
-    if (ohneKonfliktfreienErsatz) {
-      risks.push(
-        `Für "${ohneKonfliktfreienErsatz.project_title ?? "Einsatz"}" sind keine konfliktfreien Ersatzkräfte verfügbar.`
-      );
-    }
-
-    return risks;
-  }, [
-    abwesenheitenHeute,
-    employeeNameById,
-    formatDate,
-    typeLabel,
-    einsätze,
-    kandidatenProEinsatz,
-    datum,
-  ]);
-
-  const zusammenfassungFakten = useMemo(() => {
-    const n = einsätze.length;
-    const abwCount = abwesenheitenHeute.length;
-
-    const beispiellines = einsätze.slice(0, 3).map((e) => {
-      const proj = e.project_title ?? "Einsatz";
-      const team = e.teamName ? ` (${e.teamName})` : "";
-      return `- ${proj}${team} ${e.start_time}-${e.end_time}`;
-    });
-
-    const beispielRest = n > 3 ? `\n- + ${n - 3} weitere Einsätze` : "";
-
-    const abwesenText =
-      abwCount > 0
-        ? abwesenheitenHeute
-            .slice(0, 2)
-            .map((a) => {
-              const name = employeeNameById.get(a.employeeId) ?? a.employeeId;
-              return `${name} (${typeLabel(a.type)})`;
-            })
-            .join(", ")
-        : "Keine Abwesenheiten am Tag hinterlegt.";
-
-    return `### Betroffene Einsätze\n${
-      n > 0 ? `Es sind ${n} Einsatz(e) betroffen am ${datum}.` : `Keine Einsätze gefunden am ${datum}.`
-    }\n${beispiellines.join("\n")}${beispielRest}\n\n### Abwesenheiten\n${abwesenText}\n\n### Vorgehen\nFür jeden betroffenen Einsatz eine konfliktfreie Ersatzkraft zuweisen und anschließend bestätigen.`;
-  }, [
-    einsätze,
-    abwesenheitenHeute,
-    datum,
-    employeeNameById,
-    typeLabel,
-  ]);
-
-  const kommunikationFakten = useMemo(() => {
-    if (einsätze.length === 0) return "";
-
-    const maxLines = 10;
-    const lines = einsätze.slice(0, maxLines).map((e) => {
-      const proj = e.project_title ?? "Einsatz";
-      const team = e.teamName ? ` (${e.teamName})` : "";
-
-      const repId = manuellerErsatz[e.id] ?? kiErsatz[e.id]?.employeeId;
-      const repName =
-        repId != null
-          ? employeeNameById.get(repId) ?? kiErsatz[e.id]?.name ?? repId
-          : kiErsatz[e.id]?.name ?? null;
-
-      return `- ${proj}${team} ${e.start_time}-${e.end_time}: ${
-        repName ? repName : "noch offen"
-      }`;
-    });
-
-    const rest = einsätze.length > maxLines ? `\n- + ${einsätze.length - maxLines} weitere Einsätze` : "";
-
-    return `Bitte ab ${datum} folgende Einsätze übernehmen (Ersatzplan):\n${lines.join(
-      "\n"
-    )}${rest}`;
-  }, [
-    einsätze,
-    datum,
-    manuellerErsatz,
-    kiErsatz,
-    employeeNameById,
-  ]);
+  }
 
   return (
     <div className="flex h-[calc(100vh-60px)] min-h-0 gap-4">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto">
-        <NotfallSteuerung
-          mitarbeiter={mitarbeiter}
-          ausfallId={ausfallId}
-          setAusfallId={setAusfallId}
-          datum={datum}
-          setDatum={setDatum}
-          aktiverSchritt={aktiverSchritt}
-          setAktiverSchritt={setAktiverSchritt}
-          betroffeneGeladen={betroffeneGeladen}
-          kiLaed={kiLaed}
-          onNotfallAnalysieren={() => void notfallAusloesen()}
-          einsätze={einsätze}
-          kandidatenProEinsatz={kandidatenProEinsatz}
-          kiErsatz={kiErsatz}
-          manuellerErsatz={manuellerErsatz}
-          ersatzManuellSetzen={ersatzManuellSetzen}
-          onAlleErsatzBestaetigen={() => void alleErsatzBestaetigen()}
-          onResetNotfall={resetNotfall}
-          lädt={lädt}
-        />
+        <div className="mb-2 rounded-2xl border border-zinc-800/60 bg-zinc-900 p-2">
+          <div className="grid grid-cols-2 gap-1">
+            <button
+              type="button"
+              onClick={() => setModus("notfall")}
+              className={cn(
+                "flex items-center gap-2.5 py-2.5 px-3 rounded-xl text-sm font-semibold transition-all",
+                modus === "notfall"
+                  ? "bg-zinc-800 text-zinc-100 shadow-sm"
+                  : "text-zinc-500 hover:text-zinc-300"
+              )}
+            >
+              <AlertTriangle size={15} />
+              Notfallplan
+            </button>
+            <button
+              type="button"
+              onClick={() => setModus("scanner")}
+              className={cn(
+                "flex items-center gap-2.5 py-2.5 px-3 rounded-xl text-sm font-semibold transition-all",
+                modus === "scanner"
+                  ? "bg-zinc-800 text-zinc-100 shadow-sm"
+                  : "text-zinc-500 hover:text-zinc-300"
+              )}
+            >
+              <CalendarX size={15} />
+              Konflikt-Scanner
+            </button>
+          </div>
+        </div>
+
+        {modus === "scanner" ? (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5">
+              <h3 className="mb-4 text-sm font-semibold text-zinc-200">
+                Zeitraum scannen
+              </h3>
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div>
+                  <label className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-1.5 block">
+                    Von
+                  </label>
+                  <input
+                    type="date"
+                    value={scanVon}
+                    onChange={(e) => setScanVon(e.target.value)}
+                    className="w-full px-3 py-2.5 text-sm bg-zinc-800 border border-zinc-700 rounded-xl text-zinc-200 [color-scheme:dark] focus:outline-none focus:border-zinc-600"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-1.5 block">
+                    Bis
+                  </label>
+                  <input
+                    type="date"
+                    value={scanBis}
+                    onChange={(e) => setScanBis(e.target.value)}
+                    className="w-full px-3 py-2.5 text-sm bg-zinc-800 border border-zinc-700 rounded-xl text-zinc-200 [color-scheme:dark] focus:outline-none focus:border-zinc-600"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void globalScanStarten()}
+                disabled={ladeScanner}
+                className={cn(
+                  "w-full py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2",
+                  !ladeScanner
+                    ? "bg-zinc-100 text-zinc-900 hover:bg-white"
+                    : "bg-zinc-800 text-zinc-600 cursor-not-allowed"
+                )}
+              >
+                {ladeScanner ? "Scanne..." : "Vollständigen Scan starten"}
+              </button>
+            </div>
+
+            {scanErgebnisse ? (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-xl bg-zinc-900 border border-zinc-800/60 p-3 text-center">
+                    <p className="text-2xl font-bold tabular-nums text-rose-400">
+                      {scanErgebnisse.konflikte.length}
+                    </p>
+                    <p className="text-[10px] text-zinc-600 mt-0.5">
+                      Konflikte
+                    </p>
+                  </div>
+                  <div className="rounded-xl bg-zinc-900 border border-zinc-800/60 p-3 text-center">
+                    <p className="text-2xl font-bold tabular-nums text-amber-400">
+                      {scanErgebnisse.abwesenheiten.length}
+                    </p>
+                    <p className="text-[10px] text-zinc-600 mt-0.5">
+                      Abwesenheiten
+                    </p>
+                  </div>
+                </div>
+
+                {[...scanErgebnisse.konflikte, ...scanErgebnisse.abwesenheiten]
+                  .slice(0, 20)
+                  .map((p, idx) => (
+                    <div
+                      key={`${p.employee_id}-${p.datum}-${idx}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        setModus("notfall");
+                        setKiLaed(false);
+                        setKiStream("");
+                        setKiAntwort(null);
+                        setKiErsatz({});
+                        setManuellerErsatz({});
+                        setAusfallId(p.employee_id);
+                        setDatum(p.datum);
+                      }}
+                      className="rounded-xl bg-zinc-900 border border-zinc-800/60 p-3.5 hover:border-zinc-700 transition-all cursor-pointer"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="w-2.5 h-2.5 mt-1 rounded-full bg-red-400 flex-shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-bold text-zinc-200">
+                            {p.mitarbeiterName}
+                          </p>
+                          <p className="text-xs text-zinc-500">
+                            {p.datum} · {p.beschreibung}
+                          </p>
+                        </div>
+                        <div className="text-xs text-zinc-600 flex-shrink-0">
+                          Lösen →
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <NotfallSteuerung
+            mitarbeiter={mitarbeiter}
+            ausfallId={ausfallId}
+            setAusfallId={setAusfallId}
+            datum={datum}
+            setDatum={setDatum}
+            aktiverSchritt={aktiverSchritt}
+            setAktiverSchritt={setAktiverSchritt}
+            betroffeneGeladen={betroffeneGeladen}
+            kiLaed={kiLaed}
+            onNotfallAnalysieren={() => void notfallAusloesen()}
+            einsätze={einsätze}
+            kandidatenProEinsatz={kandidatenProEinsatz}
+            kiErsatz={kiErsatz}
+            manuellerErsatz={manuellerErsatz}
+            ersatzManuellSetzen={ersatzManuellSetzen}
+            onAlleErsatzBestaetigen={() => void alleErsatzBestaetigen()}
+            onResetNotfall={resetNotfall}
+            lädt={lädt}
+          />
+        )}
       </div>
       <div className="flex w-[420px] shrink-0 min-h-0 flex-col">
         <KiNotfallPanel
@@ -779,10 +967,10 @@ export function NotfallModus() {
           kiStream={kiStream}
           kiAntwort={kiAntwort}
           onNeuAnalysieren={() => void notfallAusloesen()}
-          kommunikationWhatsapp={kommunikationWhatsapp}
-          zusammenfassungOverride={zusammenfassungFakten}
-          risikenOverride={risikenFakten}
-          kommunikationOverride={kommunikationFakten}
+          ausgewaehlterErsatz={manuellerErsatz}
+          onErsatzWaehlen={(einsatzId, mitarbeiterId) =>
+            ersatzManuellSetzen(einsatzId, mitarbeiterId)
+          }
         />
       </div>
     </div>

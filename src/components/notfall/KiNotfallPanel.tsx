@@ -1,7 +1,15 @@
 "use client";
 
-import { Bot, Copy, MessageCircle, RefreshCw } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import {
+  AlertCircle,
+  AlertTriangle,
+  Bot,
+  CalendarX,
+  Check,
+  RefreshCw,
+  Users,
+  Zap,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,100 +21,19 @@ type Props = {
   kiStream: string;
   kiAntwort: KiNotfallAntwort | null;
   onNeuAnalysieren: () => void;
-  kommunikationWhatsapp?: string | null;
-  zusammenfassungOverride?: string | null;
-  risikenOverride?: string[] | null;
-  kommunikationOverride?: string | null;
+  ausgewaehlterErsatz: Record<string, string>;
+  onErsatzWaehlen: (einsatzId: string, mitarbeiterId: string) => void;
 };
-
-function KINachricht({
-  text,
-  typ,
-}: {
-  text: string;
-  typ: "ki" | "system";
-}) {
-  return (
-    <div
-      className={cn(
-        "rounded-2xl px-4 py-3 text-sm leading-relaxed",
-        "border border-zinc-800/70 bg-zinc-900 text-zinc-300"
-      )}
-      data-typ={typ}
-    >
-      <ReactMarkdown
-        components={{
-          p: ({ children }) => (
-            <p className="mb-2 text-sm leading-relaxed last:mb-0">{children}</p>
-          ),
-          strong: ({ children }) => (
-            <strong className="font-bold text-zinc-200">{children}</strong>
-          ),
-          ul: ({ children }) => (
-            <ul className="my-2 list-none space-y-1">{children}</ul>
-          ),
-          ol: ({ children }) => (
-            <ol className="my-2 list-decimal space-y-1 pl-4">{children}</ol>
-          ),
-          li: ({ children }) => (
-            <li className="flex items-start gap-2">
-              <span className="mt-0.5 flex-shrink-0 text-zinc-600">·</span>
-              <span>{children}</span>
-            </li>
-          ),
-          h3: ({ children }) => (
-            <h3 className="mt-3 mb-1.5 text-xs font-semibold text-zinc-400 first:mt-0">
-              {children}
-            </h3>
-          ),
-          h2: ({ children }) => (
-            <h2 className="mt-3 mb-1.5 text-sm font-semibold text-zinc-200 first:mt-0">
-              {children}
-            </h2>
-          ),
-          code: ({ children }) => (
-            <code className="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-xs text-zinc-400">
-              {children}
-            </code>
-          ),
-        }}
-      >
-        {text}
-      </ReactMarkdown>
-    </div>
-  );
-}
 
 export function KiNotfallPanel({
   kiLaed,
   kiStream,
   kiAntwort,
   onNeuAnalysieren,
-  kommunikationWhatsapp,
-  zusammenfassungOverride,
-  risikenOverride,
-  kommunikationOverride,
+  ausgewaehlterErsatz,
+  onErsatzWaehlen,
 }: Props) {
   const showStream = kiLaed && kiStream.length > 0 && !kiAntwort;
-
-  const zusammenfassungText = zusammenfassungOverride
-    ? zusammenfassungOverride
-    : kiAntwort?.zusammenfassung ?? "";
-
-  const risikenToShow =
-    risikenOverride != null ? risikenOverride : kiAntwort?.risiken ?? [];
-
-  const kommunikationText = (
-    kommunikationOverride ?? kiAntwort?.kommunikation ?? ""
-  ).trim();
-
-  async function kopiere(text: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      /* ignore */
-    }
-  }
 
   return (
     <div className="flex h-full min-h-[480px] flex-col overflow-hidden rounded-2xl border border-zinc-800/60 bg-zinc-900 lg:min-h-[calc(100vh-108px)]">
@@ -179,84 +106,238 @@ export function KiNotfallPanel({
           ) : null}
 
           {kiAntwort ? (
-            <div className="space-y-4">
-              <div>
-                <p className="mb-2 text-xs font-semibold text-zinc-500">
-                  KI-Analyse
+            <div className="space-y-3 overflow-y-auto">
+              {/* LAGE */}
+              <div className="rounded-xl bg-zinc-800/60 border border-zinc-700/50 p-3.5">
+                <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+                  Lage
                 </p>
-                <KINachricht text={zusammenfassungText} typ="ki" />
+                <p className="text-sm text-zinc-300 leading-relaxed">
+                  {kiAntwort.zusammenfassung}
+                </p>
               </div>
 
-              {kiAntwort.empfehlungen?.map((emp, i) => (
-                <div
-                  key={`${emp.einsatzId}-${i}`}
-                  className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3"
-                >
-                  <div className="mb-1.5 flex items-center gap-2">
-                    <div className="flex size-6 items-center justify-center rounded-full bg-zinc-700 text-[10px] font-bold text-zinc-300">
-                      {emp.name.charAt(0)}
-                    </div>
-                    <p className="text-sm font-semibold text-zinc-200">
-                      {emp.name}
+              {/* SOFORTMASSNAHME */}
+              <div className="rounded-xl bg-amber-950/40 border border-amber-800/50 p-3.5">
+                <div className="flex items-start gap-2.5">
+                  <Zap
+                    size={14}
+                    className="text-amber-400 mt-0.5 flex-shrink-0"
+                  />
+                  <div>
+                    <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider mb-1">
+                      Sofortmaßnahme
                     </p>
-                    <span className="ml-auto text-[10px] font-semibold text-zinc-500">
-                      Empfehlung
-                    </span>
+                    <p className="text-sm font-semibold text-amber-200 leading-relaxed">
+                      {kiAntwort.sofortmassnahme}
+                    </p>
                   </div>
-                  <KINachricht text={emp.begruendung} typ="system" />
-                  <p className="mt-2 text-[10px] text-zinc-600">
-                    Für: {emp.einsatz}
-                  </p>
+                </div>
+              </div>
+
+              {/* EINSÄTZE + VORSCHLÄGE */}
+              {kiAntwort.einsaetze?.map((einsatz, i) => (
+                <div
+                  key={einsatz.id ?? i}
+                  className="rounded-xl bg-zinc-900 border border-zinc-800/60 overflow-hidden"
+                >
+                  {/* Einsatz-Header */}
+                  <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-zinc-800/60 bg-zinc-800/30">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-1.5 h-1.5 rounded-full"
+                        style={{
+                          background:
+                            einsatz.dringlichkeit === "hoch"
+                              ? "#ef4444"
+                              : "#f59e0b",
+                        }}
+                      />
+                      <p className="text-sm font-bold text-zinc-200">
+                        {einsatz.projekt}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-zinc-600 tabular-nums">
+                        {einsatz.datum}
+                      </span>
+                      <span
+                        className={cn(
+                          "text-[10px] font-bold px-2 py-0.5 rounded-full",
+                          einsatz.dringlichkeit === "hoch"
+                            ? "bg-red-950/60 text-red-400 border border-red-900/50"
+                            : "bg-amber-950/60 text-amber-400 border border-amber-900/50"
+                        )}
+                      >
+                        {einsatz.dringlichkeit === "hoch"
+                          ? "Dringend"
+                          : "Normal"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Vorschläge */}
+                  <div className="p-2.5 space-y-1.5">
+                    <p className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wider mb-2 px-1">
+                      KI-Vorschläge
+                    </p>
+
+                    {einsatz.vorschlaege?.map((v, j) => (
+                      <div
+                        key={v.mitarbeiter_id ?? j}
+                        onClick={() =>
+                          onErsatzWaehlen(einsatz.id, v.mitarbeiter_id)
+                        }
+                        className={cn(
+                          "flex items-center gap-2.5 px-3 py-2.5 rounded-lg border transition-all cursor-pointer",
+                          ausgewaehlterErsatz?.[einsatz.id] ===
+                            v.mitarbeiter_id
+                            ? "border-emerald-700/60 bg-emerald-950/30"
+                            : "border-zinc-800/60 bg-zinc-800/20 hover:border-zinc-700"
+                        )}
+                      >
+                        {/* Rang */}
+                        <div
+                          className={cn(
+                            "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0",
+                            j === 0
+                              ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                              : "bg-zinc-800 text-zinc-600 border border-zinc-700"
+                          )}
+                        >
+                          {j + 1}
+                        </div>
+
+                        {/* Avatar */}
+                        <div className="w-7 h-7 rounded-full bg-zinc-700 border border-zinc-600 flex items-center justify-center text-[10px] font-bold text-zinc-300 flex-shrink-0">
+                          {v.name?.slice(0, 2).toUpperCase()}
+                        </div>
+
+                        {/* Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="text-sm font-semibold text-zinc-200">
+                              {v.name}
+                            </p>
+                            {v.konflikt && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-950/60 border border-orange-900/50 text-orange-400">
+                                Konflikt
+                              </span>
+                            )}
+                            {!v.verfuegbar && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-950/60 border border-red-900/50 text-red-400">
+                                Nicht frei
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-zinc-600 truncate">
+                            {v.grund}
+                          </p>
+                        </div>
+
+                        {/* Score + Auswahl */}
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className="text-right">
+                            <p
+                              className="text-sm font-bold tabular-nums"
+                              style={{
+                                color:
+                                  v.score >= 80
+                                    ? "#10b981"
+                                    : v.score >= 60
+                                      ? "#f59e0b"
+                                      : "#ef4444",
+                              }}
+                            >
+                              {v.score}%
+                            </p>
+                            <p className="text-[9px] text-zinc-700">
+                              Match
+                            </p>
+                          </div>
+
+                          <div
+                            className={cn(
+                              "w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all",
+                              ausgewaehlterErsatz?.[einsatz.id] ===
+                                v.mitarbeiter_id
+                                ? "border-emerald-500 bg-emerald-500"
+                                : "border-zinc-700"
+                            )}
+                          >
+                            {ausgewaehlterErsatz?.[einsatz.id] ===
+                              v.mitarbeiter_id && (
+                              <Check size={9} className="text-white" />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
 
-              {risikenToShow.length ? (
-                <KINachricht
-                  text={`### Risiken\n${risikenToShow
-                    .map((r) => `- ${r}`)
-                    .join("\n")}`}
-                  typ="system"
-                />
-              ) : null}
+              {/* WARNUNGEN */}
+              {kiAntwort.warnungen?.length > 0 && (
+                <div className="rounded-xl border border-zinc-800/60 overflow-hidden">
+                  <div className="px-3.5 py-2 bg-zinc-800/30 border-b border-zinc-800/60">
+                    <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+                      Risikohinweise
+                    </p>
+                  </div>
+                  <div className="p-2.5 space-y-1.5">
+                    {kiAntwort.warnungen.map((w, idx) => {
+                      const cfg =
+                        {
+                          personalengpass: {
+                            icon: Users,
+                            color: "#ef4444",
+                            bg: "bg-red-950/30",
+                            border: "border-red-900/40",
+                          },
+                          konflikt: {
+                            icon: AlertTriangle,
+                            color: "#f59e0b",
+                            bg: "bg-amber-950/30",
+                            border: "border-amber-900/40",
+                          },
+                          abwesenheit: {
+                            icon: CalendarX,
+                            color: "#6366f1",
+                            bg: "bg-indigo-950/30",
+                            border: "border-indigo-900/40",
+                          },
+                        }[w.typ] ?? {
+                          icon: AlertCircle,
+                          color: "#71717a",
+                          bg: "bg-zinc-800/50",
+                          border: "border-zinc-700/50",
+                        };
 
-              {kommunikationText ? (
-                <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
-                  <p className="mb-1.5 text-xs font-semibold text-zinc-400">
-                    Nachrichtsvorschlag
-                  </p>
-                  <KINachricht
-                    text={kommunikationText}
-                    typ="system"
-                  />
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-7 border-zinc-700 text-xs text-zinc-300 hover:bg-zinc-800"
-                      onClick={() => void kopiere(kommunikationText)}
-                    >
-                      <Copy size={10} className="mr-1" /> Kopieren
-                    </Button>
-                    {kommunikationWhatsapp ? (
-                      <a
-                        href={`https://wa.me/${kommunikationWhatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(kommunikationText)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-7 border-zinc-700 text-xs text-emerald-400 hover:bg-zinc-800"
+                      const Icon = cfg.icon;
+                      return (
+                        <div
+                          key={idx}
+                          className={cn(
+                            "flex items-start gap-2.5 px-3 py-2.5 rounded-lg border",
+                            cfg.bg,
+                            cfg.border
+                          )}
                         >
-                          <MessageCircle size={10} className="mr-1" /> WhatsApp
-                        </Button>
-                      </a>
-                    ) : null}
+                          <Icon
+                            size={13}
+                            className="mt-0.5 flex-shrink-0"
+                            style={{ color: cfg.color }}
+                          />
+                          <p className="text-xs text-zinc-400 leading-relaxed">
+                            {w.text}
+                          </p>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
-              ) : null}
+              )}
             </div>
           ) : null}
         </div>

@@ -2,57 +2,41 @@ import { streamText } from "ai";
 import { createClient } from "@/lib/supabase/server";
 import { istKiKonfiguriert, kiModell } from "@/lib/agents/ki-client";
 
-const SYSTEM_NOTFALL = `Du bist ein Notfall-Planungsassistent für Handwerksbetriebe. Antworte logisch auf Deutsch.
+const SYSTEM_NOTFALL = `Du bist ein Notfall-Planungsassistent für Handwerksbetriebe.
+STRIKTE REGEL: Antworte AUSSCHLIESSLICH mit rohem JSON.
+KEINE Code-Fences, KEIN Markdown, KEIN Text vor oder nach dem JSON.
+Das allererste Zeichen deiner Antwort MUSS { sein.
+Das allerletzte Zeichen MUSS } sein.
 
-Deine Ausgabe ist IMMER valides JSON (ohne Markdown-Fences, ohne Codeblöcke) mit genau dieser Struktur:
+Pflichtformat:
 {
-  "zusammenfassung": "string",
-  "empfehlungen": [
+  "zusammenfassung": "Max 2 Sätze. Was ist passiert, wie viele Einsätze betroffen.",
+  "einsaetze": [
     {
-      "einsatzId": "uuid",
-      "name": "Mitarbeitername",
-      "employeeId": "uuid",
-      "begruendung": "string",
-      "einsatz": "Projektname Datum"
+      "id": "assignment-uuid",
+      "projekt": "Projektname",
+      "datum": "YYYY-MM-DD",
+      "dringlichkeit": "hoch",
+      "vorschlaege": [
+        {
+          "mitarbeiter_id": "employee-uuid",
+          "name": "Vorname Nachname",
+          "score": 85,
+          "verfuegbar": true,
+          "konflikt": false,
+          "grund": "Max 60 Zeichen Begründung"
+        }
+      ]
     }
   ],
-  "risiken": ["string"],
-  "kommunikation": "string"
-}
-
-In den STRING-Feldern **kurzes Markdown** erlaubt:
-- **fett** für Namen/Kernpunkte
-- "###" für maximal 3 sehr kurze Zwischenüberschriften
-
-Strukturvorschlag für "zusammenfassung":
-### Betroffene Einsätze
-Kurze Übersicht (max 2 Sätze).
-
-### Meine Empfehlung
-Kurzer Überblick über das Vorgehen (max 2 Sätze).
-
-### Hinweise
-Wichtigste Hinweise (max 2 Sätze).
-
-In "empfehlungen[].begruendung" ebenfalls **fett** für Namen erlaubt.
-
-WICHTIG:
-- Liefere für **jeden Eintrag** aus "betroffeneEinsaetze" genau **eine** Empfehlung in "empfehlungen".
-- Nutze **nur** employeeIds aus "verfuegbareKraefte" (genau dort sind Kandidaten inkl. hatKonflikt-Info).
-- Wenn "ausfallHatAbwesenheit" true ist, beschreibe es als Risiko/Problem und priorisiere trotzdem eine praktikable Lösung.
-- Wenn "ausfallHatAbwesenheit" true ist:
-  - setze in "risiken" mindestens 1 Item, der klar auf die Abwesenheit des Ausfall-Mitarbeiters eingeht
-  - erwähne die Abwesenheit in "zusammenfassung" und gib in "kommunikation" einen Satz dazu, warum Ersatz nötig ist
-- Wenn "ausfallHatAbwesenheit" false ist: mache dazu keine Abwesenheits-Risiken.
-- Jede "begruendung" max. 1 Satz, "risiken" max. 2 Items.
-- "kommunikation" max. 5 Zeilen, direkt nutzbar.
-
-Priorisiere:
-1. Gleiche Abteilung wie Ausgefallener
-2. verfuegbareKraefte mit hatKonflikt: false
-3. Passende Qualifikationen
-4. Nur employeeIds aus "verfuegbareKraefte" für Empfehlungen
-5. Präzise, keine Romanzen.`;
+  "warnungen": [
+    {
+      "typ": "personalengpass",
+      "text": "Max 80 Zeichen"
+    }
+  ],
+  "sofortmassnahme": "Max 100 Zeichen. Was jetzt sofort zu tun ist."
+}`;
 
 /** Notfall — strukturiertes JSON als Text-Stream */
 export async function POST(request: Request) {

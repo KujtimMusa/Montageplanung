@@ -1,41 +1,38 @@
-import type { KiNotfallAntwort } from "@/types/notfall-ki";
+import type { NotfallAnalyse } from "@/types/notfall-ki";
 
-/**
- * Parst die KI-Rohausgabe (evtl. Markdown-Codefence) zu strukturiertem JSON.
- */
-export function parseKiAntwortRoh(raw: string): KiNotfallAntwort {
-  let t = raw.trim();
-  const fence = /^```(?:json)?\s*([\s\S]*?)```$/m.exec(t);
-  if (fence?.[1]) t = fence[1].trim();
+export function parseKiAntwort(rawText: string): NotfallAnalyse {
+  let cleaned = rawText;
 
+  // Schritt 1: ```json ... ``` und ``` ... ``` entfernen
+  cleaned = cleaned
+    .replace(/```json\s*/gi, "")
+    .replace(/```\s*/gi, "")
+    .trim();
+
+  // Schritt 2: Ersten { bis letzten } extrahieren
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start !== -1 && end !== -1 && end > start) {
+    cleaned = cleaned.substring(start, end + 1);
+  }
+
+  // Schritt 3: Parse mit Fallback
   try {
-    const o = JSON.parse(t) as Partial<KiNotfallAntwort>;
+    return JSON.parse(cleaned) as NotfallAnalyse;
+  } catch (e) {
+    console.error("[parseKiAntwort] JSON.parse fehlgeschlagen:", e);
+    console.error("[parseKiAntwort] Raw:", rawText);
     return {
       zusammenfassung:
-        typeof o.zusammenfassung === "string"
-          ? o.zusammenfassung
-          : "Keine Zusammenfassung.",
-      empfehlungen: Array.isArray(o.empfehlungen)
-        ? o.empfehlungen.map((e) => ({
-            einsatzId: String(e?.einsatzId ?? ""),
-            name: String(e?.name ?? ""),
-            employeeId: String(e?.employeeId ?? ""),
-            begruendung: String(e?.begruendung ?? ""),
-            einsatz: String(e?.einsatz ?? ""),
-          }))
-        : [],
-      risiken: Array.isArray(o.risiken)
-        ? o.risiken.map((r) => String(r))
-        : [],
-      kommunikation:
-        typeof o.kommunikation === "string" ? o.kommunikation : "",
-    };
-  } catch {
-    return {
-      zusammenfassung: raw.trim() || "(Keine KI-Antwort)",
-      empfehlungen: [],
-      risiken: [],
-      kommunikation: "",
+        "KI-Antwort konnte nicht verarbeitet werden. Bitte erneut analysieren.",
+      einsaetze: [],
+      warnungen: [
+        {
+          typ: "personalengpass",
+          text: "Parse-Fehler – Gemini hat kein valides JSON geliefert.",
+        },
+      ],
+      sofortmassnahme: "Analyse neu starten.",
     };
   }
 }
