@@ -117,30 +117,52 @@ export function NotfallModus() {
   const ladenMitarbeiter = useCallback(async () => {
     const { data, error } = await supabase
       .from("employees")
-      .select(
-        "id,name,department_id,qualifikationen,phone,whatsapp, departments!department_id(name)"
-      )
+      .select("id,name,department_id,qualifikationen,phone,whatsapp")
       .order("name");
     if (error) {
       toast.error(error.message);
       return;
     }
+
     const rows = (data ?? []) as Record<string, unknown>[];
+    const deptIds = Array.from(
+      new Set(
+        rows
+          .map((r) => r.department_id as string | null | undefined)
+          .filter((id): id is string => Boolean(id))
+      )
+    );
+
+    const deptMap = new Map<string, string>();
+    if (deptIds.length > 0) {
+      const {
+        data: deps,
+        error: depErr,
+      } = await supabase
+        .from("departments")
+        .select("id,name")
+        .in("id", deptIds);
+
+      if (depErr) {
+        toast.error(depErr.message);
+      } else {
+        for (const d of (deps ?? []) as Record<string, unknown>[]) {
+          deptMap.set(String(d.id), String(d.name));
+        }
+      }
+    }
+
     setMitarbeiter(
       rows.map((row) => {
-        const depRaw = row.departments as
-          | { name?: string }
-          | { name?: string }[]
-          | null;
-        const dep = Array.isArray(depRaw) ? depRaw[0] : depRaw;
+        const deptId = (row.department_id as string | null | undefined) ?? null;
         return {
           id: row.id as string,
           name: row.name as string,
-          department_id: (row.department_id as string | null) ?? null,
+          department_id: deptId,
           qualifikationen: (row.qualifikationen as string[] | null) ?? null,
           phone: (row.phone as string | null) ?? null,
           whatsapp: (row.whatsapp as string | null) ?? null,
-          abteilung: dep?.name ?? null,
+          abteilung: deptId ? deptMap.get(deptId) ?? null : null,
         };
       })
     );
