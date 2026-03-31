@@ -593,24 +593,43 @@ export function NotfallModus() {
 
   async function absenceEinmalig() {
     if (absenceEingetragenRef.current) return;
-    const { error } = await supabase.from("absences").upsert(
-      {
-        employee_id: ausfallId,
-        type: "krank",
-        absence_type: "krank",
-        start_date: datum,
-        end_date: datum,
-        status: "genehmigt",
-        notes: "Notfall-Ausfall (Planung)",
-        is_emergency: true,
-        quelle: "manuell",
-      },
-      {
-        onConflict: "employee_id,start_date,absence_type",
-        ignoreDuplicates: true,
-      }
-    );
-    if (!error) absenceEingetragenRef.current = true;
+    const { data: bestehend } = await supabase
+      .from("absences")
+      .select("id, start_date, end_date")
+      .eq("employee_id", ausfallId)
+      .eq("absence_type", "krank")
+      .lte("start_date", datum)
+      .gte("end_date", datum)
+      .maybeSingle();
+
+    if (!bestehend) {
+      const { error } = await supabase.from("absences").upsert(
+        {
+          employee_id: ausfallId,
+          type: "krank",
+          absence_type: "krank",
+          start_date: datum,
+          end_date: datum,
+          status: "genehmigt",
+          notes: "Notfall-Ausfall (Planung)",
+          is_emergency: true,
+          quelle: "manuell",
+        },
+        {
+          onConflict: "employee_id,start_date,absence_type",
+          ignoreDuplicates: true,
+        }
+      );
+      if (error) console.error("[absenceEinmalig]", error);
+      if (!error) absenceEingetragenRef.current = true;
+    } else {
+      console.log(
+        "[absenceEinmalig] Tag bereits durch Eintrag",
+        bestehend.id,
+        "abgedeckt — kein neuer Eintrag nötig"
+      );
+      absenceEingetragenRef.current = true;
+    }
   }
 
   async function alleErsatzBestaetigen() {
