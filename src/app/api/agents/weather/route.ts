@@ -53,5 +53,29 @@ export async function POST(request: Request) {
       aktionen: [],
     };
   }
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (
+    appUrl &&
+    parsed.abschnitte?.some((a) => a.typ === "warnung" || a.typ === "kritisch")
+  ) {
+    void fetch(`${appUrl}/api/notifications/koordinatoren`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        typ: "wetter",
+        payload: {
+          einsaetze: parsed.abschnitte
+            .filter((a) => a.typ !== "info")
+            .map((a) => ({
+              projekt: a.ueberschrift,
+              datum: new Date().toLocaleDateString("de-DE"),
+              mitarbeiter: "",
+              warnung: a.inhalt.slice(0, 120),
+            })),
+        },
+      }),
+    }).catch(() => {});
+  }
   return NextResponse.json(parsed);
 }

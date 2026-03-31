@@ -77,6 +77,7 @@ type Zeile = {
 const monteurSchema = z.object({
   name: z.string().min(2, "Name erforderlich"),
   phone: z.string().optional(),
+  email: z.string().email("Ungültige E-Mail").optional().or(z.literal("")),
   whatsapp: z.string().optional(),
   abteilung_ids: z.array(z.string()),
   team_id: z.string().optional(),
@@ -249,6 +250,7 @@ export function MitarbeiterVerwaltung({
     defaultValues: {
       name: "",
       phone: "",
+      email: "",
       whatsapp: "",
       abteilung_ids: [],
       team_id: "",
@@ -500,6 +502,7 @@ export function MitarbeiterVerwaltung({
       monteurF.reset({
         name: zeile.name,
         phone: zeile.phone ?? "",
+        email: zeile.email ?? "",
         whatsapp: zeile.whatsapp ?? "",
         abteilung_ids: ids,
         team_id: zeile.team_id ?? "",
@@ -509,6 +512,7 @@ export function MitarbeiterVerwaltung({
       monteurF.reset({
         name: "",
         phone: "",
+        email: "",
         whatsapp: "",
         abteilung_ids: [],
         team_id: "",
@@ -535,6 +539,7 @@ export function MitarbeiterVerwaltung({
     const payload = {
       name: w.name.trim(),
       phone: w.phone?.trim() || null,
+      email: w.email?.trim() || null,
       whatsapp: w.whatsapp?.trim() || null,
       department_id,
       team_id,
@@ -1053,6 +1058,18 @@ export function MitarbeiterVerwaltung({
                   id="m-wa"
                   placeholder="+49 151…"
                   {...monteurF.register("whatsapp")}
+                  className={STAMMDATEN_FORM_INPUT}
+                />
+              </StammdatenFormField>
+              <StammdatenFormField
+                label="E-Mail-Adresse"
+                hint="Für automatische Einsatz-Benachrichtigungen"
+              >
+                <Input
+                  id="m-email"
+                  type="email"
+                  placeholder="max@firma.de"
+                  {...monteurF.register("email")}
                   className={STAMMDATEN_FORM_INPUT}
                 />
               </StammdatenFormField>

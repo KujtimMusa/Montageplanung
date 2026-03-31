@@ -598,12 +598,50 @@ export function DienstleisterVerwaltung() {
         }
 
         toast.success("E-Mail über mailto vorbereitet (TODO: Resend aktivieren).");
+        void fetch("/api/notifications/koordinatoren", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            typ: "dienstleister",
+            payload: {
+              dienstleister_name: emailPartner.firma,
+              kontakt_name: emailPartner.ansprechpartner ?? "",
+              meldung: emailBody,
+              datum: new Date().toLocaleDateString("de-DE", {
+                day: "2-digit",
+                month: "2-digit",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              }),
+            },
+          }),
+        }).catch(() => {});
         setEmailDialogOffen(false);
         void ladenPartnerMetadaten();
         return;
       }
 
       toast.success("E-Mail gesendet/ausgelöst.");
+      void fetch("/api/notifications/koordinatoren", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          typ: "dienstleister",
+          payload: {
+            dienstleister_name: emailPartner.firma,
+            kontakt_name: emailPartner.ansprechpartner ?? "",
+            meldung: emailBody,
+            datum: new Date().toLocaleDateString("de-DE", {
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+          },
+        }),
+      }).catch(() => {});
       setEmailDialogOffen(false);
       void ladenPartnerMetadaten();
     } catch (e) {

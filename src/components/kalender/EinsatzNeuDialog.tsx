@@ -58,6 +58,8 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { templateEinsatzNeu } from "@/lib/email-templates";
+import { generiereIcs, generiereIcsCancel } from "@/lib/ics";
 import {
   PRIORITAET_FARBEN,
   STATUS_FARBEN,
@@ -351,6 +353,120 @@ export function EinsatzNeuDialog({
     }
   }
 
+  async function sendeEinsatzMailFireAndForget(opts: {
+    assignmentId: string;
+    employeeId: string | null;
+    projektTitel: string;
+    datum: string;
+    start: string;
+    ende: string;
+  }) {
+    if (!opts.employeeId) return;
+    try {
+      const { data: mitarbeiter } = await supabase
+        .from("employees")
+        .select("name,email")
+        .eq("id", opts.employeeId)
+        .maybeSingle();
+      const email = (mitarbeiter as { email?: string | null } | null)?.email;
+      const name = (mitarbeiter as { name?: string | null } | null)?.name ?? "Mitarbeiter";
+      if (!email) return;
+
+      const { data: settings } = await supabase
+        .from("settings")
+        .select("betrieb_name")
+        .eq("key", "app")
+        .maybeSingle();
+      const betriebName = (settings as { betrieb_name?: string } | null)?.betrieb_name;
+
+      const datumLesbar = new Date(opts.datum).toLocaleDateString("de-DE", {
+        weekday: "long",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      });
+      const { subject, html } = templateEinsatzNeu({
+        mitarbeiter_name: name,
+        projekt: opts.projektTitel,
+        datum: datumLesbar,
+        start: opts.start.slice(0, 5),
+        ende: opts.ende.slice(0, 5),
+        betrieb_name: betriebName,
+      });
+      const icsInhalt = generiereIcs({
+        uid: opts.assignmentId,
+        zusammenfassung: `Einsatz: ${opts.projektTitel}`,
+        datum: opts.datum,
+        start: opts.start.slice(0, 5),
+        ende: opts.ende.slice(0, 5),
+        beschreibung: `Projekt: ${opts.projektTitel}`,
+        organisator_name: betriebName,
+      });
+
+      void fetch("/api/email/senden", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: email,
+          subject,
+          html,
+          icsAnhang: { inhalt: icsInhalt, methode: "REQUEST" },
+        }),
+      }).catch(() => {});
+    } catch {
+      /* fire-and-forget */
+    }
+  }
+
+  async function sendeEinsatzStornoMailFireAndForget(assignmentId: string) {
+    try {
+      const { data: zuLoeschen } = await supabase
+        .from("assignments")
+        .select("id,project_title,date,start_time,end_time,employees(name,email)")
+        .eq("id", assignmentId)
+        .maybeSingle();
+      const assignment = zuLoeschen as
+        | {
+            id: string;
+            project_title?: string | null;
+            date: string;
+            start_time: string;
+            end_time: string;
+            employees?:
+              | { name?: string | null; email?: string | null }
+              | { name?: string | null; email?: string | null }[]
+              | null;
+          }
+        | null;
+      if (!assignment) return;
+      const emp = Array.isArray(assignment.employees)
+        ? assignment.employees[0]
+        : assignment.employees;
+      if (!emp?.email) return;
+
+      const icsInhalt = generiereIcsCancel({
+        uid: assignment.id,
+        zusammenfassung: `Einsatz: ${assignment.project_title ?? "Einsatz"}`,
+        datum: assignment.date,
+        start: assignment.start_time.slice(0, 5),
+        ende: assignment.end_time.slice(0, 5),
+      });
+
+      void fetch("/api/email/senden", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: emp.email,
+          subject: `❌ Einsatz abgesagt: ${assignment.project_title ?? "Einsatz"}`,
+          html: `<div style="font-family:sans-serif;background:#09090b;color:#e4e4e7;padding:32px;border-radius:16px;max-width:520px"><p style="color:#f87171;font-size:18px;font-weight:700">Einsatz wurde abgesagt</p><p style="color:#71717a">Dein Einsatz <strong style="color:#e4e4e7">${assignment.project_title ?? "Einsatz"}</strong> am ${new Date(assignment.date).toLocaleDateString("de-DE")} wurde abgesagt. Der Termin wurde aus deinem Kalender entfernt.</p></div>`,
+          icsAnhang: { inhalt: icsInhalt, methode: "CANCEL" },
+        }),
+      }).catch(() => {});
+    } catch {
+      /* fire-and-forget */
+    }
+  }
+
   async function onSubmit(werte: EinsatzFormularWerte) {
     setKonfliktText(null);
     setAbwesenheitWarnung(null);
@@ -526,6 +642,16 @@ export function EinsatzNeuDialog({
         const projektTitel =
           projekte.find((x) => x.id === werte.projekt_id)?.title ?? "Einsatz";
         void automationNeuerEinsatzFireAndForget(empId, projektTitel, d);
+        if (insertedAssignment?.id) {
+          void sendeEinsatzMailFireAndForget({
+            assignmentId: insertedAssignment.id as string,
+            employeeId: empId,
+            projektTitel,
+            datum: d,
+            start: startNorm,
+            ende: endNorm,
+          });
+        }
         insgesamt += 1;
       }
       if (!bearbeiten && einTeam) {
@@ -567,6 +693,9 @@ export function EinsatzNeuDialog({
       bearbeiten.id,
       ...(bearbeiten.gruppe_weitere_assignment_ids ?? []),
     ];
+    for (const id of ids) {
+      void sendeEinsatzStornoMailFireAndForget(id);
+    }
     const { error } = await supabase.from("assignments").delete().in("id", ids);
     if (error) {
       toast.error(error.message);

@@ -21,6 +21,8 @@ import {
 } from "date-fns";
 import { de } from "date-fns/locale";
 import { createClient } from "@/lib/supabase/client";
+import { templateEinsatzGeaendert } from "@/lib/email-templates";
+import { generiereIcsCancel, generiereIcsUpdate } from "@/lib/ics";
 import { ortLabelFromProjektJoin } from "@/lib/planung/ort-label";
 import { pruefeEinsatzKonflikt } from "@/lib/utils/conflicts";
 import { getRepresentativeEmployeeId } from "@/lib/planung/team-representative";
@@ -519,6 +521,128 @@ export function PlanungsKalender() {
     };
   }, [supabase, laden]);
 
+  async function sendeEinsatzUpdateMailFireAndForget(opts: {
+    assignmentId: string;
+    projektTitel: string;
+    datumAlt: string;
+    datumNeu: string;
+    startNeu: string;
+    endeNeu: string;
+  }) {
+    try {
+      const { data: row } = await supabase
+        .from("assignments")
+        .select("id,employees(name,email)")
+        .eq("id", opts.assignmentId)
+        .maybeSingle();
+      const assignment = row as
+        | {
+            id: string;
+            employees?:
+              | { name?: string | null; email?: string | null }
+              | { name?: string | null; email?: string | null }[]
+              | null;
+          }
+        | null;
+      if (!assignment) return;
+      const emp = Array.isArray(assignment.employees)
+        ? assignment.employees[0]
+        : assignment.employees;
+      if (!emp?.email) return;
+
+      const { data: settings } = await supabase
+        .from("settings")
+        .select("betrieb_name")
+        .eq("key", "app")
+        .maybeSingle();
+      const betriebName = (settings as { betrieb_name?: string } | null)?.betrieb_name;
+
+      const neuLesbar = new Date(opts.datumNeu).toLocaleDateString("de-DE");
+      const altLesbar = new Date(opts.datumAlt).toLocaleDateString("de-DE");
+      const { subject, html } = templateEinsatzGeaendert({
+        mitarbeiter_name: emp.name ?? "Mitarbeiter",
+        projekt: opts.projektTitel,
+        datum_alt: altLesbar,
+        datum_neu: neuLesbar,
+        start_neu: opts.startNeu.slice(0, 5),
+        ende_neu: opts.endeNeu.slice(0, 5),
+        betrieb_name: betriebName,
+      });
+      const icsInhalt = generiereIcsUpdate(
+        {
+          uid: opts.assignmentId,
+          zusammenfassung: `Einsatz: ${opts.projektTitel}`,
+          datum: opts.datumNeu,
+          start: opts.startNeu.slice(0, 5),
+          ende: opts.endeNeu.slice(0, 5),
+          organisator_name: betriebName,
+        },
+        1
+      );
+
+      void fetch("/api/email/senden", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: emp.email,
+          subject,
+          html,
+          icsAnhang: { inhalt: icsInhalt, methode: "UPDATE" },
+        }),
+      }).catch(() => {});
+    } catch {
+      /* fire-and-forget */
+    }
+  }
+
+  async function sendeEinsatzStornoMailFireAndForget(assignmentId: string) {
+    try {
+      const { data: zuLoeschen } = await supabase
+        .from("assignments")
+        .select("id,project_title,date,start_time,end_time,employees(name,email)")
+        .eq("id", assignmentId)
+        .maybeSingle();
+      const assignment = zuLoeschen as
+        | {
+            id: string;
+            project_title?: string | null;
+            date: string;
+            start_time: string;
+            end_time: string;
+            employees?:
+              | { name?: string | null; email?: string | null }
+              | { name?: string | null; email?: string | null }[]
+              | null;
+          }
+        | null;
+      if (!assignment) return;
+      const emp = Array.isArray(assignment.employees)
+        ? assignment.employees[0]
+        : assignment.employees;
+      if (!emp?.email) return;
+
+      const icsInhalt = generiereIcsCancel({
+        uid: assignment.id,
+        zusammenfassung: `Einsatz: ${assignment.project_title ?? "Einsatz"}`,
+        datum: assignment.date,
+        start: assignment.start_time.slice(0, 5),
+        ende: assignment.end_time.slice(0, 5),
+      });
+      void fetch("/api/email/senden", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: emp.email,
+          subject: `❌ Einsatz abgesagt: ${assignment.project_title ?? "Einsatz"}`,
+          html: `<div style="font-family:sans-serif;background:#09090b;color:#e4e4e7;padding:32px;border-radius:16px;max-width:520px"><p style="color:#f87171;font-size:18px;font-weight:700">Einsatz wurde abgesagt</p><p style="color:#71717a">Dein Einsatz <strong style="color:#e4e4e7">${assignment.project_title ?? "Einsatz"}</strong> am ${new Date(assignment.date).toLocaleDateString("de-DE")} wurde abgesagt. Der Termin wurde aus deinem Kalender entfernt.</p></div>`,
+          icsAnhang: { inhalt: icsInhalt, methode: "CANCEL" },
+        }),
+      }).catch(() => {});
+    } catch {
+      /* fire-and-forget */
+    }
+  }
+
   const dlQuery = searchParams.get("dienstleister");
   useEffect(() => {
     if (!dlQuery || !kalenderBereit) return;
@@ -870,6 +994,16 @@ export function PlanungsKalender() {
           toast.error("Fehler beim Verschieben");
           return false;
         }
+        const projektTitel =
+          projekteById.get(newProjectId)?.title ?? z.project_title ?? "Einsatz";
+        void sendeEinsatzUpdateMailFireAndForget({
+          assignmentId: id,
+          projektTitel,
+          datumAlt: z.date,
+          datumNeu: datum,
+          startNeu: startZeit,
+          endeNeu: endZeit,
+        });
       }
 
       toast.success(
@@ -896,6 +1030,9 @@ export function PlanungsKalender() {
   async function loeschenAusDetail() {
     if (!detailGruppe?.length) return;
     const ids = detailGruppe.map((z) => z.id);
+    for (const id of ids) {
+      void sendeEinsatzStornoMailFireAndForget(id);
+    }
     const { error } = await supabase.from("assignments").delete().in("id", ids);
     if (error) {
       toast.error(error.message);
@@ -928,6 +1065,9 @@ export function PlanungsKalender() {
       )
         return;
       const ids = gruppe.map((z) => z.id);
+      for (const id of ids) {
+        void sendeEinsatzStornoMailFireAndForget(id);
+      }
       const { error } = await supabase.from("assignments").delete().in("id", ids);
       if (error) {
         toast.error(error.message);

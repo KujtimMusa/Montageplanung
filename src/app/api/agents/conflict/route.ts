@@ -76,5 +76,34 @@ Nutze die echten IDs aus den mitgelieferten Daten.`;
       aktionen: [],
     };
   }
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (
+    appUrl &&
+    parsed.abschnitte?.some(
+      (a) => a.typ === "kritisch" || a.typ === "warnung"
+    )
+  ) {
+    const konflikte = parsed.abschnitte
+      .filter((a) => a.typ === "kritisch" || a.typ === "warnung")
+      .map((a) => ({
+        mitarbeiter: a.ueberschrift,
+        projekt: "",
+        datum: new Date().toLocaleDateString("de-DE"),
+        beschreibung: a.inhalt.slice(0, 100),
+      }));
+
+    void fetch(`${appUrl}/api/notifications/koordinatoren`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        typ: "konflikt",
+        payload: {
+          anzahl_konflikte: konflikte.length,
+          konflikte,
+        },
+      }),
+    }).catch(() => {});
+  }
   return NextResponse.json(parsed);
 }

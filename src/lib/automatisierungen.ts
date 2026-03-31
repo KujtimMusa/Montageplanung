@@ -30,6 +30,35 @@ export async function triggerAutomatisierung(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+
+      const mitarbeiterId = payload.mitarbeiter_id as string | undefined;
+      const datum = payload.datum as string | undefined;
+      if (mitarbeiterId && datum) {
+        const { count } = await supabase
+          .from("assignments")
+          .select("*", { count: "exact", head: true })
+          .eq("employee_id", mitarbeiterId)
+          .gte("date", datum);
+        const { data: ma } = await supabase
+          .from("employees")
+          .select("name")
+          .eq("id", mitarbeiterId)
+          .maybeSingle();
+
+        await fetch(`${appUrl}/api/notifications/koordinatoren`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            typ: "krank",
+            payload: {
+              mitarbeiter_name:
+                (ma as { name?: string } | null)?.name ?? "Unbekannt",
+              datum_von: new Date(datum).toLocaleDateString("de-DE"),
+              betroffene_einsaetze: count ?? 0,
+            },
+          }),
+        }).catch(() => {});
+      }
     }
   }
 

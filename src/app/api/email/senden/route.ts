@@ -26,6 +26,11 @@ export async function POST(request: Request) {
     an?: string;
     betreff?: string;
     body?: string;
+    to?: string;
+    subject?: string;
+    text?: string;
+    html?: string;
+    icsAnhang?: { inhalt: string; methode: "REQUEST" | "CANCEL" | "UPDATE" };
     partner_id?: string;
     assignment_id?: string;
     template_typ?: string;
@@ -39,14 +44,16 @@ export async function POST(request: Request) {
     );
   }
 
-  const to = body.an?.trim() ?? "";
-  const subject = body.betreff?.trim() ?? "";
-  const mailBody = body.body ?? "";
+  const to = (body.to ?? body.an ?? "").trim();
+  const subject = (body.subject ?? body.betreff ?? "").trim();
+  const mailBody = body.body ?? body.text ?? "";
+  const htmlBody = body.html;
   const partnerId = body.partner_id?.trim() ?? null;
   const assignmentId = body.assignment_id?.trim() ?? null;
   const templateTyp = body.template_typ?.trim() ?? "allgemein";
 
-  if (!to || !subject || !mailBody || !partnerId) {
+  const istLegacyDienstleister = Boolean(partnerId);
+  if (!to || !subject || (!mailBody && !htmlBody) || (istLegacyDienstleister && !partnerId)) {
     return NextResponse.json(
       { ok: false, enabled: false, reason: "MISSING_FIELDS" },
       { status: 400 }
@@ -70,19 +77,32 @@ export async function POST(request: Request) {
     );
   }
 
-  // Versand mit Resend (Text-only, kein HTML aktuell)
+  const resendBody: Record<string, unknown> = {
+    from,
+    to: [to],
+    subject,
+    ...(htmlBody ? { html: htmlBody } : { text: mailBody ?? "" }),
+  };
+  if (body.icsAnhang?.inhalt && body.icsAnhang?.methode) {
+    resendBody.attachments = [
+      {
+        filename: "einsatz.ics",
+        content: Buffer.from(body.icsAnhang.inhalt).toString("base64"),
+        type: "text/calendar",
+        headers: {
+          "Content-Type": `text/calendar; method=${body.icsAnhang.methode}; charset=UTF-8`,
+        },
+      },
+    ];
+  }
+
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      from,
-      to: [to],
-      subject,
-      text: mailBody,
-    }),
+    body: JSON.stringify(resendBody),
   });
 
   const json = (await res.json().catch(() => ({}))) as { message?: string };
@@ -99,7 +119,7 @@ export async function POST(request: Request) {
   }
 
   // Persistiere Versand-Timestamps & Status (nur wenn assignment_id vorhanden)
-  if (assignmentId) {
+  if (assignmentId && partnerId) {
     const now = new Date().toISOString();
     const nextStatus =
       templateTyp === "bestaetigung"
