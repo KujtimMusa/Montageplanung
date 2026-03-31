@@ -275,9 +275,15 @@ export function NotfallSteuerung({
               >
                 <option value="">Mitarbeiter wählen…</option>
                 {mitarbeiter.map((m) => (
-                  <option key={m.id} value={m.id}>
+                  <option
+                    key={m.id}
+                    value={m.id}
+                    disabled={Boolean(m.hatAbwesenheit)}
+                    className={m.hatAbwesenheit ? "text-zinc-600 line-through" : ""}
+                  >
                     {m.name}
                     {m.abteilung ? ` (${m.abteilung})` : ""}
+                    {m.hatAbwesenheit ? " — abwesend" : ""}
                   </option>
                 ))}
               </select>

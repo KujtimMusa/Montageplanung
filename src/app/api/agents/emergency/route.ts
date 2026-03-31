@@ -5,9 +5,17 @@ import type { NotfallAnalyse } from "@/types/notfall-ki";
 
 const SYSTEM_NOTFALL = `Du bist ein Notfall-Planungsassistent für Handwerksbetriebe.
 Antworte ausschließlich im vorgegebenen JSON-Format.
-Analysiere welche Mitarbeiter als Ersatz geeignet sind.
-Bewerte jeden Kandidaten mit einem score von 0-100.
-score 0 = nicht verfügbar/Konflikt, score 80+ = sehr gut geeignet.
+
+WICHTIGE REGELN FÜR konflikt UND score:
+- Setze "konflikt: true" NUR wenn der Kandidat in einsaetze_am_datum
+  einen Eintrag hat, der sich zeitlich mit dem betroffenen Einsatz überschneidet.
+- Ist einsaetze_am_datum leer -> konflikt: false
+- Ist hatKonflikt im Input false -> setze konflikt: false
+- Du darfst konflikt NIEMALS selbst erfinden oder schätzen.
+- score 0 = hatKonflikt ist true (echte Zeitüberlappung)
+- score 85-100 = verfügbar, passende Qualifikation
+- score 60-84 = verfügbar, Qualifikation teilweise passend
+- score 1-59 = verfügbar aber wenig geeignet
 Gib immer eine sofortmassnahme an (max 100 Zeichen).`;
 
 type EmergencyBody = {
@@ -116,10 +124,19 @@ export async function POST(request: Request) {
 
     const userPrompt = `Ausgefallener Mitarbeiter: ${mitarbeiterName}
 Ab Datum: ${abDatum}
-Betroffene Einsätze: ${JSON.stringify(betroffeneEinsaetze, null, 2)}
-Verfügbare Ersatzkräfte: ${JSON.stringify(kandidaten, null, 2)}
 
-Analysiere und gib Ersatzempfehlungen.`;
+Betroffene Einsätze (müssen besetzt werden):
+${JSON.stringify(betroffeneEinsaetze, null, 2)}
+
+Verfügbare Ersatzkräfte mit ihren bestehenden Einsätzen am Tag:
+${JSON.stringify(kandidaten, null, 2)}
+
+Regeln:
+- Jeder Kandidat hat "einsaetze_am_datum" mit seinen heutigen Buchungen.
+- "hatKonflikt: true" im Input = diese Person ist bereits zur gleichen Zeit gebucht -> setze konflikt: true, score: 0
+- "hatKonflikt: false" = keine Überlappung -> setze konflikt: false
+- Empfehle nur Mitarbeiter mit hatKonflikt: false
+- Begründe kurz warum jemand gut geeignet ist (grund-Feld)`;
 
     const result = await model.generateContent({
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],

@@ -33,53 +33,13 @@ import { ScanSearch } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { pruefeEinsatzKonflikt } from "@/lib/utils/conflicts";
+import { pruefeEinsatzKonflikt, zeitZuMinuten } from "@/lib/utils/conflicts";
 import type { KiErsatzKarte, KiNotfallAntwort } from "@/types/notfall-ki";
 import { NotfallSteuerung } from "@/components/notfall/NotfallSteuerung";
 import { KiNotfallPanel } from "@/components/notfall/KiNotfallPanel";
 import type { NotfallEinsatzZeile, NotfallMitarbeiter } from "@/components/notfall/types";
 
 type KandidatenMap = Record<string, { id: string; name: string }[]>;
-
-function verfuegbareKraeftePayload(
-  zeilen: NotfallEinsatzZeile[],
-  kandidatenMap: KandidatenMap,
-  ausfallEmployeeId: string,
-  ausfallDept: string | null | undefined,
-  mitarbeiterListe: NotfallMitarbeiter[]
-): {
-  id: string;
-  name: string;
-  abteilung: string | null;
-  qualifikationen: string[];
-  hatKonflikt: boolean;
-}[] {
-  const basis = mitarbeiterListe.filter(
-    (m) =>
-      m.id !== ausfallEmployeeId &&
-      m.department_id &&
-      m.department_id === ausfallDept
-  );
-  const konfliktAmTag = new Set<string>();
-  for (const m of basis) {
-    let anyKonflikt = false;
-    for (const e of zeilen) {
-      const kMap = kandidatenMap[e.id] ?? [];
-      if (!kMap.some((k) => k.id === m.id)) {
-        anyKonflikt = true;
-        break;
-      }
-    }
-    if (anyKonflikt) konfliktAmTag.add(m.id);
-  }
-  return basis.map((m) => ({
-    id: m.id,
-    name: m.name,
-    abteilung: m.abteilung,
-    qualifikationen: m.qualifikationen ?? [],
-    hatKonflikt: konfliktAmTag.has(m.id),
-  }));
-}
 
 export function NotfallModus() {
   const supabase = createClient();
@@ -177,10 +137,20 @@ export function NotfallModus() {
       .from("employees")
       .select("id,name,department_id,qualifikationen,phone,whatsapp")
       .order("name");
-    if (error) {
-      toast.error(error.message);
+    if (error || !data) {
+      toast.error(error?.message ?? "Mitarbeiter konnten nicht geladen werden.");
       return;
     }
+
+    const pruefdatum = datum;
+    const { data: abwDrop } = await supabase
+      .from("absences")
+      .select("employee_id")
+      .lte("start_date", pruefdatum)
+      .gte("end_date", pruefdatum);
+    const abwDropIds = new Set(
+      (abwDrop ?? []).map((r: Record<string, unknown>) => String(r.employee_id))
+    );
 
     const rows = (data ?? []) as Record<string, unknown>[];
     const deptIds = Array.from(
@@ -221,14 +191,15 @@ export function NotfallModus() {
           phone: (row.phone as string | null) ?? null,
           whatsapp: (row.whatsapp as string | null) ?? null,
           abteilung: deptId ? deptMap.get(deptId) ?? null : null,
+          hatAbwesenheit: abwDropIds.has(String(row.id)),
         };
       })
     );
-  }, [supabase]);
+  }, [supabase, datum]);
 
   useEffect(() => {
     void ladenMitarbeiter();
-  }, [ladenMitarbeiter]);
+  }, [datum, ladenMitarbeiter]);
 
   const betroffeneLaden = useCallback(
     async (opts?: {
@@ -481,7 +452,7 @@ export function NotfallModus() {
       setKiLaed(false);
       return;
     }
-    const { rows, kandidaten } = geladen;
+    const { rows } = geladen;
 
     const abw = await abwesenheitenFuerDatum();
     const ausfallMitarbeiter = ausfall;
@@ -490,6 +461,65 @@ export function NotfallModus() {
     );
     const ausfallAbwesenheitTyp =
       abw.find((a) => a.employeeId === ausfallId)?.type ?? null;
+    const abwesendIds = new Set(abw.map((a) => a.employeeId));
+    const kandidatenBasis = mitarbeiter.filter(
+      (m) =>
+        m.id !== ausfallId &&
+        m.department_id &&
+        m.department_id === ausfallMitarbeiter?.department_id &&
+        !abwesendIds.has(m.id)
+    );
+
+    const kandidatenMitEinsaetzen: {
+      id: string;
+      name: string;
+      abteilung: string | null;
+      qualifikationen: string[];
+      hatKonflikt: boolean;
+      einsaetze_am_datum: {
+        start_time: string;
+        end_time: string;
+        projekt: string;
+      }[];
+    }[] = [];
+
+    for (const k of kandidatenBasis) {
+      const { data: kEinsaetze } = await supabase
+        .from("assignments")
+        .select("start_time,end_time,project_title,projects(title)")
+        .eq("employee_id", k.id)
+        .eq("date", datum);
+
+      const einsaetze = ((kEinsaetze ?? []) as Record<string, unknown>[]).map((e) => {
+        const p = e.projects as { title?: string } | { title?: string }[] | null;
+        const proj = Array.isArray(p) ? p[0] : p;
+        return {
+          start_time: String(e.start_time ?? ""),
+          end_time: String(e.end_time ?? ""),
+          projekt: String(proj?.title ?? e.project_title ?? "Einsatz"),
+        };
+      });
+
+      const hatEchtenKonflikt = rows.some((fe) => {
+        const fsMin = zeitZuMinuten(fe.start_time);
+        const feMin = zeitZuMinuten(fe.end_time);
+        return einsaetze.some((ke) => {
+          const ks = zeitZuMinuten(ke.start_time);
+          const ke2 = zeitZuMinuten(ke.end_time);
+          return fsMin < ke2 && feMin > ks;
+        });
+      });
+
+      kandidatenMitEinsaetzen.push({
+        id: k.id,
+        name: k.name,
+        abteilung: k.abteilung ?? null,
+        qualifikationen: k.qualifikationen ?? [],
+        hatKonflikt: hatEchtenKonflikt,
+        einsaetze_am_datum: einsaetze,
+      });
+    }
+
     const payload = {
       ausfallMitarbeiter: {
         id: ausfallMitarbeiter?.id ?? ausfallId,
@@ -509,13 +539,7 @@ export function NotfallModus() {
         startZeit: e.start_time,
         endZeit: e.end_time,
       })),
-      verfuegbareKraefte: verfuegbareKraeftePayload(
-        rows,
-        kandidaten,
-        ausfallId,
-        ausfall?.department_id,
-        mitarbeiter
-      ),
+      verfuegbareKraefte: kandidatenMitEinsaetzen,
       abwesenheiten: abw,
     };
 
@@ -981,7 +1005,7 @@ export function NotfallModus() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-var(--navbar-height,60px))] gap-4 overflow-hidden p-6">
+    <div className="flex flex-col h-[calc(100vh-var(--navbar-height,60px))] gap-4 overflow-hidden p-6">
       <div className="flex-1 min-w-0 overflow-y-auto rounded-2xl border border-zinc-800/60 bg-zinc-950 p-4">
         <div id="notfall-stepper">
           <NotfallSteuerung
@@ -1120,7 +1144,7 @@ export function NotfallModus() {
         </div>
       </div>
 
-      <div className="w-[360px] flex-shrink-0 rounded-2xl border border-zinc-800/60 bg-zinc-950 overflow-hidden">
+      <div className="w-full flex-shrink-0 rounded-2xl border border-zinc-800/60 bg-zinc-950 overflow-hidden">
         <KiNotfallPanel
           kiLaed={kiLaed}
           kiStream={kiStream}

@@ -115,7 +115,7 @@ export async function pruefeEinsatzKonflikt(
   };
 }
 
-function zeitZuMinuten(t: string): number {
+export function zeitZuMinuten(t: string): number {
   const [h, m, s] = t.split(":").map((x) => parseInt(x, 10));
   const hh = h ?? 0;
   const mm = m ?? 0;

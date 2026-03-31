@@ -9,6 +9,7 @@ export type NotfallMitarbeiter = {
   phone: string | null;
   whatsapp: string | null;
   abteilung: string | null;
+  hatAbwesenheit?: boolean;
 };
 
 export type NotfallEinsatzZeile = {
