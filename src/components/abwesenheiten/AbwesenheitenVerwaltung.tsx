@@ -1243,109 +1243,103 @@ export function AbwesenheitenVerwaltung() {
           </div>
         </div>
 
-        <div className="px-5 pt-4 flex flex-wrap gap-2">
-          {[
-            { label: "Ali ist morgen krank", icon: "🤒" },
-            { label: "Jackson nächste Woche Urlaub", icon: "🏖️" },
-            { label: "SHK-Team 15. April frei", icon: "📅" },
-          ].map(({ label, icon }) => (
-            <button
-              key={label}
-              onClick={() => setKiEingabe(label)}
-              className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-zinc-800/80 border border-zinc-700/40 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600/60 hover:bg-zinc-800 transition-all duration-150 select-none"
-            >
-              <span>{icon}</span>
-              <span>{label}</span>
-            </button>
-          ))}
-        </div>
-
-        <div className="px-5 pt-3">
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-            <select
-              value={kiZielTyp}
-              onChange={(e) => {
-                setKiZielTyp(e.target.value as KiZielTyp);
-                setKiZielId("");
-              }}
-              className="rounded-lg border border-zinc-700/40 bg-zinc-800/60 px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-violet-500/40"
-            >
-              <option value="mitarbeiter">Mitarbeiter</option>
-              <option value="team">Team</option>
-              <option value="abteilung">Abteilung</option>
-            </select>
-
-            <select
-              value={kiZielId}
-              onChange={(e) => setKiZielId(e.target.value)}
-              className="rounded-lg border border-zinc-700/40 bg-zinc-800/60 px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-violet-500/40"
-            >
-              <option value="">Auswahl treffen…</option>
-              {(kiZielTyp === "mitarbeiter"
-                ? mitarbeiter.map((m) => ({ id: m.id, name: m.name }))
-                : kiZielTyp === "team"
-                  ? teams
-                  : abteilungen
-              ).map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={kiTypAuswahl}
-              onChange={(e) => setKiTypAuswahl(e.target.value as KiTypAuswahl)}
-              className="rounded-lg border border-zinc-700/40 bg-zinc-800/60 px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-violet-500/40"
-            >
-              <option value="krank">Krank</option>
-              <option value="urlaub">Urlaub</option>
-              <option value="fortbildung">Fortbildung</option>
-              <option value="sonstiges">Sonstiges</option>
-            </select>
-
-            <select
-              value={kiDatumModus}
-              onChange={(e) => setKiDatumModus(e.target.value as KiDatumModus)}
-              className="rounded-lg border border-zinc-700/40 bg-zinc-800/60 px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-violet-500/40"
-            >
-              <option value="heute">Heute</option>
-              <option value="morgen">Morgen</option>
-              <option value="datum">Datum</option>
-              <option value="zeitraum">Zeitraum</option>
-            </select>
-
-            {(kiDatumModus === "datum" || kiDatumModus === "zeitraum") && (
-              <input
-                type="date"
-                value={kiDatumVon}
-                onChange={(e) => setKiDatumVon(e.target.value)}
+        <div className="px-5 pt-4">
+          <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/70 p-3">
+            <p className="mb-2 text-[10px] font-semibold tracking-wider text-zinc-500 uppercase">
+              Vorauswahl-Hilfe
+            </p>
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+              <select
+                value={kiZielTyp}
+                onChange={(e) => {
+                  setKiZielTyp(e.target.value as KiZielTyp);
+                  setKiZielId("");
+                }}
                 className="rounded-lg border border-zinc-700/40 bg-zinc-800/60 px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-violet-500/40"
-              />
-            )}
-            {kiDatumModus === "zeitraum" && (
-              <input
-                type="date"
-                value={kiDatumBis}
-                onChange={(e) => setKiDatumBis(e.target.value)}
-                className="rounded-lg border border-zinc-700/40 bg-zinc-800/60 px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-violet-500/40"
-              />
-            )}
+              >
+                <option value="mitarbeiter">Mitarbeiter</option>
+                <option value="team">Team</option>
+                <option value="abteilung">Abteilung</option>
+              </select>
 
-            <input
-              value={kiGrund}
-              onChange={(e) => setKiGrund(e.target.value)}
-              placeholder="Grund (optional)"
-              className="rounded-lg border border-zinc-700/40 bg-zinc-800/60 px-3 py-2 text-xs text-zinc-300 placeholder:text-zinc-600 focus:outline-none focus:border-violet-500/40 md:col-span-2"
-            />
+              <select
+                value={kiZielId}
+                onChange={(e) => setKiZielId(e.target.value)}
+                className="rounded-lg border border-zinc-700/40 bg-zinc-800/60 px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-violet-500/40"
+              >
+                <option value="">Auswahl treffen…</option>
+                {(kiZielTyp === "mitarbeiter"
+                  ? mitarbeiter.map((m) => ({ id: m.id, name: m.name }))
+                  : kiZielTyp === "team"
+                    ? teams
+                    : abteilungen
+                ).map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={kiTypAuswahl}
+                onChange={(e) => setKiTypAuswahl(e.target.value as KiTypAuswahl)}
+                className="rounded-lg border border-zinc-700/40 bg-zinc-800/60 px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-violet-500/40"
+              >
+                <option value="krank">Krank</option>
+                <option value="urlaub">Urlaub</option>
+                <option value="fortbildung">Fortbildung</option>
+                <option value="sonstiges">Sonstiges</option>
+              </select>
+
+              <select
+                value={kiDatumModus}
+                onChange={(e) => setKiDatumModus(e.target.value as KiDatumModus)}
+                className="rounded-lg border border-zinc-700/40 bg-zinc-800/60 px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-violet-500/40"
+              >
+                <option value="heute">Heute</option>
+                <option value="morgen">Morgen</option>
+                <option value="datum">Datum</option>
+                <option value="zeitraum">Zeitraum</option>
+              </select>
+
+              {(kiDatumModus === "datum" || kiDatumModus === "zeitraum") && (
+                <input
+                  type="date"
+                  value={kiDatumVon}
+                  onChange={(e) => setKiDatumVon(e.target.value)}
+                  className="rounded-lg border border-zinc-700/40 bg-zinc-800/60 px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-violet-500/40"
+                />
+              )}
+              {kiDatumModus === "zeitraum" && (
+                <input
+                  type="date"
+                  value={kiDatumBis}
+                  onChange={(e) => setKiDatumBis(e.target.value)}
+                  className="rounded-lg border border-zinc-700/40 bg-zinc-800/60 px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-violet-500/40"
+                />
+              )}
+
+              <input
+                value={kiGrund}
+                onChange={(e) => setKiGrund(e.target.value)}
+                placeholder="Grund (optional)"
+                className="rounded-lg border border-zinc-700/40 bg-zinc-800/60 px-3 py-2 text-xs text-zinc-300 placeholder:text-zinc-600 focus:outline-none focus:border-violet-500/40 md:col-span-2"
+              />
+            </div>
+
+            <div className="mt-2 flex items-center justify-between rounded-lg border border-zinc-800/60 bg-zinc-800/30 px-3 py-2">
+              <p className="text-xs text-zinc-500 truncate pr-3">
+                Vorschau: {kiEingabe || "Noch keine Vorlage übernommen"}
+              </p>
+              <button
+                type="button"
+                onClick={baueKiVorlage}
+                className="rounded-lg border border-zinc-700/60 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:border-violet-500/40 hover:text-white"
+              >
+                In Text übernehmen
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={baueKiVorlage}
-            className="mt-2 rounded-lg border border-zinc-700/50 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:border-zinc-600 hover:text-zinc-100"
-          >
-            In Text übernehmen
-          </button>
         </div>
 
         <div className="p-4 pt-3">
