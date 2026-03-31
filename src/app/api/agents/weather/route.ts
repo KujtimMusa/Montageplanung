@@ -1,7 +1,9 @@
-import { streamText } from "ai";
+import { generateText } from "ai";
+import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { wetterVorhersageLaden } from "@/lib/weather/open-meteo";
 import { istKiKonfiguriert, kiModell } from "@/lib/agents/ki-client";
+import type { KiStrukturierteAgentAntwort } from "@/types/ki-actions";
 
 /** Wetter — Open-Meteo + KI-Text-Stream */
 export async function POST(request: Request) {
@@ -34,12 +36,22 @@ export async function POST(request: Request) {
     );
   }
 
-  const result = streamText({
+  const { text } = await generateText({
     model: kiModell,
     system:
-      "Du bist Bau-Wetterberater. Antworte kurz auf Deutsch mit Handlungsempfehlung für Außenarbeiten.",
+      "Du bist Bau-Wetterberater. Antworte als valides JSON mit Feldern titel, zusammenfassung, abschnitte[] und aktionen[].",
     prompt: `Koordinaten: ${lat}, ${lng}\nVorhersage JSON:\n${JSON.stringify(roh)}`,
   });
-
-  return result.toTextStreamResponse();
+  let parsed: KiStrukturierteAgentAntwort;
+  try {
+    parsed = JSON.parse(text) as KiStrukturierteAgentAntwort;
+  } catch {
+    parsed = {
+      titel: "Wetterprüfung",
+      zusammenfassung: text.slice(0, 120),
+      abschnitte: [{ ueberschrift: "Ergebnis", inhalt: text, typ: "info" }],
+      aktionen: [],
+    };
+  }
+  return NextResponse.json(parsed);
 }

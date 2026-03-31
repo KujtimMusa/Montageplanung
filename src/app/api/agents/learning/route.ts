@@ -1,6 +1,8 @@
-import { streamText } from "ai";
+import { generateText } from "ai";
+import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { istKiKonfiguriert, kiModell } from "@/lib/agents/ki-client";
+import type { KiStrukturierteAgentAntwort } from "@/types/ki-actions";
 
 /**
  * Lern-/Auswertungs-Agent — Text-Stream.
@@ -56,12 +58,36 @@ export async function POST(request: Request) {
     );
   }
 
-  const result = streamText({
+  const systemPrompt = `Du analysierst vergangene Planungsdaten und
+lernst daraus Optimierungsmuster.
+Antworte AUSSCHLIESSLICH als valides JSON:
+{
+  "titel": "Optimierungshinweise",
+  "zusammenfassung": "X Hinweise aus [N] analysierten Einsätzen",
+  "abschnitte": [
+    {
+      "ueberschrift": "Muster: [Beschreibung]",
+      "inhalt": "Markdown: Beobachtung, Häufigkeit, Empfehlung",
+      "typ": "info|warnung"
+    }
+  ],
+  "aktionen": []
+}`;
+  const { text } = await generateText({
     model: kiModell,
-    system:
-      "Du wertest Planungs- und Agentendaten aus. Keine erfundenen Fakten — nur aus den JSON-Daten schließen.",
+    system: systemPrompt,
     prompt: kontext,
   });
-
-  return result.toTextStreamResponse();
+  let parsed: KiStrukturierteAgentAntwort;
+  try {
+    parsed = JSON.parse(text) as KiStrukturierteAgentAntwort;
+  } catch {
+    parsed = {
+      titel: "Optimierungshinweise",
+      zusammenfassung: text.slice(0, 120),
+      abschnitte: [{ ueberschrift: "Ergebnis", inhalt: text, typ: "info" }],
+      aktionen: [],
+    };
+  }
+  return NextResponse.json(parsed);
 }

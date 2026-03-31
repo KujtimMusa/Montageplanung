@@ -1,6 +1,8 @@
-import { streamText } from "ai";
+import { generateText } from "ai";
+import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { istKiKonfiguriert, kiModell } from "@/lib/agents/ki-client";
+import type { KiStrukturierteAgentAntwort } from "@/types/ki-actions";
 
 /** Wochenbericht — Text-Stream */
 export async function POST() {
@@ -56,12 +58,38 @@ export async function POST() {
     );
   }
 
-  const result = streamText({
+  const systemPrompt = `Du erstellst Wochenberichte für einen Handwerksbetrieb.
+Antworte AUSSCHLIESSLICH als valides JSON:
+{
+  "titel": "Wochenbericht KW [X]",
+  "zusammenfassung": "...",
+  "abschnitte": [
+    { "ueberschrift": "Personal", "inhalt": "Markdown-Tabelle: Mitarbeiter | Status | Einsätze", "typ": "info" },
+    { "ueberschrift": "Projekte im Überblick", "inhalt": "Markdown-Tabelle", "typ": "info" },
+    { "ueberschrift": "Offene Einsätze (unbesetzt)", "inhalt": "...", "typ": "warnung" },
+    { "ueberschrift": "Empfehlungen für nächste Woche", "inhalt": "...", "typ": "info" }
+  ],
+  "aktionen": []
+}`;
+  const { text } = await generateText({
     model: kiModell,
-    system:
-      "Du erstellst einen prägnanten Wochenbericht für die Leitung (Handwerk). Struktur: Überblick, Highlights, Risiken, nächste Schritte. Antworte auf Deutsch.",
+    system: systemPrompt,
     prompt: `Kalenderwoche (Mo–So): ${von} bis ${bis}\n\nEinsätze:\n${JSON.stringify(zu ?? [])}\n\nAbwesenheiten (Überschneidung mit Woche):\n${JSON.stringify(abw ?? [])}\n\nProjekte (Stichprobe):\n${JSON.stringify(pr ?? [])}`,
   });
-
-  return result.toTextStreamResponse();
+  let parsed: KiStrukturierteAgentAntwort;
+  try {
+    parsed = JSON.parse(text) as KiStrukturierteAgentAntwort;
+  } catch {
+    parsed = {
+      titel: "Wochenbericht",
+      zusammenfassung: text.slice(0, 120),
+      abschnitte: [{ ueberschrift: "Ergebnis", inhalt: text, typ: "info" }],
+      aktionen: [],
+    };
+  }
+  // TS-safe fallback header
+  if (!parsed.abschnitte?.length) {
+    parsed.abschnitte = [{ ueberschrift: "Ergebnis", inhalt: text, typ: "info" }];
+  }
+  return NextResponse.json(parsed);
 }

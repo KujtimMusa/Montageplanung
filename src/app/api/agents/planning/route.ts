@@ -1,6 +1,8 @@
-import { streamText } from "ai";
+import { generateText } from "ai";
+import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { istKiKonfiguriert, kiModell } from "@/lib/agents/ki-client";
+import type { KiStrukturierteAgentAntwort } from "@/types/ki-actions";
 
 /** Planungsoptimierer — Text-Stream */
 export async function POST(request: Request) {
@@ -39,12 +41,52 @@ export async function POST(request: Request) {
     );
   }
 
-  const result = streamText({
-    model: kiModell,
-    system:
-      "Du bist Planungsassistent für einen Handwerksbetrieb. Schlage eine sinnvolle Teamzusammenstellung und Reihenfolge vor. Antworte auf Deutsch, stichpunktartig, ohne Markdown-Codeblöcke.",
-    prompt: `Mitarbeiter:\n${JSON.stringify(ma ?? [])}\n\nEinsätze (Stichprobe):\n${JSON.stringify(zu ?? [])}\n\nAnfrage-Parameter:\n${JSON.stringify(body)}`,
-  });
+  const systemPrompt = `Du bist Planungsassistent für einen Handwerksbetrieb.
+Antworte AUSSCHLIESSLICH als valides JSON:
+{
+  "titel": "Planungsvorschlag",
+  "zusammenfassung": "X Einsätze vorgeschlagen",
+  "abschnitte": [
+    {
+      "ueberschrift": "Projekt: [Name]",
+      "inhalt": "Markdown: empfohlene Mitarbeiter, Begründung",
+      "typ": "info"
+    }
+  ],
+  "aktionen": [
+    {
+      "typ": "einsatz_erstellen",
+      "label": "Einplanen: [Mitarbeiter] → [Projekt] am [Datum]",
+      "payload": {
+        "employee_id": "echte-id",
+        "project_id": "echte-id",
+        "project_title": "...",
+        "date": "YYYY-MM-DD",
+        "start_time": "07:00",
+        "end_time": "16:00"
+      },
+      "risiko": "niedrig"
+    }
+  ]
+}
+Nutze NUR echte IDs aus den mitgelieferten Daten.`;
 
-  return result.toTextStreamResponse();
+  const userPrompt = `Mitarbeiter:\n${JSON.stringify(ma ?? [])}\n\nEinsätze (Stichprobe):\n${JSON.stringify(zu ?? [])}\n\nAnfrage-Parameter:\n${JSON.stringify(body)}`;
+  const { text } = await generateText({
+    model: kiModell,
+    system: systemPrompt,
+    prompt: userPrompt,
+  });
+  let parsed: KiStrukturierteAgentAntwort;
+  try {
+    parsed = JSON.parse(text) as KiStrukturierteAgentAntwort;
+  } catch {
+    parsed = {
+      titel: "Planungsvorschlag",
+      zusammenfassung: text.slice(0, 120),
+      abschnitte: [{ ueberschrift: "Ergebnis", inhalt: text, typ: "info" }],
+      aktionen: [],
+    };
+  }
+  return NextResponse.json(parsed);
 }

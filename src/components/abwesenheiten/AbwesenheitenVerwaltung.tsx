@@ -661,6 +661,19 @@ export function AbwesenheitenVerwaltung() {
           ignoreDuplicates: true,
         });
         if (error) throw error;
+        if (payload.type === "krank") {
+          void fetch("/api/automations/trigger", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              typ: "krankmeldung",
+              payload: {
+                mitarbeiter_id: payload.employee_id,
+                datum: payload.start_date,
+              },
+            }),
+          }).catch(() => {});
+        }
         toast.success("Abwesenheit erfasst.");
       }
 
@@ -955,6 +968,15 @@ export function AbwesenheitenVerwaltung() {
       if (error) {
         console.error("[KI Abwesenheit]", error);
         fehler++;
+      } else if (typMapped === "krank") {
+        void fetch("/api/automations/trigger", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            typ: "krankmeldung",
+            payload: { mitarbeiter_id: ma.id, datum: toDateKey(v.start_date) },
+          }),
+        }).catch(() => {});
       }
     }
 

@@ -1,6 +1,8 @@
-import { streamText } from "ai";
+import { generateText } from "ai";
+import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { istKiKonfiguriert, kiModell } from "@/lib/agents/ki-client";
+import type { KiStrukturierteAgentAntwort } from "@/types/ki-actions";
 
 /** Konflikt-Resolver — Text-Stream */
 export async function POST() {
@@ -35,12 +37,44 @@ export async function POST() {
     );
   }
 
-  const result = streamText({
+  const systemPrompt = `Du analysierst Einsatzpläne auf Konflikte.
+Antworte AUSSCHLIESSLICH als valides JSON:
+{
+  "titel": "Konflikt-Analyse",
+  "zusammenfassung": "X Konflikte gefunden",
+  "abschnitte": [
+    {
+      "ueberschrift": "Name des Konflikts",
+      "inhalt": "Markdown: wer, wann, warum Konflikt",
+      "typ": "kritisch|warnung|info"
+    }
+  ],
+  "aktionen": [
+    {
+      "typ": "einsatz_loeschen",
+      "label": "Konflikt lösen: [Beschreibung]",
+      "payload": { "assignment_id": "echte-id-aus-den-daten" },
+      "risiko": "mittel"
+    }
+  ]
+}
+Nur echte Konflikte — keine Halluzinationen.
+Nutze die echten IDs aus den mitgelieferten Daten.`;
+  const { text } = await generateText({
     model: kiModell,
-    system:
-      "Du prüfst Einsatzpläne auf Risiken, Überschneidungen und Engpässe. Antworte auf Deutsch, strukturiert.",
+    system: systemPrompt,
     prompt: `Einsätze:\n${JSON.stringify(zu ?? [])}`,
   });
-
-  return result.toTextStreamResponse();
+  let parsed: KiStrukturierteAgentAntwort;
+  try {
+    parsed = JSON.parse(text) as KiStrukturierteAgentAntwort;
+  } catch {
+    parsed = {
+      titel: "Konflikt-Analyse",
+      zusammenfassung: text.slice(0, 120),
+      abschnitte: [{ ueberschrift: "Ergebnis", inhalt: text, typ: "info" }],
+      aktionen: [],
+    };
+  }
+  return NextResponse.json(parsed);
 }

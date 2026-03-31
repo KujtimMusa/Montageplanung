@@ -1,6 +1,8 @@
-import { streamText } from "ai";
+import { generateText } from "ai";
+import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { istKiKonfiguriert, kiModell } from "@/lib/agents/ki-client";
+import type { KiStrukturierteAgentAntwort } from "@/types/ki-actions";
 
 /** Kapazitätsplaner — Auslastung pro Team, Text-Stream */
 export async function POST() {
@@ -38,12 +40,37 @@ export async function POST() {
     );
   }
 
-  const result = streamText({
+  const systemPrompt = `Du analysierst Teamkapazitäten.
+Antworte AUSSCHLIESSLICH als valides JSON:
+{
+  "titel": "Kapazitätsanalyse",
+  "zusammenfassung": "...",
+  "abschnitte": [
+    {
+      "ueberschrift": "Team [Name]",
+      "inhalt": "Markdown-Tabelle mit Auslastung je Mitarbeiter",
+      "typ": "info|warnung|kritisch"
+    }
+  ],
+  "aktionen": []
+}
+Berechne Auslastung aus den Einsatzdaten.
+Markiere Mitarbeiter >80% als warnung, >95% als kritisch.`;
+  const { text } = await generateText({
     model: kiModell,
-    system:
-      "Du bist Kapazitätsplaner für einen Handwerksbetrieb. Analysiere Teamgröße (über team_members), geplante Einsätze mit team_id und zeige Engpässe, freie Kapazität und Empfehlungen. Antworte auf Deutsch, mit klaren Abschnitten.",
+    system: systemPrompt,
     prompt: `Zeitraum: ${heute} bis ${bis}\n\nTeams:\n${JSON.stringify(teams ?? [])}\n\nTeam-Mitglieder (Stichprobe):\n${JSON.stringify(members ?? [])}\n\nEinsätze (Stichprobe, mit team_id):\n${JSON.stringify(zu ?? [])}`,
   });
-
-  return result.toTextStreamResponse();
+  let parsed: KiStrukturierteAgentAntwort;
+  try {
+    parsed = JSON.parse(text) as KiStrukturierteAgentAntwort;
+  } catch {
+    parsed = {
+      titel: "Kapazitätsanalyse",
+      zusammenfassung: text.slice(0, 120),
+      abschnitte: [{ ueberschrift: "Ergebnis", inhalt: text, typ: "info" }],
+      aktionen: [],
+    };
+  }
+  return NextResponse.json(parsed);
 }

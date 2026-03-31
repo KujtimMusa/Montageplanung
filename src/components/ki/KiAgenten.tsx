@@ -11,9 +11,12 @@ import {
   Loader2,
   Sparkles,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useState, type ComponentProps } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import type { KiAction, KiStrukturierteAgentAntwort } from "@/types/ki-actions";
 
 type AgentDef = {
   id: string;
@@ -89,37 +92,106 @@ async function kopiereText(text: string) {
   }
 }
 
-function AgentErgebnis({ text }: { text: string }) {
-  let parsed: Record<string, unknown> | null = null;
-  try {
-    parsed = JSON.parse(text) as Record<string, unknown>;
-  } catch {
-    parsed = null;
-  }
-
-  if (parsed) {
-    return (
-      <div className="mt-3 space-y-2">
-        {Object.entries(parsed).map(([k, v]) => (
-          <div
-            key={k}
-            className="rounded-xl border border-zinc-700/40 bg-zinc-800/60 px-3 py-2"
-          >
-            <p className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">
-              {k.replace(/_/g, " ")}
-            </p>
-            <p className="text-xs leading-relaxed text-zinc-300">
-              {typeof v === "string" ? v : JSON.stringify(v)}
-            </p>
-          </div>
-        ))}
+function AgentErgebnis({
+  daten,
+  onAktion,
+}: {
+  daten: KiStrukturierteAgentAntwort;
+  onAktion: (a: KiAction) => Promise<void>;
+}) {
+  const [ausgefuehrt, setAusgefuehrt] = useState<
+    Record<number, "pending" | "ok" | "fehler">
+  >({});
+  const mdComponentsKompakt = {
+    p: (props: ComponentProps<"p">) => (
+      <p className="my-1 text-xs leading-relaxed text-zinc-400" {...props} />
+    ),
+    table: (props: ComponentProps<"table">) => (
+      <div className="my-1 overflow-x-auto">
+        <table className="w-full border-collapse text-[11px]" {...props} />
       </div>
-    );
-  }
+    ),
+    th: (props: ComponentProps<"th">) => (
+      <th className="border-b border-zinc-700/60 px-2 py-1 text-left text-zinc-500" {...props} />
+    ),
+    td: (props: ComponentProps<"td">) => (
+      <td className="border-b border-zinc-800/40 px-2 py-1 text-zinc-300" {...props} />
+    ),
+  };
 
   return (
-    <div className="mt-3 max-h-48 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-zinc-300">
-      {text}
+    <div className="mt-3 space-y-3 border-t border-zinc-800/40 pt-3">
+      <p className="text-xs font-medium text-zinc-400">{daten.zusammenfassung}</p>
+
+      {daten.abschnitte?.map((ab, i) => (
+        <div key={i}>
+          <div className="mb-1.5 flex items-center gap-2">
+            {(ab.typ === "kritisch" || ab.typ === "warnung") && (
+              <AlertTriangle
+                size={11}
+                className={ab.typ === "kritisch" ? "text-red-400" : "text-amber-500"}
+              />
+            )}
+            {ab.typ === "erfolg" && (
+              <span className="text-[11px] text-emerald-500">OK</span>
+            )}
+            <p
+              className={
+                ab.typ === "kritisch"
+                  ? "text-[11px] font-semibold text-red-400"
+                  : ab.typ === "warnung"
+                    ? "text-[11px] font-semibold text-amber-500"
+                    : ab.typ === "erfolg"
+                      ? "text-[11px] font-semibold text-emerald-500"
+                      : "text-[11px] font-semibold text-zinc-400"
+              }
+            >
+              {ab.ueberschrift}
+            </p>
+          </div>
+          <div className="pl-4 text-xs text-zinc-400">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponentsKompakt}>
+              {ab.inhalt}
+            </ReactMarkdown>
+          </div>
+        </div>
+      ))}
+
+      {daten.aktionen?.length > 0 && (
+        <div className="space-y-2 border-t border-zinc-800/40 pt-2">
+          <p className="text-[10px] uppercase tracking-wider text-zinc-600">
+            Direkt ausführen
+          </p>
+          {daten.aktionen.map((a, i) => {
+            const state = ausgefuehrt[i];
+            return (
+              <button
+                key={i}
+                disabled={Boolean(state)}
+                onClick={async () => {
+                  setAusgefuehrt((p) => ({ ...p, [i]: "pending" }));
+                  try {
+                    await onAktion(a);
+                    setAusgefuehrt((p) => ({ ...p, [i]: "ok" }));
+                  } catch {
+                    setAusgefuehrt((p) => ({ ...p, [i]: "fehler" }));
+                  }
+                }}
+                className={
+                  state === "ok"
+                    ? "w-full rounded-xl border border-emerald-900/40 bg-emerald-950/30 px-3 py-2 text-left text-xs text-emerald-500"
+                    : state === "fehler"
+                      ? "w-full rounded-xl border border-red-900/40 bg-red-950/30 px-3 py-2 text-left text-xs text-red-400"
+                      : "w-full rounded-xl border border-zinc-700/40 bg-zinc-800/40 px-3 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-800/80"
+                }
+              >
+                {state === "pending" ? "..." : state === "ok" ? "OK " : state === "fehler" ? "X " : "⚡ "}
+                {a.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -142,11 +214,13 @@ function AgentKarte({
   laed,
   ergebnis,
   onStart,
+  onAktion,
 }: {
   agent: AgentDef;
   laed: boolean;
-  ergebnis: string;
+  ergebnis: KiStrukturierteAgentAntwort | null;
   onStart: () => void;
+  onAktion: (a: KiAction) => Promise<void>;
 }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-zinc-800/60 bg-zinc-900 transition-colors hover:border-zinc-700/60">
@@ -168,7 +242,7 @@ function AgentKarte({
 
       {ergebnis && (
         <div className="max-h-40 overflow-y-auto px-4 pb-3">
-          <AgentErgebnis text={ergebnis} />
+          <AgentErgebnis daten={ergebnis} onAktion={onAktion} />
         </div>
       )}
 
@@ -196,12 +270,25 @@ function AgentKarte({
 }
 
 export function KiAgenten() {
-  const [ergebnis, setErgebnis] = useState<Record<string, string>>({});
+  const [ergebnis, setErgebnis] = useState<Record<string, KiStrukturierteAgentAntwort>>({});
   const [laed, setLaed] = useState<Record<string, boolean>>({});
+
+  async function aktionAusfuehren(a: KiAction) {
+    const res = await fetch("/api/ki-actions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: a }),
+    });
+    if (!res.ok) throw new Error("Aktion fehlgeschlagen");
+  }
 
   const agentenStarten = useCallback(async (agent: AgentDef) => {
     setLaed((s) => ({ ...s, [agent.id]: true }));
-    setErgebnis((s) => ({ ...s, [agent.id]: "" }));
+    setErgebnis((s) => {
+      const n = { ...s };
+      delete n[agent.id];
+      return n;
+    });
     try {
       const init: RequestInit = {
         method: "POST",
@@ -216,48 +303,14 @@ export function KiAgenten() {
       }
 
       const response = await fetch(agent.api, init);
-      const ct = response.headers.get("content-type") ?? "";
 
       if (!response.ok) {
-        if (ct.includes("application/json")) {
-          const j = (await response.json()) as Record<string, unknown>;
-          const msg =
-            (typeof j.fehler === "string" && j.fehler) ||
-            (typeof j.error === "string" && j.error) ||
-            (typeof j.nachricht === "string" && j.nachricht) ||
-            (typeof j.analyse === "string" && j.analyse) ||
-            (typeof j.antwort === "string" && j.antwort) ||
-            JSON.stringify(j);
-          setErgebnis((prev) => ({ ...prev, [agent.id]: msg }));
-          toast.info("Antwort ohne KI-Stream (Konfiguration prüfen).");
-        } else {
-          toast.error(`${agent.titel} nicht erreichbar.`);
-        }
+        toast.error(`${agent.titel} nicht erreichbar.`);
         return;
       }
 
-      if (ct.includes("application/json")) {
-        const j = await response.json();
-        setErgebnis((prev) => ({
-          ...prev,
-          [agent.id]: JSON.stringify(j, null, 2),
-        }));
-        return;
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        toast.error("Keine Antwort-Stream.");
-        return;
-      }
-      const decoder = new TextDecoder();
-      let text = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        text += decoder.decode(value, { stream: true });
-        setErgebnis((prev) => ({ ...prev, [agent.id]: text }));
-      }
+      const json = (await response.json()) as KiStrukturierteAgentAntwort;
+      setErgebnis((prev) => ({ ...prev, [agent.id]: json }));
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Netzwerkfehler.";
       toast.error(msg);
@@ -273,8 +326,9 @@ export function KiAgenten() {
           <AgentKarte
             agent={agent}
             laed={Boolean(laed[agent.id])}
-            ergebnis={ergebnis[agent.id] ?? ""}
+            ergebnis={ergebnis[agent.id] ?? null}
             onStart={() => void agentenStarten(agent)}
+            onAktion={aktionAusfuehren}
           />
           {ergebnis[agent.id] ? (
             <Button
@@ -282,7 +336,7 @@ export function KiAgenten() {
               size="sm"
               variant="outline"
               className="absolute right-4 top-4 h-7 w-7 border-zinc-700 bg-zinc-900 p-0 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-              onClick={() => void kopiereText(ergebnis[agent.id])}
+              onClick={() => void kopiereText(JSON.stringify(ergebnis[agent.id], null, 2))}
             >
               <Copy size={12} />
             </Button>

@@ -20,7 +20,6 @@ type AutoRow = {
   beschreibung: string;
   Icon: typeof AlertTriangle;
   triggerLabel: string;
-  letzteAusfuehrung: string | null;
 };
 
 type DbRow = {
@@ -39,7 +38,6 @@ const AUTOMATISIERUNGEN: AutoRow[] = [
       "Bei neuer Krankmeldung startet automatisch der KI-Notfallplan und sucht Ersatz",
     triggerLabel: "Bei Krankmeldung",
     Icon: AlertTriangle,
-    letzteAusfuehrung: null,
   },
   {
     id: "neuer_einsatz",
@@ -49,7 +47,6 @@ const AUTOMATISIERUNGEN: AutoRow[] = [
       "Generiert automatisch einen WhatsApp-Link wenn ein Einsatz zugewiesen wird",
     triggerLabel: "Bei Einsatz-Zuweisung",
     Icon: Bell,
-    letzteAusfuehrung: null,
   },
   {
     id: "projekt_ueberfaellig",
@@ -59,7 +56,6 @@ const AUTOMATISIERUNGEN: AutoRow[] = [
       "Tägliche Prüfung: überfällige Projekte werden als Hinweis markiert",
     triggerLabel: "Täglich (Cron)",
     Icon: Clock,
-    letzteAusfuehrung: null,
   },
   {
     id: "dienstleister_absage",
@@ -69,13 +65,13 @@ const AUTOMATISIERUNGEN: AutoRow[] = [
       "Wenn ein Partner auf inaktiv gesetzt wird, erscheint ein Hinweis im Notfallplan",
     triggerLabel: "Bei Status-Änderung",
     Icon: Building2,
-    letzteAusfuehrung: null,
   },
 ];
 
 export function KiAutomatisierungen() {
   const supabase = createClient();
   const [aktiv, setAktiv] = useState<Record<string, boolean>>({});
+  const [letzterLog, setLetzterLog] = useState<Record<string, string | null>>({});
   const [lädt, setLädt] = useState(true);
 
   const laden = useCallback(async () => {
@@ -120,11 +116,43 @@ export function KiAutomatisierungen() {
     }
 
     const row = data as DbRow;
+    const { data: logs } = await supabase
+      .from("agent_log")
+      .select("agent_type, created_at")
+      .in("agent_type", [
+        "automation_krankmeldung",
+        "automation_neuer_einsatz",
+        "automation_projekt_ueberfaellig",
+        "automation_dienstleister_absage",
+      ])
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    const map = new Map(
+      [
+        "krankmeldung",
+        "neuer_einsatz",
+        "projekt_ueberfaellig",
+        "dienstleister_absage",
+      ].map((typ) => [
+        typ,
+        (logs as Array<{ agent_type?: string; created_at?: string }> | null)?.find(
+          (l) => l.agent_type === `automation_${typ}`
+        )?.created_at ?? null,
+      ])
+    );
+
     setAktiv({
       krankmeldung: row.automation_krankmeldung,
       neuer_einsatz: row.automation_neuer_einsatz,
       projekt_ueberfaellig: row.automation_projekt_ueberfaellig,
       dienstleister_absage: row.automation_dienstleister_absage,
+    });
+    setLetzterLog({
+      krankmeldung: map.get("krankmeldung") ?? null,
+      neuer_einsatz: map.get("neuer_einsatz") ?? null,
+      projekt_ueberfaellig: map.get("projekt_ueberfaellig") ?? null,
+      dienstleister_absage: map.get("dienstleister_absage") ?? null,
     });
     setLädt(false);
   }, [supabase]);
@@ -182,8 +210,8 @@ export function KiAutomatisierungen() {
               </div>
               <p className="mt-0.5 text-xs text-zinc-500">{a.beschreibung}</p>
               <p className="mt-1 text-[10px] text-zinc-600">
-                {a.letzteAusfuehrung
-                  ? `Zuletzt: ${a.letzteAusfuehrung}`
+                {letzterLog[a.id]
+                  ? `Zuletzt: ${new Date(letzterLog[a.id] as string).toLocaleDateString("de-DE")}`
                   : "Noch nie ausgeführt"}
               </p>
             </div>

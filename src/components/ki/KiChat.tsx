@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import type { KiAction, KiStrukturierteAntwort } from "@/types/ki-actions";
 
 function textAusNachricht(m: UIMessage): string {
   return (
@@ -94,6 +95,108 @@ function RenderKiText({ text }: { text: string }) {
     >
       {text}
     </ReactMarkdown>
+  );
+}
+
+function parseKiAntwort(text: string): KiStrukturierteAntwort | null {
+  try {
+    const match =
+      text.match(/```json\n?([\s\S]*?)\n?```/) ?? text.match(/(\{[\s\S]*\})/);
+    if (!match) return null;
+    const raw = match[1] ?? match[0];
+    return JSON.parse(raw) as KiStrukturierteAntwort;
+  } catch {
+    return null;
+  }
+}
+
+function KiNachrichtBubble({ text }: { text: string }) {
+  const parsed = parseKiAntwort(text);
+  const [ausgefuehrt, setAusgefuehrt] = useState<
+    Record<number, "pending" | "ok" | "fehler">
+  >({});
+
+  async function aktion(a: KiAction, idx: number) {
+    setAusgefuehrt((p) => ({ ...p, [idx]: "pending" }));
+    try {
+      const res = await fetch("/api/ki-actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: a }),
+      });
+      setAusgefuehrt((p) => ({ ...p, [idx]: res.ok ? "ok" : "fehler" }));
+    } catch {
+      setAusgefuehrt((p) => ({ ...p, [idx]: "fehler" }));
+    }
+  }
+
+  if (!parsed) {
+    return <RenderKiText text={text} />;
+  }
+
+  return (
+    <div className="space-y-3">
+      {parsed.dringlichkeit !== "info" && (
+        <div
+          className={cn(
+            "flex items-center gap-2 rounded-xl border px-3 py-2 text-xs",
+            parsed.dringlichkeit === "kritisch"
+              ? "border-red-900/40 bg-red-950/30 text-red-300"
+              : "border-amber-900/40 bg-amber-950/30 text-amber-300"
+          )}
+        >
+          <span>{parsed.dringlichkeit === "kritisch" ? "⚠️" : "⚠️"}</span>
+          {parsed.zusammenfassung}
+        </div>
+      )}
+
+      {parsed.dringlichkeit === "info" && (
+        <p className="text-sm font-medium text-zinc-200">{parsed.zusammenfassung}</p>
+      )}
+
+      {parsed.details && <RenderKiText text={parsed.details} />}
+
+      {parsed.aktionen?.length > 0 && (
+        <div className="space-y-2 border-t border-zinc-800/40 pt-1">
+          <p className="text-[10px] uppercase tracking-wider text-zinc-600">
+            Vorgeschlagene Aktionen
+          </p>
+          {parsed.aktionen.map((a, i) => {
+            const state = ausgefuehrt[i];
+            return (
+              <button
+                key={i}
+                onClick={() => void aktion(a, i)}
+                disabled={Boolean(state)}
+                className={cn(
+                  "w-full rounded-xl border px-3 py-2.5 text-left text-xs transition-all",
+                  state === "ok"
+                    ? "border-emerald-900/40 bg-emerald-950/30 text-emerald-400"
+                    : state === "fehler"
+                      ? "border-red-900/40 bg-red-950/30 text-red-400"
+                      : state === "pending"
+                        ? "border-zinc-700/40 bg-zinc-800/60 text-zinc-400"
+                        : a.risiko === "hoch"
+                          ? "border-red-900/30 bg-red-950/20 text-red-300 hover:bg-red-950/40"
+                          : "border-zinc-700/40 bg-zinc-800/40 text-zinc-300 hover:bg-zinc-800/80"
+                )}
+              >
+                <span className="mr-2 inline-flex align-middle">
+                  {state === "pending"
+                    ? "..."
+                    : state === "ok"
+                      ? "OK"
+                      : state === "fehler"
+                        ? "X"
+                        : "⚡"}
+                </span>
+                <span>{a.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -249,7 +352,7 @@ export function KiChat() {
                   {isUser ? (
                     <p className="text-sm leading-relaxed">{text}</p>
                   ) : (
-                    <RenderKiText text={text} />
+                    <KiNachrichtBubble text={text} />
                   )}
                   <p
                     className={cn(
