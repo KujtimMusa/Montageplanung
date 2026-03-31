@@ -9,7 +9,7 @@ type Body = {
 };
 
 /**
- * Benachrichtigung nach neuem Einsatz (WhatsApp / Teams) — Fehler blockieren den Aufrufer nicht.
+ * Benachrichtigung nach neuem Einsatz (WhatsApp) — Fehler blockieren den Aufrufer nicht.
  */
 export async function POST(request: Request) {
   let body: Body;
@@ -30,13 +30,11 @@ export async function POST(request: Request) {
   const { data: rows } = await supabase
     .from("settings")
     .select("key, value")
-    .in("key", ["whatsapp_enabled", "teams_enabled", "teams_webhook_url"]);
+    .in("key", ["whatsapp_enabled"]);
 
   const map = Object.fromEntries((rows ?? []).map((r) => [r.key, r.value ?? ""]));
 
   const whatsappOn = map.whatsapp_enabled === "true";
-  const teamsOn = map.teams_enabled === "true";
-  const teamsWebhook = (map.teams_webhook_url ?? "").trim();
 
   const text = [
     "Neuer Einsatz",
@@ -58,20 +56,6 @@ export async function POST(request: Request) {
       }
     }
 
-    if (teamsOn) {
-      if (!teamsWebhook) {
-        console.info("[einsatz-neu] Teams: teams_webhook_url fehlt — Stub.");
-      } else {
-        await fetch(teamsWebhook, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text,
-            title: "Neuer Einsatz",
-          }),
-        }).catch((e) => console.warn("[einsatz-neu] Teams Webhook:", e));
-      }
-    }
   } catch (e) {
     console.warn("[einsatz-neu] Benachrichtigung:", e);
   }

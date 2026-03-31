@@ -20,6 +20,5 @@ export async function GET() {
     twilio_from_number: Boolean(process.env.TWILIO_FROM_NUMBER?.trim()),
     resend_api_key: Boolean(process.env.RESEND_API_KEY?.trim()),
     resend_from_email: Boolean(process.env.RESEND_FROM_EMAIL?.trim()),
-    teams_webhook_url: Boolean(process.env.TEAMS_WEBHOOK_URL?.trim()),
   });
 }

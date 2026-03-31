@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { createClient } from "@/lib/supabase/server";
 
-type Provider = "twilio" | "teams" | "resend" | "gemini";
+type Provider = "twilio" | "resend" | "gemini";
 
 async function loadSettingsMap(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -13,7 +13,7 @@ async function loadSettingsMap(
 }
 
 /**
- * POST { provider: 'twilio' | 'teams' | 'resend' | 'gemini' }
+ * POST { provider: 'twilio' | 'resend' | 'gemini' }
  */
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
   }
 
   const provider = body.provider as Provider | undefined;
-  if (!provider || !["twilio", "teams", "resend", "gemini"].includes(provider)) {
+  if (!provider || !["twilio", "resend", "gemini"].includes(provider)) {
     return NextResponse.json(
       { success: false, message: "Unbekannter provider" },
       { status: 400 }
@@ -90,35 +90,6 @@ export async function POST(request: Request) {
       return NextResponse.json({
         success: true,
         message: "Test-Nachricht über Twilio gesendet.",
-      });
-    }
-
-    if (provider === "teams") {
-      const s = await loadSettingsMap(supabase, ["teams_webhook_url", "teams_enabled"]);
-      const url =
-        s.teams_webhook_url?.trim() || process.env.TEAMS_WEBHOOK_URL?.trim();
-      if (!url) {
-        return NextResponse.json({
-          success: false,
-          message: "Teams: Webhook-URL fehlt.",
-        });
-      }
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: "Test Monteurplanung — Verbindung OK",
-        }),
-      });
-      if (!res.ok) {
-        return NextResponse.json({
-          success: false,
-          message: `Teams Webhook: HTTP ${res.status}`,
-        });
-      }
-      return NextResponse.json({
-        success: true,
-        message: "Test-Nachricht an Teams gesendet.",
       });
     }
 

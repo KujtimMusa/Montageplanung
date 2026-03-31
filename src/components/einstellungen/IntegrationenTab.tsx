@@ -8,16 +8,11 @@ import {
   Loader2Icon,
   MailIcon,
   MessageCircleIcon,
-  RadioIcon,
   SparklesIcon,
-  UsersIcon,
 } from "lucide-react";
-import { format, parseISO } from "date-fns";
-import { de } from "date-fns/locale";
 import { useSettings } from "@/lib/hooks/useSettings";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { SecretInput } from "@/components/einstellungen/SecretInput";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -29,7 +24,6 @@ export type EnvFlags = {
   twilio_from_number: boolean;
   resend_api_key: boolean;
   resend_from_email: boolean;
-  teams_webhook_url: boolean;
 };
 
 const twilioSchema = z.object({
@@ -39,18 +33,6 @@ const twilioSchema = z.object({
     .string()
     .min(1, "From-Nummer erforderlich.")
     .regex(/^\+\d/, "Mit Ländervorwahl, z. B. +49…"),
-});
-
-const teamsSchema = z.object({
-  teams_webhook_url: z.union([
-    z.literal(""),
-    z.string().url("Gültige URL eingeben."),
-  ]),
-});
-
-const personioSchema = z.object({
-  personio_api_key: z.string(),
-  personio_subdomain: z.string().min(1, "Subdomain erforderlich."),
 });
 
 const resendSchema = z.object({
@@ -64,16 +46,6 @@ const resendSchema = z.object({
 const geminiSchema = z.object({
   gemini_api_key: z.string(),
 });
-
-function formatPersonioSync(s: string | null): string {
-  if (!s?.trim()) return "Noch nie";
-  try {
-    const d = parseISO(s);
-    return `Zuletzt: ${format(d, "dd.MM.yyyy HH:mm", { locale: de })} Uhr`;
-  } catch {
-    return "Noch nie";
-  }
-}
 
 async function postTest(provider: string): Promise<{ success: boolean; message: string }> {
   const res = await fetch("/api/integrationen/test", {
@@ -177,9 +149,6 @@ export function IntegrationenTab({ envFlags }: Props) {
   const { getSetting, updateSetting } = useSettings();
   const [geladen, setGeladen] = useState(false);
 
-  const [teamsEnabled, setTeamsEnabled] = useState(false);
-  const [personioSyncText, setPersonioSyncText] = useState<string>("Noch nie");
-
   const twilioF = useForm<z.infer<typeof twilioSchema>>({
     resolver: zodResolver(twilioSchema),
     defaultValues: {
@@ -187,16 +156,6 @@ export function IntegrationenTab({ envFlags }: Props) {
       twilio_auth_token: "",
       twilio_from_number: "",
     },
-  });
-
-  const teamsF = useForm<z.infer<typeof teamsSchema>>({
-    resolver: zodResolver(teamsSchema),
-    defaultValues: { teams_webhook_url: "" },
-  });
-
-  const personioF = useForm<z.infer<typeof personioSchema>>({
-    resolver: zodResolver(personioSchema),
-    defaultValues: { personio_api_key: "", personio_subdomain: "" },
   });
 
   const resendF = useForm<z.infer<typeof resendSchema>>({
@@ -211,9 +170,6 @@ export function IntegrationenTab({ envFlags }: Props) {
 
   const [sTwilio, setSTwilio] = useState(false);
   const [tTwilio, setTTwilio] = useState(false);
-  const [sTeams, setSTeams] = useState(false);
-  const [tTeams, setTTeams] = useState(false);
-  const [sPersonio, setSPersonio] = useState(false);
   const [sResend, setSResend] = useState(false);
   const [tResend, setTResend] = useState(false);
   const [sGemini, setSGemini] = useState(false);
@@ -224,11 +180,6 @@ export function IntegrationenTab({ envFlags }: Props) {
       sid,
       token,
       from,
-      webhook,
-      te,
-      pKey,
-      pSub,
-      pSync,
       rKey,
       rFrom,
       gKey,
@@ -236,11 +187,6 @@ export function IntegrationenTab({ envFlags }: Props) {
       getSetting("twilio_account_sid"),
       getSetting("twilio_auth_token"),
       getSetting("twilio_from_number"),
-      getSetting("teams_webhook_url"),
-      getSetting("teams_enabled"),
-      getSetting("personio_api_key"),
-      getSetting("personio_subdomain"),
-      getSetting("personio_last_sync"),
       getSetting("resend_api_key"),
       getSetting("resend_from_email"),
       getSetting("gemini_api_key"),
@@ -251,20 +197,13 @@ export function IntegrationenTab({ envFlags }: Props) {
       twilio_auth_token: token ?? "",
       twilio_from_number: from ?? "",
     });
-    teamsF.reset({ teams_webhook_url: webhook ?? "" });
-    setTeamsEnabled(te === "true");
-    personioF.reset({
-      personio_api_key: pKey ?? "",
-      personio_subdomain: pSub ?? "",
-    });
-    setPersonioSyncText(formatPersonioSync(pSync));
     resendF.reset({
       resend_api_key: rKey ?? "",
       resend_from_email: rFrom ?? "",
     });
     geminiF.reset({ gemini_api_key: gKey ?? "" });
     setGeladen(true);
-  }, [getSetting, twilioF, teamsF, personioF, resendF, geminiF]);
+  }, [getSetting, twilioF, resendF, geminiF]);
 
   useEffect(() => {
     void laden();
@@ -279,14 +218,6 @@ export function IntegrationenTab({ envFlags }: Props) {
         envFlags.twilio_auth_token &&
         envFlags.twilio_from_number)
   );
-
-  const teamsUrl = teamsF.watch("teams_webhook_url");
-  const teamsVerbunden = Boolean(
-    teamsUrl?.trim() || envFlags.teams_webhook_url
-  );
-
-  const personioKey = personioF.watch("personio_api_key");
-  const personioVerbunden = Boolean(personioKey?.trim());
 
   const resend = resendF.watch();
   const resendVerbunden = Boolean(
@@ -319,41 +250,6 @@ export function IntegrationenTab({ envFlags }: Props) {
       else toast.error(`Test fehlgeschlagen: ${r.message}`);
     } finally {
       setTTwilio(false);
-    }
-  }
-
-  async function speichernTeams(w: z.infer<typeof teamsSchema>) {
-    setSTeams(true);
-    try {
-      await updateSetting("teams_webhook_url", w.teams_webhook_url.trim() || null);
-      await updateSetting("teams_enabled", teamsEnabled ? "true" : "false");
-      toast.success("Teams-Einstellungen gespeichert.");
-      void laden();
-    } finally {
-      setSTeams(false);
-    }
-  }
-
-  async function testTeams() {
-    setTTeams(true);
-    try {
-      const r = await postTest("teams");
-      if (r.success) toast.success("Verbindung erfolgreich ✓");
-      else toast.error(`Test fehlgeschlagen: ${r.message}`);
-    } finally {
-      setTTeams(false);
-    }
-  }
-
-  async function speichernPersonio(w: z.infer<typeof personioSchema>) {
-    setSPersonio(true);
-    try {
-      await updateSetting("personio_api_key", w.personio_api_key.trim() || null);
-      await updateSetting("personio_subdomain", w.personio_subdomain.trim() || null);
-      toast.success("Personio-Einstellungen gespeichert.");
-      void laden();
-    } finally {
-      setSPersonio(false);
     }
   }
 
@@ -465,46 +361,6 @@ export function IntegrationenTab({ envFlags }: Props) {
       />
 
       <IntegrationKarte
-        icon={<RadioIcon size={14} />}
-        titel="Microsoft Teams"
-        beschreibung="Incoming Webhook"
-        verbunden={teamsVerbunden}
-        onSpeichern={() => void teamsF.handleSubmit(speichernTeams)()}
-        onTest={() => void testTeams()}
-        testLaed={tTeams}
-        speichernLaed={sTeams}
-        hatFelder={Boolean(teamsF.watch("teams_webhook_url")?.trim())}
-        kinder={
-          <>
-          {envFlags.teams_webhook_url && (
-            <p className="rounded-md border border-amber-900/50 bg-amber-950/30 px-3 py-2 text-xs text-amber-200/90">
-              Webhook-URL kann ueber TEAMS_WEBHOOK_URL in der Umgebung gesetzt sein.
-            </p>
-          )}
-          <div className="space-y-1.5">
-            <Label>Webhook-URL</Label>
-            <Input
-              type="url"
-              placeholder="https://..."
-              className="border-zinc-700 bg-zinc-950"
-              {...teamsF.register("teams_webhook_url")}
-            />
-          </div>
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/80 px-3 py-2">
-            <Label htmlFor="teams-enabled" className="cursor-pointer text-sm">
-              Benachrichtigungen aktiv
-            </Label>
-            <Switch
-              id="teams-enabled"
-              checked={teamsEnabled}
-              onCheckedChange={(c) => setTeamsEnabled(Boolean(c))}
-            />
-          </div>
-          </>
-        }
-      />
-
-      <IntegrationKarte
         icon={<MailIcon size={14} />}
         titel="E-Mail / Resend"
         beschreibung="Transaktions-E-Mails"
@@ -538,49 +394,6 @@ export function IntegrationenTab({ envFlags }: Props) {
               {...resendF.register("resend_from_email")}
             />
           </div>
-          </>
-        }
-      />
-
-      <IntegrationKarte
-        icon={<UsersIcon size={14} />}
-        titel="Personio"
-        beschreibung="Abwesenheiten / HR-Sync"
-        badge="Beta"
-        verbunden={personioVerbunden}
-        onSpeichern={() => void personioF.handleSubmit(speichernPersonio)()}
-        speichernLaed={sPersonio}
-        hatFelder={Boolean(
-          personioF.watch("personio_api_key") && personioF.watch("personio_subdomain")
-        )}
-        kinder={
-          <>
-          <div className="rounded-xl border border-amber-900/30 bg-amber-950/20 px-3 py-2 text-xs text-amber-400">
-            ⚠️ Personio-Sync ist in Entwicklung. Credentials können bereits gespeichert werden.
-          </div>
-          <div className="space-y-1.5">
-            <Label>API-Key</Label>
-            <SecretInput
-              className="w-full"
-              inputClassName="border-zinc-700 bg-zinc-950"
-              {...personioF.register("personio_api_key")}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Subdomain</Label>
-            <Input
-              placeholder="firma"
-              className="border-zinc-700 bg-zinc-950"
-              {...personioF.register("personio_subdomain")}
-            />
-          </div>
-          <p className="text-xs text-zinc-500">{personioSyncText}</p>
-          <button
-            disabled
-            className="rounded-xl border border-zinc-700/30 bg-zinc-800/40 px-3 py-2 text-xs font-medium text-zinc-600 cursor-not-allowed"
-          >
-            Sync (kommt bald)
-          </button>
           </>
         }
       />

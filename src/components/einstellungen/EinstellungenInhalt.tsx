@@ -24,7 +24,6 @@ const defaultEnvFlags: EnvFlags = {
   twilio_from_number: false,
   resend_api_key: false,
   resend_from_email: false,
-  teams_webhook_url: false,
 };
 
 export function EinstellungenInhalt() {
@@ -68,7 +67,6 @@ export function EinstellungenInhalt() {
           twilio_from_number: Boolean(j.twilio_from_number),
           resend_api_key: Boolean(j.resend_api_key),
           resend_from_email: Boolean(j.resend_from_email),
-          teams_webhook_url: Boolean(j.teams_webhook_url),
         });
       })
       .catch((e) => logFehler("EinstellungenInhalt:env-flags", e));
