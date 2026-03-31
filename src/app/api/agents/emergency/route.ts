@@ -50,9 +50,10 @@ export async function POST(request: Request) {
       );
     }
 
+    const modelId = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: modelId,
       generationConfig: {
         responseMimeType: "application/json",
         temperature: 0.1,

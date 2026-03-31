@@ -804,13 +804,41 @@ export function AbwesenheitenVerwaltung() {
         }),
       });
       if (!res.ok) {
-        toast.error("KI konnte die Eingabe nicht verstehen. Bitte präziser formulieren.");
+        const err = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          message?: string;
+        };
+        setKiVorschlag({
+          mitarbeiter: [],
+          typ: "sonstiges",
+          start_date: "",
+          end_date: "",
+          tage: 0,
+          begruendung: "",
+          error: err.error ?? "parse_fehler",
+        });
+        toast.error(
+          err.message ??
+            "KI konnte die Eingabe nicht verstehen. Bitte präziser formulieren."
+        );
         return;
       }
       const v = (await res.json()) as KiAbwesenheitVorschlag;
       setKiVorschlag(v);
-    } catch {
-      toast.error("KI konnte die Eingabe nicht verstehen. Bitte präziser formulieren.");
+    } catch (e) {
+      setKiVorschlag({
+        mitarbeiter: [],
+        typ: "sonstiges",
+        start_date: "",
+        end_date: "",
+        tage: 0,
+        begruendung: "",
+        error: "netzwerk_fehler",
+      });
+      const msg = e instanceof Error ? e.message : "";
+      toast.error(
+        msg || "KI konnte die Eingabe nicht verstehen. Bitte präziser formulieren."
+      );
     } finally {
       setKiLaed(false);
     }

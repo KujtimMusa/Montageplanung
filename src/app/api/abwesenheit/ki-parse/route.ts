@@ -29,9 +29,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "GEMINI_API_KEY fehlt." }, { status: 503 });
     }
 
+    const modelId = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
+      model: modelId,
       generationConfig: {
         responseMimeType: "application/json",
         temperature: 0.1,
