@@ -859,13 +859,12 @@ export function NotfallModus() {
         return h * 60 + m + s / 60;
       };
 
-      // 1) Konflikte: gleicher MA, gleiche Tagesdate, überlappende Zeitfenster
+      // 1) Konflikte: gleicher MA, gleicher Tag, überlappende Zeitfenster
       const byKey = new Map<string, Record<string, unknown>[]>();
       for (const r of rows) {
         const date = String(r.date);
         const assignmentId = String(r.id);
         const empId = r.employee_id == null ? null : String(r.employee_id);
-        const teamId = r.team_id == null ? null : String(r.team_id);
         const empFromPivot = assignmentEmployeesByAssignment.get(assignmentId) ?? [];
 
         // Mitarbeiter aus assignments.employee_id + assignment_employees sammeln
@@ -878,17 +877,6 @@ export function NotfallModus() {
           const arr = byKey.get(k) ?? [];
           arr.push(r);
           byKey.set(k, arr);
-        }
-
-        // Team-Slots ohne konkrete Person: potentieller Konflikt für alle Team-Mitglieder
-        if (alleEmpIds.length === 0 && teamId) {
-          const members = teamMembersByTeam.get(teamId) ?? [];
-          for (const mid of members) {
-            const k = `${mid}_${date}`;
-            const arr = byKey.get(k) ?? [];
-            arr.push({ ...r, __teamSlot: true, __teamMemberId: mid });
-            byKey.set(k, arr);
-          }
         }
       }
 
@@ -923,12 +911,11 @@ export function NotfallModus() {
             (x) => `${String(x.start_time)}–${String(x.end_time)}`
           )
           .join(", ");
-
         konflikte.push({
           employee_id,
           mitarbeiterName: name,
           datum,
-          beschreibung: `Überschneidungen: ${times}`,
+          beschreibung: `Überschneidung: ${times}`,
           typ: "konflikt",
         });
       }
@@ -1095,11 +1082,12 @@ export function NotfallModus() {
                               .getElementById("notfall-stepper")
                               ?.scrollIntoView({ behavior: "smooth" });
                           }}
-                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 hover:border-zinc-600 transition-all text-xs font-medium text-zinc-300"
+                          title={p.beschreibung}
+                          className="flex min-w-[220px] max-w-[320px] items-start gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-2.5 py-2 text-left transition-all hover:border-zinc-600"
                         >
                           <div
                             className={cn(
-                              "w-1.5 h-1.5 rounded-full flex-shrink-0",
+                              "mt-1 h-1.5 w-1.5 flex-shrink-0 rounded-full",
                               p.typ === "konflikt"
                                 ? "bg-amber-500"
                                 : p.abwesenheitTypLabel === "Krank"
@@ -1107,33 +1095,44 @@ export function NotfallModus() {
                                   : "bg-amber-500"
                             )}
                           />
-                          <span className="max-w-[120px] truncate">{p.mitarbeiterName}</span>
-                          <span className="text-zinc-600 tabular-nums">
-                            {(() => {
-                              try {
-                                return new Date(p.datum + "T00:00:00").toLocaleDateString(
-                                  "de-DE",
-                                  { day: "2-digit", month: "2-digit" }
-                                );
-                              } catch {
-                                return p.datum;
-                              }
-                            })()}
-                          </span>
-                          {p.typ === "abwesenheit" ? (
-                            <span
-                              className={cn(
-                                "text-[10px] font-semibold",
-                                p.abwesenheitTypLabel === "Krank"
-                                  ? "text-red-400"
-                                  : p.abwesenheitTypLabel === "Urlaub"
-                                    ? "text-amber-400"
-                                    : "text-zinc-400"
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 text-xs font-medium text-zinc-300">
+                              <span className="truncate">{p.mitarbeiterName}</span>
+                              <span className="tabular-nums text-zinc-600">
+                                {(() => {
+                                  try {
+                                    return new Date(p.datum + "T00:00:00").toLocaleDateString(
+                                      "de-DE",
+                                      { day: "2-digit", month: "2-digit" }
+                                    );
+                                  } catch {
+                                    return p.datum;
+                                  }
+                                })()}
+                              </span>
+                              {p.typ === "abwesenheit" ? (
+                                <span
+                                  className={cn(
+                                    "text-[10px] font-semibold",
+                                    p.abwesenheitTypLabel === "Krank"
+                                      ? "text-red-400"
+                                      : p.abwesenheitTypLabel === "Urlaub"
+                                        ? "text-amber-400"
+                                        : "text-zinc-400"
+                                  )}
+                                >
+                                  {p.abwesenheitTypLabel}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-semibold text-amber-400">
+                                  Konflikt
+                                </span>
                               )}
-                            >
-                              {p.abwesenheitTypLabel}
-                            </span>
-                          ) : null}
+                            </div>
+                            <p className="mt-0.5 truncate text-[10px] text-zinc-500">
+                              {p.beschreibung}
+                            </p>
+                          </div>
                         </button>
                       ))}
                   </div>
