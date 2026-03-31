@@ -992,8 +992,8 @@ export function NotfallModus() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-var(--navbar-height,60px))] gap-4 overflow-hidden p-6">
-      <div className="flex-1 min-w-0 overflow-y-auto rounded-2xl border border-zinc-800/60 bg-zinc-950 p-4">
+    <div className="flex flex-col gap-4 min-h-0 p-6 pb-6">
+      <div className="w-full rounded-2xl border border-zinc-800/60 bg-zinc-950 p-4">
         <div id="notfall-stepper">
           <NotfallSteuerung
             mitarbeiter={mitarbeiter}
@@ -1143,7 +1143,7 @@ export function NotfallModus() {
         </div>
       </div>
 
-      <div className="w-full flex-shrink-0 rounded-2xl border border-zinc-800/60 bg-zinc-950 overflow-hidden">
+      <div className="w-full rounded-2xl border border-zinc-800/60 bg-zinc-950 overflow-hidden">
         <KiNotfallPanel
           kiLaed={kiLaed}
           kiStream={kiStream}
