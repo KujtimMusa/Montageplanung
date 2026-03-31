@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -15,19 +15,11 @@ import {
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
 import { useSettings } from "@/lib/hooks/useSettings";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { SecretInput } from "@/components/einstellungen/SecretInput";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 export type EnvFlags = {
@@ -93,6 +85,84 @@ async function postTest(provider: string): Promise<{ success: boolean; message: 
 }
 
 type Props = { envFlags: EnvFlags };
+
+function IntegrationKarte({
+  icon,
+  titel,
+  beschreibung,
+  verbunden,
+  kinder,
+  onTest,
+  onSpeichern,
+  testLaed,
+  speichernLaed,
+  hatFelder,
+}: {
+  icon: ReactNode;
+  titel: string;
+  beschreibung: string;
+  verbunden: boolean;
+  kinder: ReactNode;
+  onTest?: () => void;
+  onSpeichern: () => void;
+  testLaed?: boolean;
+  speichernLaed?: boolean;
+  hatFelder: boolean;
+}) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-zinc-800/60 bg-zinc-900">
+      <div className="flex items-center justify-between border-b border-zinc-800/60 px-5 py-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-zinc-700/60 bg-zinc-800 text-zinc-400">
+            {icon}
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-zinc-200">{titel}</p>
+            <p className="text-xs text-zinc-500">{beschreibung}</p>
+          </div>
+        </div>
+        <span
+          className={cn(
+            "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium",
+            verbunden
+              ? "border-emerald-900/40 bg-emerald-950/30 text-emerald-400"
+              : "border-zinc-700/40 bg-zinc-800/60 text-zinc-500"
+          )}
+        >
+          <div
+            className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              verbunden ? "bg-emerald-400" : "bg-zinc-600"
+            )}
+          />
+          {verbunden ? "Verbunden" : "Nicht verbunden"}
+        </span>
+      </div>
+
+      <div className="space-y-3 p-5">
+        {kinder}
+        <div className="flex items-center gap-2 pt-1">
+          <button
+            onClick={onSpeichern}
+            disabled={speichernLaed}
+            className="rounded-xl border border-zinc-700/40 bg-zinc-800 px-3 py-2 text-xs font-medium text-zinc-300 transition-all hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+          >
+            {speichernLaed ? "Speichern..." : "Speichern"}
+          </button>
+          {onTest && hatFelder && (
+            <button
+              onClick={onTest}
+              disabled={testLaed}
+              className="rounded-xl border border-zinc-700/40 bg-zinc-800/60 px-3 py-2 text-xs font-medium text-zinc-400 transition-all hover:border-zinc-600 hover:text-zinc-200 disabled:opacity-40"
+            >
+              {testLaed ? "Teste..." : "Verbindung testen"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function IntegrationenTab({ envFlags }: Props) {
   const { getSetting, updateSetting } = useSettings();
@@ -351,25 +421,23 @@ export function IntegrationenTab({ envFlags }: Props) {
   }
 
   return (
-    <div className="grid gap-4 md:grid-cols-1 xl:grid-cols-2">
-      <Card className="border-zinc-800 bg-zinc-900">
-        <CardHeader className="border-b border-zinc-800">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="flex items-start gap-2">
-              <MessageCircleIcon className="mt-0.5 size-5 text-emerald-400" />
-              <div>
-                <CardTitle className="text-zinc-50">WhatsApp / Twilio</CardTitle>
-                <CardDescription className="text-zinc-500">
-                  SMS/WhatsApp über Twilio
-                </CardDescription>
-              </div>
-            </div>
-            <Badge variant={twilioVerbunden ? "default" : "secondary"}>
-              {twilioVerbunden ? "Verbunden" : "Nicht verbunden"}
-            </Badge>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3 pt-4">
+    <div className="space-y-4">
+      <IntegrationKarte
+        icon={<MessageCircleIcon size={14} />}
+        titel="WhatsApp / Twilio"
+        beschreibung="SMS/WhatsApp ueber Twilio"
+        verbunden={twilioVerbunden}
+        onSpeichern={() => void twilioF.handleSubmit(speichernTwilio)()}
+        onTest={() => void testTwilio()}
+        testLaed={tTwilio}
+        speichernLaed={sTwilio}
+        hatFelder={Boolean(
+          twilioF.watch("twilio_account_sid") &&
+            twilioF.watch("twilio_auth_token") &&
+            twilioF.watch("twilio_from_number")
+        )}
+        kinder={
+          <>
           {(envFlags.twilio_account_sid ||
             envFlags.twilio_auth_token ||
             envFlags.twilio_from_number) && (
@@ -378,277 +446,180 @@ export function IntegrationenTab({ envFlags }: Props) {
               haben Vorrang vor der Datenbank.
             </p>
           )}
-          <form onSubmit={twilioF.handleSubmit(speichernTwilio)} className="space-y-3">
-            <div className="space-y-1.5">
-              <Label>Account SID</Label>
-              <Input
-                className="border-zinc-700 bg-zinc-950"
-                {...twilioF.register("twilio_account_sid")}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Auth Token</Label>
-              <SecretInput
-                className="w-full"
-                inputClassName="border-zinc-700 bg-zinc-950"
-                {...twilioF.register("twilio_auth_token")}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>From-Nummer</Label>
-              <Input
-                placeholder="+49…"
-                className="border-zinc-700 bg-zinc-950"
-                {...twilioF.register("twilio_from_number")}
-              />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button type="submit" disabled={sTwilio}>
-                {sTwilio && <Loader2Icon className="mr-2 size-4 animate-spin" />}
-                Speichern
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={tTwilio}
-                onClick={() => void testTwilio()}
-              >
-                {tTwilio && <Loader2Icon className="mr-2 size-4 animate-spin" />}
-                Testen
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-
-      <Card className="border-zinc-800 bg-zinc-900">
-        <CardHeader className="border-b border-zinc-800">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="flex items-start gap-2">
-              <RadioIcon className="mt-0.5 size-5 text-sky-400" />
-              <div>
-                <CardTitle className="text-zinc-50">Microsoft Teams</CardTitle>
-                <CardDescription className="text-zinc-500">
-                  Incoming Webhook
-                </CardDescription>
-              </div>
-            </div>
-            <Badge variant={teamsVerbunden ? "default" : "secondary"}>
-              {teamsVerbunden ? "Verbunden" : "Nicht verbunden"}
-            </Badge>
+          <div className="space-y-1.5">
+            <Label>Account SID</Label>
+            <Input
+              className="border-zinc-700 bg-zinc-950"
+              {...twilioF.register("twilio_account_sid")}
+            />
           </div>
-        </CardHeader>
-        <CardContent className="space-y-4 pt-4">
+          <div className="space-y-1.5">
+            <Label>Auth Token</Label>
+            <SecretInput
+              className="w-full"
+              inputClassName="border-zinc-700 bg-zinc-950"
+              {...twilioF.register("twilio_auth_token")}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>From-Nummer</Label>
+            <Input
+              placeholder="+49..."
+              className="border-zinc-700 bg-zinc-950"
+              {...twilioF.register("twilio_from_number")}
+            />
+          </div>
+          </>
+        }
+      />
+
+      <IntegrationKarte
+        icon={<RadioIcon size={14} />}
+        titel="Microsoft Teams"
+        beschreibung="Incoming Webhook"
+        verbunden={teamsVerbunden}
+        onSpeichern={() => void teamsF.handleSubmit(speichernTeams)()}
+        onTest={() => void testTeams()}
+        testLaed={tTeams}
+        speichernLaed={sTeams}
+        hatFelder={Boolean(teamsF.watch("teams_webhook_url")?.trim())}
+        kinder={
+          <>
           {envFlags.teams_webhook_url && (
             <p className="rounded-md border border-amber-900/50 bg-amber-950/30 px-3 py-2 text-xs text-amber-200/90">
-              Webhook-URL kann über TEAMS_WEBHOOK_URL in der Umgebung gesetzt sein.
+              Webhook-URL kann ueber TEAMS_WEBHOOK_URL in der Umgebung gesetzt sein.
             </p>
           )}
-          <form onSubmit={teamsF.handleSubmit(speichernTeams)} className="space-y-3">
-            <div className="space-y-1.5">
-              <Label>Webhook-URL</Label>
-              <Input
-                type="url"
-                placeholder="https://…"
-                className="border-zinc-700 bg-zinc-950"
-                {...teamsF.register("teams_webhook_url")}
-              />
-            </div>
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/80 px-3 py-2">
-              <Label htmlFor="teams-enabled" className="cursor-pointer text-sm">
-                Benachrichtigungen aktiv
-              </Label>
-              <Switch
-                id="teams-enabled"
-                checked={teamsEnabled}
-                onCheckedChange={(c) => setTeamsEnabled(Boolean(c))}
-              />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button type="submit" disabled={sTeams}>
-                {sTeams && <Loader2Icon className="mr-2 size-4 animate-spin" />}
-                Speichern
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={tTeams}
-                onClick={() => void testTeams()}
-              >
-                {tTeams && <Loader2Icon className="mr-2 size-4 animate-spin" />}
-                Testen
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-
-      <Card className="border-zinc-800 bg-zinc-900">
-        <CardHeader className="border-b border-zinc-800">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="flex items-start gap-2">
-              <UsersIcon className="mt-0.5 size-5 text-violet-400" />
-              <div>
-                <CardTitle className="text-zinc-50">Personio</CardTitle>
-                <CardDescription className="text-zinc-500">
-                  Abwesenheiten / HR-Sync
-                </CardDescription>
-              </div>
-            </div>
-            <Badge variant={personioVerbunden ? "default" : "secondary"}>
-              {personioVerbunden ? "Verbunden" : "Nicht verbunden"}
-            </Badge>
+          <div className="space-y-1.5">
+            <Label>Webhook-URL</Label>
+            <Input
+              type="url"
+              placeholder="https://..."
+              className="border-zinc-700 bg-zinc-950"
+              {...teamsF.register("teams_webhook_url")}
+            />
           </div>
-        </CardHeader>
-        <CardContent className="space-y-3 pt-4">
-          <form onSubmit={personioF.handleSubmit(speichernPersonio)} className="space-y-3">
-            <div className="space-y-1.5">
-              <Label>API-Key</Label>
-              <SecretInput
-                className="w-full"
-                inputClassName="border-zinc-700 bg-zinc-950"
-                {...personioF.register("personio_api_key")}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Subdomain</Label>
-              <Input
-                placeholder="firma"
-                className="border-zinc-700 bg-zinc-950"
-                {...personioF.register("personio_subdomain")}
-              />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button type="submit" disabled={sPersonio}>
-                {sPersonio && <Loader2Icon className="mr-2 size-4 animate-spin" />}
-                Speichern
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={syncPersonio}
-                onClick={() => void jetztSyncPersonio()}
-              >
-                {syncPersonio && <Loader2Icon className="mr-2 size-4 animate-spin" />}
-                Jetzt synchronisieren
-              </Button>
-            </div>
-          </form>
-          <p className="text-xs text-zinc-500">{personioSyncText}</p>
-        </CardContent>
-      </Card>
-
-      <Card className="border-zinc-800 bg-zinc-900">
-        <CardHeader className="border-b border-zinc-800">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="flex items-start gap-2">
-              <MailIcon className="mt-0.5 size-5 text-amber-400" />
-              <div>
-                <CardTitle className="text-zinc-50">E-Mail / Resend</CardTitle>
-                <CardDescription className="text-zinc-500">
-                  Transaktions-E-Mails
-                </CardDescription>
-              </div>
-            </div>
-            <Badge variant={resendVerbunden ? "default" : "secondary"}>
-              {resendVerbunden ? "Verbunden" : "Nicht verbunden"}
-            </Badge>
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/80 px-3 py-2">
+            <Label htmlFor="teams-enabled" className="cursor-pointer text-sm">
+              Benachrichtigungen aktiv
+            </Label>
+            <Switch
+              id="teams-enabled"
+              checked={teamsEnabled}
+              onCheckedChange={(c) => setTeamsEnabled(Boolean(c))}
+            />
           </div>
-        </CardHeader>
-        <CardContent className="space-y-3 pt-4">
+          </>
+        }
+      />
+
+      <IntegrationKarte
+        icon={<MailIcon size={14} />}
+        titel="E-Mail / Resend"
+        beschreibung="Transaktions-E-Mails"
+        verbunden={resendVerbunden}
+        onSpeichern={() => void resendF.handleSubmit(speichernResend)()}
+        onTest={() => void testResend()}
+        testLaed={tResend}
+        speichernLaed={sResend}
+        hatFelder={Boolean(resendF.watch("resend_api_key"))}
+        kinder={
+          <>
           {(envFlags.resend_api_key || envFlags.resend_from_email) && (
             <p className="rounded-md border border-amber-900/50 bg-amber-950/30 px-3 py-2 text-xs text-amber-200/90">
-              Resend kann über RESEND_API_KEY / RESEND_FROM_EMAIL in der Umgebung
+              Resend kann ueber RESEND_API_KEY / RESEND_FROM_EMAIL in der Umgebung
               konfiguriert sein (Vorrang vor DB).
             </p>
           )}
-          <form onSubmit={resendF.handleSubmit(speichernResend)} className="space-y-3">
-            <div className="space-y-1.5">
-              <Label>API-Key</Label>
-              <SecretInput
-                className="w-full"
-                inputClassName="border-zinc-700 bg-zinc-950"
-                {...resendF.register("resend_api_key")}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Absender-E-Mail</Label>
-              <Input
-                type="email"
-                className="border-zinc-700 bg-zinc-950"
-                {...resendF.register("resend_from_email")}
-              />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button type="submit" disabled={sResend}>
-                {sResend && <Loader2Icon className="mr-2 size-4 animate-spin" />}
-                Speichern
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={tResend}
-                onClick={() => void testResend()}
-              >
-                {tResend && <Loader2Icon className="mr-2 size-4 animate-spin" />}
-                Testen
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-
-      <Card className="border-zinc-800 bg-zinc-900 xl:col-span-2">
-        <CardHeader className="border-b border-zinc-800">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="flex items-start gap-2">
-              <SparklesIcon className="mt-0.5 size-5 text-fuchsia-400" />
-              <div>
-                <CardTitle className="text-zinc-50">Gemini AI</CardTitle>
-                <CardDescription className="text-zinc-500">
-                  Wird für KI-Assistent und Agenten verwendet
-                </CardDescription>
-              </div>
-            </div>
-            <Badge variant={geminiVerbunden ? "default" : "secondary"}>
-              {geminiVerbunden ? "Verbunden" : "Nicht verbunden"}
-            </Badge>
+          <div className="space-y-1.5">
+            <Label>API-Key</Label>
+            <SecretInput
+              className="w-full"
+              inputClassName="border-zinc-700 bg-zinc-950"
+              {...resendF.register("resend_api_key")}
+            />
           </div>
-        </CardHeader>
-        <CardContent className="space-y-3 pt-4">
+          <div className="space-y-1.5">
+            <Label>Absender-E-Mail</Label>
+            <Input
+              type="email"
+              className="border-zinc-700 bg-zinc-950"
+              {...resendF.register("resend_from_email")}
+            />
+          </div>
+          </>
+        }
+      />
+
+      <IntegrationKarte
+        icon={<UsersIcon size={14} />}
+        titel="Personio"
+        beschreibung="Abwesenheiten / HR-Sync"
+        verbunden={personioVerbunden}
+        onSpeichern={() => void personioF.handleSubmit(speichernPersonio)()}
+        onTest={() => void jetztSyncPersonio()}
+        testLaed={syncPersonio}
+        speichernLaed={sPersonio}
+        hatFelder={Boolean(
+          personioF.watch("personio_api_key") && personioF.watch("personio_subdomain")
+        )}
+        kinder={
+          <>
+          <div className="rounded-xl border border-amber-900/30 bg-amber-950/20 px-3 py-2 text-xs text-amber-400">
+            ⚠️ Personio-Sync ist noch nicht vollstaendig implementiert. Geplant fuer
+            naechstes Release.
+          </div>
+          <div className="space-y-1.5">
+            <Label>API-Key</Label>
+            <SecretInput
+              className="w-full"
+              inputClassName="border-zinc-700 bg-zinc-950"
+              {...personioF.register("personio_api_key")}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Subdomain</Label>
+            <Input
+              placeholder="firma"
+              className="border-zinc-700 bg-zinc-950"
+              {...personioF.register("personio_subdomain")}
+            />
+          </div>
+          <p className="text-xs text-zinc-500">{personioSyncText}</p>
+          </>
+        }
+      />
+
+      <IntegrationKarte
+        icon={<SparklesIcon size={14} />}
+        titel="Gemini AI"
+        beschreibung="Wird fuer KI-Assistent und Agenten verwendet"
+        verbunden={geminiVerbunden}
+        onSpeichern={() => void geminiF.handleSubmit(speichernGemini)()}
+        onTest={() => void testGemini()}
+        testLaed={tGemini}
+        speichernLaed={sGemini}
+        hatFelder={Boolean(geminiF.watch("gemini_api_key"))}
+        kinder={
+          <>
           {envFlags.gemini_api_key && (
             <p className="rounded-md border border-amber-900/50 bg-amber-950/30 px-3 py-2 text-xs text-amber-200/90">
-              API-Key ist in der Server-Umgebung gesetzt (GEMINI_API_KEY) — hat Vorrang
+              API-Key ist in der Server-Umgebung gesetzt (GEMINI_API_KEY) - hat Vorrang
               vor dem Eintrag in der Datenbank.
             </p>
           )}
-          <form onSubmit={geminiF.handleSubmit(speichernGemini)} className="space-y-3">
-            <div className="space-y-1.5">
-              <Label>API-Key</Label>
-              <SecretInput
-                className="w-full"
-                inputClassName="border-zinc-700 bg-zinc-950"
-                {...geminiF.register("gemini_api_key")}
-              />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button type="submit" disabled={sGemini}>
-                {sGemini && <Loader2Icon className="mr-2 size-4 animate-spin" />}
-                Speichern
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={tGemini}
-                onClick={() => void testGemini()}
-              >
-                {tGemini && <Loader2Icon className="mr-2 size-4 animate-spin" />}
-                Testen
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+          <div className="space-y-1.5">
+            <Label>API-Key</Label>
+            <SecretInput
+              className="w-full"
+              inputClassName="border-zinc-700 bg-zinc-950"
+              {...geminiF.register("gemini_api_key")}
+            />
+          </div>
+          </>
+        }
+      />
+
     </div>
   );
 }

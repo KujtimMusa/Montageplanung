@@ -5,13 +5,10 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2Icon } from "lucide-react";
+import { Loader2Icon, Lock, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { SecretInput } from "@/components/einstellungen/SecretInput";
 import { toast } from "sonner";
 
@@ -38,6 +35,7 @@ export function ProfilTab() {
   const [sName, setSName] = useState(false);
   const [sPass, setSPass] = useState(false);
   const [abmelden, setAbmelden] = useState(false);
+  const [name, setName] = useState("");
 
   const profilF = useForm<z.infer<typeof profilSchema>>({
     resolver: zodResolver(profilSchema),
@@ -65,7 +63,9 @@ export function ProfilTab() {
 
       if (emp?.id) {
         setMitarbeiterId(emp.id as string);
-        profilF.reset({ name: (emp.name as string) ?? "" });
+        const n = (emp.name as string) ?? "";
+        setName(n);
+        profilF.reset({ name: n });
       }
     } finally {
       setLaden(false);
@@ -92,6 +92,7 @@ export function ProfilTab() {
         return;
       }
       toast.success("Name gespeichert.");
+      setName(w.name.trim());
     } finally {
       setSName(false);
     }
@@ -136,15 +137,27 @@ export function ProfilTab() {
 
   return (
     <div className="space-y-6">
-      <Card className="border-zinc-800 bg-zinc-900">
-        <CardHeader>
-          <CardTitle className="text-zinc-50">Persönliche Daten</CardTitle>
-          <CardDescription className="text-zinc-500">
-            Name und Anmeldung
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={profilF.handleSubmit(speichernName)} className="space-y-4 max-w-md">
+      <div className="overflow-hidden rounded-2xl border border-zinc-800/60 bg-zinc-900">
+        <div className="border-b border-zinc-800/60 px-5 py-4">
+          <p className="text-sm font-semibold text-zinc-200">Persoenliche Daten</p>
+        </div>
+        <div className="p-5">
+          <div className="mb-4 flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-violet-500/20 bg-violet-600/20">
+              <span className="text-sm font-bold text-violet-400">
+                {(name || "U").slice(0, 2).toUpperCase()}
+              </span>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-zinc-200">{name || "Unbekannt"}</p>
+              <p className="text-xs text-zinc-500">{email}</p>
+            </div>
+          </div>
+
+          <form
+            onSubmit={profilF.handleSubmit(speichernName)}
+            className="max-w-md space-y-4"
+          >
             <div className="space-y-1.5">
               <Label htmlFor="profil-name">Name</Label>
               <Input
@@ -160,35 +173,36 @@ export function ProfilTab() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="profil-email">E-Mail</Label>
-              <Input
-                id="profil-email"
-                type="email"
-                value={email}
-                disabled
-                className="border-zinc-800 bg-zinc-950/80 text-zinc-400"
-              />
+              <div className="relative">
+                <Lock className="pointer-events-none absolute left-3 top-2.5 size-4 text-zinc-600" />
+                <Input
+                  id="profil-email"
+                  type="email"
+                  value={email}
+                  disabled
+                  className="border-zinc-800 bg-zinc-950/80 pl-9 text-zinc-400"
+                />
+              </div>
             </div>
-            <Button type="submit" disabled={sName}>
-              {sName && <Loader2Icon className="mr-2 size-4 animate-spin" />}
-              Speichern
-            </Button>
+            <button
+              type="submit"
+              disabled={sName}
+              className="rounded-xl border border-zinc-700/40 bg-zinc-800 px-3 py-2 text-xs font-medium text-zinc-300 transition-all hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+            >
+              {sName ? "Speichern..." : "Speichern"}
+            </button>
           </form>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <Separator className="bg-zinc-800" />
-
-      <Card className="border-zinc-800 bg-zinc-900">
-        <CardHeader>
-          <CardTitle className="text-zinc-50">Passwort ändern</CardTitle>
-          <CardDescription className="text-zinc-500">
-            Mindestens 8 Zeichen
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      <div className="overflow-hidden rounded-2xl border border-zinc-800/60 bg-zinc-900">
+        <div className="border-b border-zinc-800/60 px-5 py-4">
+          <p className="text-sm font-semibold text-zinc-200">Sicherheit</p>
+        </div>
+        <div className="p-5">
           <form
             onSubmit={passwortF.handleSubmit(aendernPasswort)}
-            className="space-y-4 max-w-md"
+            className="max-w-md space-y-4"
           >
             <div className="space-y-1.5">
               <Label htmlFor="pw-neu">Neues Passwort</Label>
@@ -218,35 +232,38 @@ export function ProfilTab() {
                 {passwortF.formState.errors.passwortWiederholen.message}
               </p>
             )}
-            <Button type="submit" disabled={sPass}>
-              {sPass && <Loader2Icon className="mr-2 size-4 animate-spin" />}
-              Passwort ändern
-            </Button>
+            <button
+              type="submit"
+              disabled={sPass}
+              className="rounded-xl border border-zinc-700/40 bg-zinc-800 px-3 py-2 text-xs font-medium text-zinc-300 transition-all hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+            >
+              {sPass ? "Speichern..." : "Passwort aendern"}
+            </button>
           </form>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <Separator className="bg-zinc-800" />
-
-      <Card className="border-zinc-800 bg-zinc-900">
-        <CardHeader>
-          <CardTitle className="text-zinc-50">Sitzung</CardTitle>
-          <CardDescription className="text-zinc-500">
-            Sicher abmelden
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button
+      <div className="overflow-hidden rounded-2xl border border-zinc-800/60 bg-zinc-900">
+        <div className="border-b border-zinc-800/60 px-5 py-4">
+          <p className="text-sm font-semibold text-zinc-200">Sitzung</p>
+        </div>
+        <div className="space-y-3 p-5">
+          <p className="text-xs text-zinc-500">Du bist eingeloggt als {email}</p>
+          <button
             type="button"
-            variant="destructive"
             disabled={abmelden}
             onClick={() => void abmeldenKlick()}
+            className="inline-flex items-center gap-2 rounded-xl border border-red-900/40 bg-red-950/30 px-3 py-2 text-xs font-medium text-red-300 transition-all hover:bg-red-950/50 disabled:opacity-40"
           >
-            {abmelden && <Loader2Icon className="mr-2 size-4 animate-spin" />}
+            {abmelden ? (
+              <Loader2Icon className="size-4 animate-spin" />
+            ) : (
+              <LogOut className="size-4" />
+            )}
             Abmelden
-          </Button>
-        </CardContent>
-      </Card>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

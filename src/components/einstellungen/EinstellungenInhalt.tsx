@@ -2,12 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { Bell, Building2, Plug, User } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { IntegrationenTab, type EnvFlags } from "@/components/einstellungen/IntegrationenTab";
 import { BenachrichtigungenTab } from "@/components/einstellungen/BenachrichtigungenTab";
 import { ProfilTab } from "@/components/einstellungen/ProfilTab";
+import { BetriebTab } from "@/components/einstellungen/BetriebTab";
 
-const tabIds = ["integrationen", "benachrichtigungen", "profil"] as const;
+const tabIds = [
+  "betrieb",
+  "integrationen",
+  "benachrichtigungen",
+  "profil",
+] as const;
 
 const defaultEnvFlags: EnvFlags = {
   gemini_api_key: false,
@@ -25,9 +32,19 @@ export function EinstellungenInhalt() {
   const initial =
     tabParam && tabIds.includes(tabParam as (typeof tabIds)[number])
       ? tabParam
-      : "integrationen";
+      : "betrieb";
   const [tab, setTab] = useState(initial);
   const [envFlags, setEnvFlags] = useState<EnvFlags>(defaultEnvFlags);
+  const tabs = [
+    { id: "betrieb", label: "Betrieb", icon: <Building2 size={14} /> },
+    { id: "integrationen", label: "Integrationen", icon: <Plug size={14} /> },
+    {
+      id: "benachrichtigungen",
+      label: "Benachrichtigungen",
+      icon: <Bell size={14} />,
+    },
+    { id: "profil", label: "Profil", icon: <User size={14} /> },
+  ] as const;
 
   useEffect(() => {
     if (
@@ -58,26 +75,22 @@ export function EinstellungenInhalt() {
 
   return (
     <Tabs value={tab} onValueChange={setTab} className="w-full space-y-6">
-      <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 bg-zinc-900 p-1">
-        <TabsTrigger
-          value="integrationen"
-          className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100"
-        >
-          Integrationen
-        </TabsTrigger>
-        <TabsTrigger
-          value="benachrichtigungen"
-          className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100"
-        >
-          Benachrichtigungen
-        </TabsTrigger>
-        <TabsTrigger
-          value="profil"
-          className="data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100"
-        >
-          Profil
-        </TabsTrigger>
+      <TabsList className="h-auto w-full rounded-xl border border-zinc-800/60 bg-zinc-900 p-1">
+        {tabs.map((t) => (
+          <TabsTrigger
+            key={t.id}
+            value={t.id}
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-xs text-zinc-500 transition-all data-[state=active]:border data-[state=active]:border-zinc-700/60 data-[state=active]:bg-zinc-800 data-[state=active]:text-zinc-100"
+          >
+            {t.icon}
+            {t.label}
+          </TabsTrigger>
+        ))}
       </TabsList>
+
+      <TabsContent value="betrieb" className="mt-0">
+        <BetriebTab />
+      </TabsContent>
 
       <TabsContent value="integrationen" className="mt-0">
         <IntegrationenTab envFlags={envFlags} />
