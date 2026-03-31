@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { wetterVorhersageLaden } from "@/lib/weather/open-meteo";
 import { istKiKonfiguriert, kiModell } from "@/lib/agents/ki-client";
 import type { KiStrukturierteAgentAntwort } from "@/types/ki-actions";
+import { logFehler } from "@/lib/logger";
 
 /** Wetter — Open-Meteo + KI-Text-Stream */
 export async function POST(request: Request) {
@@ -75,7 +76,7 @@ export async function POST(request: Request) {
             })),
         },
       }),
-    }).catch(() => {});
+    }).catch((e) => logFehler("agent:koordinatoren-notify", e));
   }
   return NextResponse.json(parsed);
 }

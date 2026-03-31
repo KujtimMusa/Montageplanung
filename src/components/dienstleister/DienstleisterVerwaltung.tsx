@@ -28,6 +28,7 @@ import {
   TooltipProvider,
 } from "@/components/ui/tooltip";
 import { toast } from "sonner";
+import { logFehler } from "@/lib/logger";
 import {
   Building2,
   CalendarPlus,
@@ -597,7 +598,7 @@ export function DienstleisterVerwaltung() {
             .eq("subcontractor_id", emailPartner.id);
         }
 
-        toast.success("E-Mail über mailto vorbereitet (TODO: Resend aktivieren).");
+        toast.success("E-Mail über mailto vorbereitet.");
         void fetch("/api/notifications/koordinatoren", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -616,7 +617,7 @@ export function DienstleisterVerwaltung() {
               }),
             },
           }),
-        }).catch(() => {});
+        }).catch((e) => logFehler("DienstleisterVerwaltung:koordinatoren:mailto", e));
         setEmailDialogOffen(false);
         void ladenPartnerMetadaten();
         return;
@@ -641,7 +642,7 @@ export function DienstleisterVerwaltung() {
             }),
           },
         }),
-      }).catch(() => {});
+      }).catch((e) => logFehler("DienstleisterVerwaltung:koordinatoren:resend", e));
       setEmailDialogOffen(false);
       void ladenPartnerMetadaten();
     } catch (e) {

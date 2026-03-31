@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { LogoutButton } from "@/components/auth/LogoutButton";
@@ -53,27 +54,37 @@ export function SidebarAccount() {
   const anzeige = name || email || "Angemeldet";
 
   return (
-    <div className="flex items-center gap-3 border-t border-zinc-800 p-3">
-      <Avatar size="sm" className="size-9 shrink-0 border border-zinc-700">
-        <AvatarFallback className="bg-zinc-800 text-xs font-medium text-zinc-200">
-          {initialen(name || anzeige, email)}
-        </AvatarFallback>
-      </Avatar>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-zinc-100" title={anzeige}>
-          {anzeige}
-        </p>
-        {email && (
-          <p className="truncate text-xs text-zinc-500" title={email}>
-            {email}
+    <div className="border-t border-zinc-800 p-3">
+      <div className="flex items-center gap-3">
+        <Avatar size="sm" className="size-9 shrink-0 border border-zinc-700">
+          <AvatarFallback className="bg-zinc-800 text-xs font-medium text-zinc-200">
+            {initialen(name || anzeige, email)}
+          </AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-zinc-100" title={anzeige}>
+            {anzeige}
           </p>
-        )}
+          {email && (
+            <p className="truncate text-xs text-zinc-500" title={email}>
+              {email}
+            </p>
+          )}
+        </div>
+        <LogoutButton
+          variant="ghost"
+          size="sm"
+          className="shrink-0 text-zinc-400 hover:bg-white/5 hover:text-zinc-100"
+        />
       </div>
-      <LogoutButton
-        variant="ghost"
-        size="sm"
-        className="shrink-0 text-zinc-400 hover:bg-white/5 hover:text-zinc-100"
-      />
+      <div className="mt-2 flex items-center gap-3 pl-12 text-xs">
+        <Link href="/datenschutz" className="text-zinc-600 hover:text-zinc-400">
+          Datenschutz
+        </Link>
+        <Link href="/impressum" className="text-zinc-600 hover:text-zinc-400">
+          Impressum
+        </Link>
+      </div>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { istKiKonfiguriert, kiModell } from "@/lib/agents/ki-client";
 import type { KiStrukturierteAgentAntwort } from "@/types/ki-actions";
+import { logFehler } from "@/lib/logger";
 
 /** Konflikt-Resolver — Text-Stream */
 export async function POST() {
@@ -103,7 +104,7 @@ Nutze die echten IDs aus den mitgelieferten Daten.`;
           konflikte,
         },
       }),
-    }).catch(() => {});
+    }).catch((e) => logFehler("agent:koordinatoren-notify", e));
   }
   return NextResponse.json(parsed);
 }

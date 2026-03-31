@@ -30,6 +30,7 @@ import { bumpProjektGeplantWennNeu } from "@/lib/planung/bump-projekt-geplant";
 import { bearbeitenPayloadFromGruppe } from "@/lib/planung/einsatz-gruppe";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
+import { logFehler } from "@/lib/logger";
 import {
   EinsatzNeuDialog,
   type BearbeitenZuweisung,
@@ -589,9 +590,9 @@ export function PlanungsKalender() {
           html,
           icsAnhang: { inhalt: icsInhalt, methode: "UPDATE" },
         }),
-      }).catch(() => {});
-    } catch {
-      /* fire-and-forget */
+      }).catch((e) => logFehler("PlanungsKalender:email:update", e));
+    } catch (e) {
+      logFehler("PlanungsKalender:email:update:setup", e);
     }
   }
 
@@ -637,9 +638,9 @@ export function PlanungsKalender() {
           html: `<div style="font-family:sans-serif;background:#09090b;color:#e4e4e7;padding:32px;border-radius:16px;max-width:520px"><p style="color:#f87171;font-size:18px;font-weight:700">Einsatz wurde abgesagt</p><p style="color:#71717a">Dein Einsatz <strong style="color:#e4e4e7">${assignment.project_title ?? "Einsatz"}</strong> am ${new Date(assignment.date).toLocaleDateString("de-DE")} wurde abgesagt. Der Termin wurde aus deinem Kalender entfernt.</p></div>`,
           icsAnhang: { inhalt: icsInhalt, methode: "CANCEL" },
         }),
-      }).catch(() => {});
-    } catch {
-      /* fire-and-forget */
+      }).catch((e) => logFehler("PlanungsKalender:email:cancel", e));
+    } catch (e) {
+      logFehler("PlanungsKalender:email:cancel:setup", e);
     }
   }
 

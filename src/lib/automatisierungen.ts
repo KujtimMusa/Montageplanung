@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { logFehler } from "@/lib/logger";
 
 type AutoTyp =
   | "krankmeldung"
@@ -45,19 +46,23 @@ export async function triggerAutomatisierung(
           .eq("id", mitarbeiterId)
           .maybeSingle();
 
-        await fetch(`${appUrl}/api/notifications/koordinatoren`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            typ: "krank",
-            payload: {
-              mitarbeiter_name:
-                (ma as { name?: string } | null)?.name ?? "Unbekannt",
-              datum_von: new Date(datum).toLocaleDateString("de-DE"),
-              betroffene_einsaetze: count ?? 0,
-            },
-          }),
-        }).catch(() => {});
+        try {
+          await fetch(`${appUrl}/api/notifications/koordinatoren`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              typ: "krank",
+              payload: {
+                mitarbeiter_name:
+                  (ma as { name?: string } | null)?.name ?? "Unbekannt",
+                datum_von: new Date(datum).toLocaleDateString("de-DE"),
+                betroffene_einsaetze: count ?? 0,
+              },
+            }),
+          });
+        } catch (e) {
+          logFehler(`automatisierungen:${typ}`, e);
+        }
       }
     }
   }

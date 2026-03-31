@@ -58,6 +58,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { logFehler } from "@/lib/logger";
 import { templateEinsatzNeu } from "@/lib/email-templates";
 import { generiereIcs, generiereIcsCancel } from "@/lib/ics";
 import {
@@ -316,9 +317,9 @@ export function EinsatzNeuDialog({
           datum,
           ort,
         }),
-      }).catch(() => {});
-    } catch {
-      /* fire-and-forget */
+      }).catch((e) => logFehler("EinsatzNeuDialog:benachrichtigung", e));
+    } catch (e) {
+      logFehler("EinsatzNeuDialog:benachrichtigung:setup", e);
     }
   }
 
@@ -347,9 +348,9 @@ export function EinsatzNeuDialog({
             datum,
           },
         }),
-      }).catch(() => {});
-    } catch {
-      /* fire-and-forget */
+      }).catch((e) => logFehler("EinsatzNeuDialog:automation", e));
+    } catch (e) {
+      logFehler("EinsatzNeuDialog:automation:setup", e);
     }
   }
 
@@ -412,9 +413,9 @@ export function EinsatzNeuDialog({
           html,
           icsAnhang: { inhalt: icsInhalt, methode: "REQUEST" },
         }),
-      }).catch(() => {});
-    } catch {
-      /* fire-and-forget */
+      }).catch((e) => logFehler("EinsatzNeuDialog:email:create", e));
+    } catch (e) {
+      logFehler("EinsatzNeuDialog:email:create:setup", e);
     }
   }
 
@@ -461,9 +462,9 @@ export function EinsatzNeuDialog({
           html: `<div style="font-family:sans-serif;background:#09090b;color:#e4e4e7;padding:32px;border-radius:16px;max-width:520px"><p style="color:#f87171;font-size:18px;font-weight:700">Einsatz wurde abgesagt</p><p style="color:#71717a">Dein Einsatz <strong style="color:#e4e4e7">${assignment.project_title ?? "Einsatz"}</strong> am ${new Date(assignment.date).toLocaleDateString("de-DE")} wurde abgesagt. Der Termin wurde aus deinem Kalender entfernt.</p></div>`,
           icsAnhang: { inhalt: icsInhalt, methode: "CANCEL" },
         }),
-      }).catch(() => {});
-    } catch {
-      /* fire-and-forget */
+      }).catch((e) => logFehler("EinsatzNeuDialog:email:cancel", e));
+    } catch (e) {
+      logFehler("EinsatzNeuDialog:email:cancel:setup", e);
     }
   }
 

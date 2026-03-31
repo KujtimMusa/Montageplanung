@@ -1,30 +1,112 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { triggerAutomatisierung } from "@/lib/automatisierungen";
-import type { KiAction } from "@/types/ki-actions";
+import { requireAdmin } from "@/lib/auth-check";
+import { z } from "zod";
+
+const EinsatzErstellenSchema = z.object({
+  employee_id: z.string().uuid(),
+  project_id: z.string().uuid(),
+  project_title: z.string().min(1),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  start_time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/),
+  end_time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/),
+});
+
+const EinsatzLoeschenSchema = z.object({
+  assignment_id: z.string().uuid(),
+});
+
+const EinsatzVerschiebenSchema = z.object({
+  assignment_id: z.string().uuid(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  start_time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/),
+  end_time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/),
+});
+
+const MitarbeiterZuweisenSchema = z.object({
+  assignment_id: z.string().uuid(),
+  employee_id: z.string().uuid(),
+});
+
+const AbwesenheitSchema = z.object({
+  absence_id: z.string().uuid(),
+});
+
+const ProjektStatusSchema = z.object({
+  project_id: z.string().uuid(),
+  status: z.enum([
+    "aktiv",
+    "abgeschlossen",
+    "pausiert",
+    "geplant",
+    "neu",
+    "in_bearbeitung",
+  ]),
+});
+
+const ActionSchema = z.discriminatedUnion("typ", [
+  z.object({
+    typ: z.literal("einsatz_erstellen"),
+    payload: EinsatzErstellenSchema,
+    label: z.string().optional(),
+    risiko: z.string().optional(),
+  }),
+  z.object({
+    typ: z.literal("einsatz_loeschen"),
+    payload: EinsatzLoeschenSchema,
+    label: z.string().optional(),
+    risiko: z.string().optional(),
+  }),
+  z.object({
+    typ: z.literal("einsatz_verschieben"),
+    payload: EinsatzVerschiebenSchema,
+    label: z.string().optional(),
+    risiko: z.string().optional(),
+  }),
+  z.object({
+    typ: z.literal("mitarbeiter_zuweisen"),
+    payload: MitarbeiterZuweisenSchema,
+    label: z.string().optional(),
+    risiko: z.string().optional(),
+  }),
+  z.object({
+    typ: z.literal("abwesenheit_bestaetigen"),
+    payload: AbwesenheitSchema,
+    label: z.string().optional(),
+    risiko: z.string().optional(),
+  }),
+  z.object({
+    typ: z.literal("abwesenheit_ablehnen"),
+    payload: AbwesenheitSchema,
+    label: z.string().optional(),
+    risiko: z.string().optional(),
+  }),
+  z.object({
+    typ: z.literal("projekt_status_setzen"),
+    payload: ProjektStatusSchema,
+    label: z.string().optional(),
+    risiko: z.string().optional(),
+  }),
+]);
 
 export async function POST(req: NextRequest) {
-  const { action }: { action: KiAction } = await req.json();
-  const supabase = await createClient();
+  const { supabase, error } = await requireAdmin();
+  if (error || !supabase) return error;
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const body = (await req.json()) as { action?: unknown };
+  const parsed = ActionSchema.safeParse(body.action);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Ungültige Action", details: parsed.error.flatten() },
+      { status: 400 }
+    );
   }
+  const action = parsed.data;
 
   switch (action.typ) {
     case "einsatz_erstellen": {
       const { employee_id, project_id, project_title, date, start_time, end_time } =
-        action.payload as {
-          employee_id: string;
-          project_id: string;
-          project_title: string;
-          date: string;
-          start_time: string;
-          end_time: string;
-        };
+        action.payload;
       const { error } = await supabase.from("assignments").insert({
         employee_id,
         project_id,
@@ -45,7 +127,7 @@ export async function POST(req: NextRequest) {
     }
 
     case "einsatz_loeschen": {
-      const { assignment_id } = action.payload as { assignment_id: string };
+      const { assignment_id } = action.payload;
       const { error } = await supabase
         .from("assignments")
         .delete()
@@ -57,12 +139,7 @@ export async function POST(req: NextRequest) {
     }
 
     case "einsatz_verschieben": {
-      const { assignment_id, date, start_time, end_time } = action.payload as {
-        assignment_id: string;
-        date: string;
-        start_time: string;
-        end_time: string;
-      };
+      const { assignment_id, date, start_time, end_time } = action.payload;
       const { error } = await supabase
         .from("assignments")
         .update({ date, start_time, end_time })
@@ -74,10 +151,7 @@ export async function POST(req: NextRequest) {
     }
 
     case "mitarbeiter_zuweisen": {
-      const { assignment_id, employee_id } = action.payload as {
-        assignment_id: string;
-        employee_id: string;
-      };
+      const { assignment_id, employee_id } = action.payload;
       const { error } = await supabase
         .from("assignments")
         .update({ employee_id })
@@ -89,7 +163,7 @@ export async function POST(req: NextRequest) {
     }
 
     case "abwesenheit_bestaetigen": {
-      const { absence_id } = action.payload as { absence_id: string };
+      const { absence_id } = action.payload;
       const { error } = await supabase
         .from("absences")
         .update({ status: "approved" })
@@ -101,7 +175,7 @@ export async function POST(req: NextRequest) {
     }
 
     case "abwesenheit_ablehnen": {
-      const { absence_id } = action.payload as { absence_id: string };
+      const { absence_id } = action.payload;
       const { error } = await supabase
         .from("absences")
         .update({ status: "rejected" })
@@ -113,10 +187,7 @@ export async function POST(req: NextRequest) {
     }
 
     case "projekt_status_setzen": {
-      const { project_id, status } = action.payload as {
-        project_id: string;
-        status: string;
-      };
+      const { project_id, status } = action.payload;
       const { error } = await supabase
         .from("projects")
         .update({ status })

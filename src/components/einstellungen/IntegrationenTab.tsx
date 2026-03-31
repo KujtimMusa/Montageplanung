@@ -97,6 +97,7 @@ function IntegrationKarte({
   testLaed,
   speichernLaed,
   hatFelder,
+  badge,
 }: {
   icon: ReactNode;
   titel: string;
@@ -108,6 +109,7 @@ function IntegrationKarte({
   testLaed?: boolean;
   speichernLaed?: boolean;
   hatFelder: boolean;
+  badge?: string;
 }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-zinc-800/60 bg-zinc-900">
@@ -117,7 +119,14 @@ function IntegrationKarte({
             {icon}
           </div>
           <div>
-            <p className="text-sm font-semibold text-zinc-200">{titel}</p>
+            <p className="flex items-center gap-2 text-sm font-semibold text-zinc-200">
+              {titel}
+              {badge ? (
+                <span className="rounded-full border border-amber-900/40 bg-amber-950/30 px-2 py-0.5 text-[10px] font-medium text-amber-500">
+                  {badge}
+                </span>
+              ) : null}
+            </p>
             <p className="text-xs text-zinc-500">{beschreibung}</p>
           </div>
         </div>
@@ -205,7 +214,6 @@ export function IntegrationenTab({ envFlags }: Props) {
   const [sTeams, setSTeams] = useState(false);
   const [tTeams, setTTeams] = useState(false);
   const [sPersonio, setSPersonio] = useState(false);
-  const [syncPersonio, setSyncPersonio] = useState(false);
   const [sResend, setSResend] = useState(false);
   const [tResend, setTResend] = useState(false);
   const [sGemini, setSGemini] = useState(false);
@@ -346,23 +354,6 @@ export function IntegrationenTab({ envFlags }: Props) {
       void laden();
     } finally {
       setSPersonio(false);
-    }
-  }
-
-  async function jetztSyncPersonio() {
-    setSyncPersonio(true);
-    try {
-      const res = await fetch("/api/personio/sync", { method: "POST" });
-      const j = (await res.json()) as { ok?: boolean; message?: string; error?: string };
-      if (!res.ok) {
-        toast.error(j.message ?? j.error ?? "Sync fehlgeschlagen.");
-        return;
-      }
-      toast.success(j.message ?? "Synchronisation ausgeführt.");
-      const neu = await getSetting("personio_last_sync");
-      setPersonioSyncText(formatPersonioSync(neu));
-    } finally {
-      setSyncPersonio(false);
     }
   }
 
@@ -555,10 +546,9 @@ export function IntegrationenTab({ envFlags }: Props) {
         icon={<UsersIcon size={14} />}
         titel="Personio"
         beschreibung="Abwesenheiten / HR-Sync"
+        badge="Beta"
         verbunden={personioVerbunden}
         onSpeichern={() => void personioF.handleSubmit(speichernPersonio)()}
-        onTest={() => void jetztSyncPersonio()}
-        testLaed={syncPersonio}
         speichernLaed={sPersonio}
         hatFelder={Boolean(
           personioF.watch("personio_api_key") && personioF.watch("personio_subdomain")
@@ -566,8 +556,7 @@ export function IntegrationenTab({ envFlags }: Props) {
         kinder={
           <>
           <div className="rounded-xl border border-amber-900/30 bg-amber-950/20 px-3 py-2 text-xs text-amber-400">
-            ⚠️ Personio-Sync ist noch nicht vollstaendig implementiert. Geplant fuer
-            naechstes Release.
+            ⚠️ Personio-Sync ist in Entwicklung. Credentials können bereits gespeichert werden.
           </div>
           <div className="space-y-1.5">
             <Label>API-Key</Label>
@@ -586,6 +575,12 @@ export function IntegrationenTab({ envFlags }: Props) {
             />
           </div>
           <p className="text-xs text-zinc-500">{personioSyncText}</p>
+          <button
+            disabled
+            className="rounded-xl border border-zinc-700/30 bg-zinc-800/40 px-3 py-2 text-xs font-medium text-zinc-600 cursor-not-allowed"
+          >
+            Sync (kommt bald)
+          </button>
           </>
         }
       />
