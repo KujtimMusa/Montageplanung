@@ -15,24 +15,29 @@ export default function OnboardingPage() {
     if (!betrieb.trim()) return;
     setLaedt(true);
     setFehler("");
+    try {
+      const res = await fetch("/api/org/gruenden", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          betrieb_name: betrieb,
+          vorname,
+        }),
+      });
 
-    const res = await fetch("/api/org/gruenden", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        betrieb_name: betrieb,
-        vorname,
-      }),
-    });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setFehler(data.error ?? "Fehler beim Einrichten");
+        return;
+      }
 
-    if (!res.ok) {
-      const data = (await res.json()) as { error?: string };
-      setFehler(data.error ?? "Fehler beim Einrichten");
+      router.push("/dashboard");
+      router.refresh();
+    } catch {
+      setFehler("Netzwerkfehler beim Einrichten");
+    } finally {
       setLaedt(false);
-      return;
     }
-
-    router.push("/dashboard");
   }
 
   return (

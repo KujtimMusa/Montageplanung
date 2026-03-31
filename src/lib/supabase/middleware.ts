@@ -99,6 +99,7 @@ export async function updateSession(request: NextRequest) {
     const pfadOnboarding = pfad === "/onboarding";
     const pfadJoin = pfad.startsWith("/join/");
     const pfadAuth = pfad === "/login" || pfad === "/register" || pfad.startsWith("/auth/");
+    const pfadOrgGruendenApi = pfad === "/api/org/gruenden";
 
     const { data: employee } = await supabase
       .from("employees")
@@ -106,7 +107,7 @@ export async function updateSession(request: NextRequest) {
       .eq("auth_user_id", user.id)
       .maybeSingle();
 
-    if (!employee && !pfadOnboarding && !pfadJoin && !pfadAuth) {
+    if (!employee && !pfadOnboarding && !pfadJoin && !pfadAuth && !pfadOrgGruendenApi) {
       const url = request.nextUrl.clone();
       url.pathname = "/onboarding";
       url.search = "";
