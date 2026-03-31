@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: "gemini-2.0-flash",
       generationConfig: {
         responseMimeType: "application/json",
         temperature: 0.1,
@@ -90,12 +90,23 @@ Regeln:
     try {
       const parsed = JSON.parse(cleaned) as unknown;
       return NextResponse.json(parsed);
-    } catch {
-      return NextResponse.json({ error: "Parse-Fehler" }, { status: 422 });
+    } catch (e) {
+      return NextResponse.json(
+        {
+          error: "parse_fehler",
+          message: e instanceof Error ? e.message : String(e ?? ""),
+        },
+        { status: 422 }
+      );
     }
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Fehler";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "parse_fehler",
+        message: e instanceof Error ? e.message : String(e ?? ""),
+      },
+      { status: 422 }
+    );
   }
 }
 

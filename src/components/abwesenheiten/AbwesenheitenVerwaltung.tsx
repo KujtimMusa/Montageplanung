@@ -5,6 +5,7 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
+  AlertCircle,
   AlertTriangle,
   Check,
   ChevronsUpDown,
@@ -356,6 +357,7 @@ type KiAbwesenheitVorschlag = {
   end_date: string;
   tage: number;
   begruendung: string;
+  error?: string;
 };
 
 export function AbwesenheitenVerwaltung() {
@@ -609,7 +611,10 @@ export function AbwesenheitenVerwaltung() {
           return;
         }
 
-        const { error } = await supabase.from("absences").insert(payload);
+        const { error } = await supabase.from("absences").upsert(payload, {
+          onConflict: "employee_id,start_date,absence_type",
+          ignoreDuplicates: true,
+        });
         if (error) throw error;
         toast.success("Abwesenheit erfasst.");
       }
@@ -811,7 +816,7 @@ export function AbwesenheitenVerwaltung() {
     }
   }
 
-  async function kiAbwesenheitBestaetigen(v: KiAbwesenheitVorschlag) {
+  async function abwesenheitAusKiErstellen(v: KiAbwesenheitVorschlag) {
     let fehler = 0;
     const typMapped: AbwesenheitTyp =
       v.typ === "krankheit" ? "krank" : v.typ === "urlaub" ? "urlaub" : "sonstiges";
@@ -1109,156 +1114,103 @@ export function AbwesenheitenVerwaltung() {
         )}
       </div>
 
-      <div className="mt-6 rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5">
-        <div className="mb-4 flex items-center gap-2">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-800">
-            <Sparkles size={13} className="text-zinc-400" />
+      <div className="mt-5 overflow-hidden rounded-2xl border border-zinc-800/60 bg-zinc-900">
+        <div className="flex items-center gap-3 border-b border-zinc-800/60 px-5 py-4">
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl border border-zinc-700/60 bg-zinc-800">
+            <Sparkles size={14} className="text-zinc-400" />
           </div>
-          <div>
-            <p className="text-sm font-bold text-zinc-200">KI-Schnelleingabe</p>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-zinc-200">KI-Schnelleingabe</p>
             <p className="text-xs text-zinc-600">
-              Beschreibe die Abwesenheit in natürlicher Sprache
+              Abwesenheit in natuerlicher Sprache erfassen
             </p>
           </div>
         </div>
 
-        <div className="relative">
-          <textarea
-            value={kiEingabe}
-            onChange={(e) => setKiEingabe(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                void kiAbwesenheitAnalysieren();
-              }
-            }}
-            placeholder={`Beispiele:\n"Ali ist ab morgen 3 Tage krank"\n"Jackson nimmt nächste Woche Urlaub, Montag bis Freitag"\n"Das SHK-Team hat am 15. April frei"`}
-            rows={3}
-            className="w-full resize-none rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-3 text-sm leading-relaxed text-zinc-200 placeholder:text-zinc-600 transition-colors focus:border-zinc-600 focus:outline-none"
-          />
-          <button
-            type="button"
-            onClick={() => void kiAbwesenheitAnalysieren()}
-            disabled={!kiEingabe.trim() || kiLaed}
-            className={cn(
-              "absolute right-3 bottom-3 flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
-              kiEingabe.trim() && !kiLaed
-                ? "bg-zinc-700 text-zinc-200 hover:bg-zinc-600"
-                : "cursor-not-allowed bg-zinc-800 text-zinc-600"
-            )}
-          >
-            {kiLaed ? (
-              <div className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-600/30 border-t-zinc-500" />
-            ) : (
-              <>
-                <Sparkles size={11} />
-                Analysieren
-              </>
-            )}
-          </button>
-        </div>
-
-        {kiVorschlag ? (
-          <div className="mt-3 rounded-xl border border-zinc-700/50 bg-zinc-800/60 p-4">
-            <div className="mb-3 flex items-start justify-between">
-              <p className="text-[10px] font-semibold tracking-wider text-zinc-500 uppercase">
-                KI hat verstanden
-              </p>
+        <div className="space-y-3 p-4">
+          <div className="flex flex-wrap gap-2">
+            {[
+              '"Ali ist morgen krank"',
+              '"Jackson naechste Woche Urlaub"',
+              '"SHK-Team 15. April frei"',
+            ].map((chip) => (
               <button
-                type="button"
-                onClick={() => setKiVorschlag(null)}
-                className="text-zinc-600 transition-colors hover:text-zinc-400"
+                key={chip}
+                onClick={() => setKiEingabe(chip.replace(/"/g, ""))}
+                className="rounded-full border border-zinc-700/50 bg-zinc-800 px-2.5 py-1 text-xs text-zinc-500 transition-all duration-150 hover:border-zinc-500 hover:text-zinc-300"
               >
-                <X size={13} />
+                {chip}
               </button>
-            </div>
+            ))}
+          </div>
 
-            <div className="mb-4 space-y-2">
-              <div className="flex items-start gap-3">
-                <p className="mt-0.5 w-20 shrink-0 text-[10px] font-semibold tracking-wider text-zinc-600 uppercase">
-                  Mitarbeiter
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {kiVorschlag.mitarbeiter.map((m) => (
-                    <div
-                      key={m.id}
-                      className="flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-2 py-1"
-                    >
-                      <div className="flex h-5 w-5 items-center justify-center rounded-full bg-zinc-700 text-[9px] font-bold text-zinc-400">
-                        {m.name.slice(0, 2).toUpperCase()}
-                      </div>
-                      <span className="text-xs font-semibold text-zinc-300">
-                        {m.name}
-                      </span>
-                      <span className="text-[10px] text-zinc-600">
-                        {m.abteilung}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <p className="w-20 shrink-0 text-[10px] font-semibold tracking-wider text-zinc-600 uppercase">
-                  Typ
-                </p>
-                <span
-                  className={cn(
-                    "rounded-full border px-2.5 py-1 text-xs font-bold",
-                    kiVorschlag.typ === "krankheit"
-                      ? "border-red-900/50 bg-red-950/60 text-red-400"
-                      : kiVorschlag.typ === "urlaub"
-                        ? "border-blue-900/50 bg-blue-950/60 text-blue-400"
-                        : "border-zinc-700 bg-zinc-800 text-zinc-400"
-                  )}
-                >
-                  {kiVorschlag.typ === "krankheit"
-                    ? "Krank"
-                    : kiVorschlag.typ === "urlaub"
-                      ? "Urlaub"
-                      : "Sonstiges"}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <p className="w-20 shrink-0 text-[10px] font-semibold tracking-wider text-zinc-600 uppercase">
-                  Zeitraum
-                </p>
-                <p className="text-sm font-semibold tabular-nums text-zinc-300">
-                  {format(new Date(kiVorschlag.start_date), "dd.MM.yyyy", {
-                    locale: de,
-                  })}
-                  {kiVorschlag.start_date !== kiVorschlag.end_date ? (
-                    <>
-                      {" "}
-                      -{" "}
-                      {format(new Date(kiVorschlag.end_date), "dd.MM.yyyy", {
-                        locale: de,
-                      })}
-                    </>
-                  ) : null}
-                  <span className="ml-2 font-normal text-zinc-600">
-                    ({kiVorschlag.tage} {kiVorschlag.tage === 1 ? "Tag" : "Tage"})
-                  </span>
-                </p>
-              </div>
-            </div>
-
-            <p className="mb-3 text-[10px] text-zinc-700">
-              Stimmt etwas nicht? Passe die Felder oben an oder starte neu.
-            </p>
-
+          <div className="relative">
+            <textarea
+              value={kiEingabe}
+              onChange={(e) => setKiEingabe(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void kiAbwesenheitAnalysieren();
+                }
+              }}
+              placeholder={'z.B. "Ali ist ab morgen 3 Tage krank"'}
+              rows={2}
+              className="w-full resize-none rounded-xl border border-zinc-700/60 bg-zinc-800/60 px-4 py-3 pr-32 text-sm text-zinc-200 placeholder:text-zinc-600 transition-colors focus:border-zinc-500 focus:outline-none"
+            />
             <button
-              type="button"
-              onClick={() => void kiAbwesenheitBestaetigen(kiVorschlag)}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-100 py-2.5 text-sm font-bold text-zinc-900 transition-all hover:bg-white"
+              onClick={() => void kiAbwesenheitAnalysieren()}
+              disabled={!kiEingabe.trim() || kiLaed}
+              className="absolute right-2 bottom-2 flex items-center gap-1.5 rounded-lg bg-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-all duration-150 hover:bg-zinc-600 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <Check size={14} />
-              {kiVorschlag.mitarbeiter.length} Abwesenheit
-              {kiVorschlag.mitarbeiter.length > 1 ? "en" : ""} eintragen
+              {kiLaed ? (
+                <>
+                  <Loader2 size={12} className="animate-spin" /> Analysiere...
+                </>
+              ) : (
+                <>
+                  <Sparkles size={12} /> Analysieren
+                </>
+              )}
             </button>
           </div>
-        ) : null}
+
+          {kiVorschlag?.error && (
+            <div className="flex items-start gap-2.5 rounded-xl border border-red-900/40 bg-red-950/40 px-4 py-3">
+              <AlertCircle size={14} className="mt-0.5 flex-shrink-0 text-red-400" />
+              <div>
+                <p className="text-sm font-medium text-red-300">
+                  Eingabe nicht verstanden
+                </p>
+                <p className="mt-0.5 text-xs text-red-500">
+                  Tipp: Namen genau wie in der Mitarbeiterliste schreiben, z.B.
+                  &quot;Ali ist morgen krank&quot;
+                </p>
+              </div>
+            </div>
+          )}
+
+          {kiVorschlag && !kiVorschlag.error && (
+            <div className="flex items-center justify-between rounded-xl border border-zinc-700/50 bg-zinc-800/60 px-4 py-3">
+              <div className="text-sm text-zinc-300">
+                <span className="font-medium">{kiVorschlag.mitarbeiter?.[0]?.name}</span>
+                {" · "}
+                <span className="text-zinc-500 capitalize">{kiVorschlag.typ}</span>
+                {" · "}
+                <span className="text-zinc-500">
+                  {kiVorschlag.start_date} - {kiVorschlag.end_date} ({kiVorschlag.tage}
+                  T)
+                </span>
+              </div>
+              <button
+                onClick={() => void abwesenheitAusKiErstellen(kiVorschlag)}
+                className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-zinc-900 transition-colors hover:bg-zinc-200"
+              >
+                Speichern
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <Sheet open={sheetOffen} onOpenChange={setSheetOffen}>
