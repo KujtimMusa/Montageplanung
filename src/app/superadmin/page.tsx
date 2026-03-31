@@ -37,19 +37,42 @@ interface OrgStat {
   ki_letzte_aktivitaet: string | null;
   ki_nach_typ: Record<string, number>;
   einsaetze_30d: number;
+  abwesenheiten_30d: number;
+  settings_vorhanden: boolean;
+  health_score: number;
 }
 
 interface Gesamt {
   orgs_gesamt: number;
   orgs_diese_woche: number;
   mitarbeiter_gesamt: number;
+  mitarbeiter_aktiv: number;
   einladungen_offen: number;
+  einladungen_abgelaufen: number;
   ki_aufrufe_30d: number;
   einsaetze_30d: number;
+  abwesenheiten_30d: number;
+  orgs_mit_settings: number;
+  orgs_ohne_settings: number;
 }
 
+type ApiPayload = {
+  gesamt: Gesamt;
+  orgs: OrgStat[];
+  top_ki_orgs: Array<{ id: string; name: string; wert: number }>;
+  risiko_orgs: Array<{
+    id: string;
+    name: string;
+    health_score: number;
+    ki_aufrufe_30d: number;
+    mitarbeiter_aktiv: number;
+    einladungen_abgelaufen: number;
+  }>;
+  agenten_global: Record<string, number>;
+};
+
 export default function SuperadminPage() {
-  const [daten, setDaten] = useState<{ gesamt: Gesamt; orgs: OrgStat[] } | null>(null);
+  const [daten, setDaten] = useState<ApiPayload | null>(null);
   const [laedt, setLaedt] = useState(true);
   const [ausgewaehlt, setAusgewaehlt] = useState<OrgStat | null>(null);
 
@@ -57,7 +80,7 @@ export default function SuperadminPage() {
     setLaedt(true);
     const res = await fetch("/api/superadmin/stats");
     if (res.ok) {
-      setDaten((await res.json()) as { gesamt: Gesamt; orgs: OrgStat[] });
+      setDaten((await res.json()) as ApiPayload);
     } else {
       setDaten(null);
     }
@@ -81,7 +104,7 @@ export default function SuperadminPage() {
     return <div className="text-sm text-red-400">Fehler beim Laden</div>;
   }
 
-  const { gesamt, orgs } = daten;
+  const { gesamt, orgs, top_ki_orgs, risiko_orgs, agenten_global } = daten;
 
   const kiChartDaten = [...orgs]
     .sort((a, b) => b.ki_aufrufe_30d - a.ki_aufrufe_30d)
@@ -108,7 +131,7 @@ export default function SuperadminPage() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-8">
         {[
           {
             label: "Betriebe",
@@ -119,7 +142,7 @@ export default function SuperadminPage() {
           {
             label: "Mitarbeiter",
             wert: gesamt.mitarbeiter_gesamt,
-            sub: "gesamt aktiv",
+            sub: `${gesamt.mitarbeiter_aktiv} aktiv`,
             icon: <Users size={14} />,
           },
           {
@@ -127,6 +150,12 @@ export default function SuperadminPage() {
             wert: gesamt.einladungen_offen,
             sub: "warten auf Annahme",
             icon: <Mail size={14} />,
+          },
+          {
+            label: "Invite abgelaufen",
+            wert: gesamt.einladungen_abgelaufen,
+            sub: "braucht Follow-up",
+            icon: <AlertTriangle size={14} />,
           },
           {
             label: "KI-Aufrufe",
@@ -141,6 +170,12 @@ export default function SuperadminPage() {
             icon: <CalendarDays size={14} />,
           },
           {
+            label: "Abwesenheiten",
+            wert: gesamt.abwesenheiten_30d,
+            sub: "letzte 30 Tage",
+            icon: <Clock size={14} />,
+          },
+          {
             label: "Ø KI / Betrieb",
             wert:
               gesamt.orgs_gesamt > 0
@@ -148,6 +183,15 @@ export default function SuperadminPage() {
                 : 0,
             sub: "Aufrufe pro Betrieb",
             icon: <TrendingUp size={14} />,
+          },
+          {
+            label: "Settings-Coverage",
+            wert:
+              gesamt.orgs_gesamt > 0
+                ? Math.round((gesamt.orgs_mit_settings / gesamt.orgs_gesamt) * 100)
+                : 0,
+            sub: `${gesamt.orgs_ohne_settings} ohne app-settings`,
+            icon: <CheckCircle2 size={14} />,
           },
         ].map((kpi) => (
           <div
@@ -164,8 +208,8 @@ export default function SuperadminPage() {
         ))}
       </div>
 
-      {kiChartDaten.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {kiChartDaten.length > 0 && (
           <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5">
             <p className="mb-4 text-sm font-semibold text-zinc-200">
               KI-Aufrufe je Betrieb (30 Tage)
@@ -195,7 +239,9 @@ export default function SuperadminPage() {
               </BarChart>
             </ResponsiveContainer>
           </div>
+        )}
 
+        {kiChartDaten.length > 0 && (
           <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5">
             <p className="mb-4 text-sm font-semibold text-zinc-200">
               Einsätze je Betrieb (30 Tage)
@@ -225,8 +271,79 @@ export default function SuperadminPage() {
               </BarChart>
             </ResponsiveContainer>
           </div>
+        )}
+
+        <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5">
+          <p className="mb-4 text-sm font-semibold text-zinc-200">Betriebsrisiken (Top)</p>
+          <div className="space-y-2">
+            {risiko_orgs.length === 0 && (
+              <p className="text-xs text-zinc-500">Keine kritischen Signale erkannt.</p>
+            )}
+            {risiko_orgs.map((r) => (
+              <button
+                key={r.id}
+                onClick={() => setAusgewaehlt(orgs.find((o) => o.id === r.id) ?? null)}
+                className="flex w-full items-center justify-between rounded-lg border border-zinc-800 bg-zinc-800/40 px-3 py-2 text-left hover:border-zinc-700"
+              >
+                <div>
+                  <p className="text-xs font-medium text-zinc-200">{r.name}</p>
+                  <p className="text-[10px] text-zinc-500">
+                    KI {r.ki_aufrufe_30d} · Aktiv {r.mitarbeiter_aktiv} · Invite abgel.{" "}
+                    {r.einladungen_abgelaufen}
+                  </p>
+                </div>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[10px] ${
+                    r.health_score < 50
+                      ? "bg-red-950/30 text-red-400"
+                      : "bg-amber-950/30 text-amber-400"
+                  }`}
+                >
+                  {r.health_score}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
-      )}
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5">
+          <p className="mb-4 text-sm font-semibold text-zinc-200">Top KI-Mandanten</p>
+          <div className="space-y-2">
+            {top_ki_orgs.map((org, idx) => (
+              <button
+                key={org.id}
+                onClick={() => setAusgewaehlt(orgs.find((o) => o.id === org.id) ?? null)}
+                className="flex w-full items-center justify-between rounded-lg border border-zinc-800 bg-zinc-800/30 px-3 py-2 hover:border-zinc-700"
+              >
+                <p className="text-xs text-zinc-300">
+                  {idx + 1}. {org.name}
+                </p>
+                <span className="text-xs font-semibold text-violet-400">{org.wert}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-zinc-800/60 bg-zinc-900 p-5">
+          <p className="mb-4 text-sm font-semibold text-zinc-200">Agenten-Mix global (30d)</p>
+          <div className="space-y-2">
+            {Object.entries(agenten_global)
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 8)
+              .map(([typ, count]) => (
+                <div key={typ} className="flex items-center justify-between text-xs">
+                  <span className="text-zinc-400">{typ}</span>
+                  <span className="font-semibold text-zinc-200">{count}</span>
+                </div>
+              ))}
+            {Object.keys(agenten_global).length === 0 && (
+              <p className="text-xs text-zinc-500">Keine Agentenaktivität.</p>
+            )}
+          </div>
+        </div>
+      </div>
 
       <div className="overflow-hidden rounded-2xl border border-zinc-800/60 bg-zinc-900">
         <div className="flex items-center justify-between border-b border-zinc-800/60 px-5 py-4">
@@ -244,6 +361,8 @@ export default function SuperadminPage() {
                   "Invites",
                   "KI 30d",
                   "Einsätze 30d",
+                  "Abwesenh. 30d",
+                  "Health",
                   "Letzte Aktivität",
                 ].map((h) => (
                   <th
@@ -319,6 +438,20 @@ export default function SuperadminPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-zinc-400">{org.einsaetze_30d}</td>
+                    <td className="px-4 py-3 text-sm text-zinc-400">{org.abwesenheiten_30d}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] ${
+                          org.health_score >= 80
+                            ? "bg-emerald-950/30 text-emerald-400"
+                            : org.health_score >= 60
+                              ? "bg-amber-950/30 text-amber-400"
+                              : "bg-red-950/30 text-red-400"
+                        }`}
+                      >
+                        {org.health_score}
+                      </span>
+                    </td>
                     <td className="px-4 py-3">
                       {tageInaktiv === null ? (
                         <span className="text-xs text-zinc-600">Nie</span>
@@ -394,6 +527,29 @@ export default function SuperadminPage() {
                   <p className="text-xs text-zinc-600">Keine KI-Nutzung</p>
                 )}
               </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <div className="rounded-xl border border-zinc-700/40 bg-zinc-800/40 p-4">
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">Health</p>
+              <p className="mt-1 text-xl font-bold text-zinc-100">{ausgewaehlt.health_score}</p>
+            </div>
+            <div className="rounded-xl border border-zinc-700/40 bg-zinc-800/40 p-4">
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">Settings</p>
+              <p className="mt-1 text-sm font-semibold text-zinc-200">
+                {ausgewaehlt.settings_vorhanden ? "vorhanden" : "fehlt"}
+              </p>
+            </div>
+            <div className="rounded-xl border border-zinc-700/40 bg-zinc-800/40 p-4">
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">Abwesenh. 30d</p>
+              <p className="mt-1 text-xl font-bold text-zinc-100">
+                {ausgewaehlt.abwesenheiten_30d}
+              </p>
+            </div>
+            <div className="rounded-xl border border-zinc-700/40 bg-zinc-800/40 p-4">
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">Slug</p>
+              <p className="mt-1 text-xs font-semibold text-zinc-300">{ausgewaehlt.slug}</p>
             </div>
           </div>
 
