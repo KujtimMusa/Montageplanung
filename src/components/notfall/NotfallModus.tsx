@@ -33,7 +33,7 @@ import { ScanSearch } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { pruefeEinsatzKonflikt, zeitZuMinuten } from "@/lib/utils/conflicts";
+import { pruefeEinsatzKonflikt } from "@/lib/utils/conflicts";
 import type { KiErsatzKarte, KiNotfallAntwort } from "@/types/notfall-ki";
 import { NotfallSteuerung } from "@/components/notfall/NotfallSteuerung";
 import { KiNotfallPanel } from "@/components/notfall/KiNotfallPanel";
@@ -470,6 +470,26 @@ export function NotfallModus() {
         !abwesendIds.has(m.id)
     );
 
+    const kandidatenIds = kandidatenBasis.map((k) => k.id);
+    const teamIdsByEmployee: Record<string, string[]> = {};
+    if (kandidatenIds.length > 0) {
+      const { data: tmRows } = await supabase
+        .from("team_members")
+        .select("employee_id,team_id")
+        .in("employee_id", kandidatenIds);
+      const map: Record<string, Set<string>> = {};
+      for (const r of tmRows ?? []) {
+        const emp = String((r as Record<string, unknown>).employee_id ?? "");
+        const tid = String((r as Record<string, unknown>).team_id ?? "");
+        if (!emp || !tid) continue;
+        if (!map[emp]) map[emp] = new Set<string>();
+        map[emp].add(tid);
+      }
+      for (const [emp, set] of Object.entries(map)) {
+        teamIdsByEmployee[emp] = Array.from(set);
+      }
+    }
+
     const kandidatenMitEinsaetzen: {
       id: string;
       name: string;
@@ -500,15 +520,20 @@ export function NotfallModus() {
         };
       });
 
-      const hatEchtenKonflikt = rows.some((fe) => {
-        const fsMin = zeitZuMinuten(fe.start_time);
-        const feMin = zeitZuMinuten(fe.end_time);
-        return einsaetze.some((ke) => {
-          const ks = zeitZuMinuten(ke.start_time);
-          const ke2 = zeitZuMinuten(ke.end_time);
-          return fsMin < ke2 && feMin > ks;
+      let hatEchtenKonflikt = false;
+      for (const fe of rows) {
+        const pr = await pruefeEinsatzKonflikt(supabase, {
+          mitarbeiterId: k.id,
+          datum: fe.date,
+          startZeit: fe.start_time,
+          endZeit: fe.end_time,
+          teamIds: teamIdsByEmployee[k.id] ?? [],
         });
-      });
+        if (pr.hatKonflikt) {
+          hatEchtenKonflikt = true;
+          break;
+        }
+      }
 
       kandidatenMitEinsaetzen.push({
         id: k.id,
@@ -562,7 +587,9 @@ export function NotfallModus() {
 
       const map: Record<string, KiErsatzKarte> = {};
       for (const einsatz of parsed.einsaetze ?? []) {
-        const first = einsatz.vorschlaege?.[0];
+        const first = einsatz.vorschlaege?.find(
+          (v) => !v.konflikt && v.verfuegbar
+        ) ?? einsatz.vorschlaege?.[0];
         if (!first?.mitarbeiter_id) continue;
         map[einsatz.id] = {
           name: first.name,
@@ -688,9 +715,23 @@ export function NotfallModus() {
       for (const e of einsätze) {
         const ersatzIdEmp = ersatzMap[e.id];
         try {
+          const { data: teamRow } = await supabase
+            .from("team_members")
+            .select("team_id")
+            .eq("employee_id", ersatzIdEmp)
+            .limit(1)
+            .maybeSingle();
+
+          const updatePayload: Record<string, string> = {
+            employee_id: ersatzIdEmp,
+          };
+          if (teamRow?.team_id) {
+            updatePayload.team_id = String(teamRow.team_id);
+          }
+
           const { error } = await supabase
             .from("assignments")
-            .update({ employee_id: ersatzIdEmp })
+            .update(updatePayload)
             .eq("id", e.id);
 
           if (error) {
@@ -699,6 +740,40 @@ export function NotfallModus() {
               error
             );
             fehlgeschlagen.push({ einsatzId: e.id, message: error.message });
+            continue;
+          }
+
+          // Falls vorhanden: assignment_employees auf den neuen Ersatz synchron halten.
+          const { error: delPivotErr } = await supabase
+            .from("assignment_employees")
+            .delete()
+            .eq("assignment_id", e.id);
+          if (
+            delPivotErr &&
+            !delPivotErr.message.toLowerCase().includes("relation") &&
+            !delPivotErr.message.toLowerCase().includes("does not exist")
+          ) {
+            console.warn(
+              `[alleErsatzBestaetigen] assignment_employees delete Warnung für ${e.id}:`,
+              delPivotErr
+            );
+          } else {
+            const { error: insPivotErr } = await supabase
+              .from("assignment_employees")
+              .insert({
+                assignment_id: e.id,
+                employee_id: ersatzIdEmp,
+              });
+            if (
+              insPivotErr &&
+              !insPivotErr.message.toLowerCase().includes("relation") &&
+              !insPivotErr.message.toLowerCase().includes("does not exist")
+            ) {
+              console.warn(
+                `[alleErsatzBestaetigen] assignment_employees insert Warnung für ${e.id}:`,
+                insPivotErr
+              );
+            }
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
