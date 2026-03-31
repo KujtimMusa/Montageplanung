@@ -90,8 +90,33 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const pfad = request.nextUrl.pathname;
+  const istSuperadminPfad = pfad.startsWith("/superadmin");
 
   if (istInternesOderStatischesAsset(pfad)) {
+    return supabaseAntwort;
+  }
+
+  if (istSuperadminPfad) {
+    if (!user) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/login";
+      url.searchParams.set("weiter", pfad);
+      return NextResponse.redirect(url);
+    }
+
+    const { data: sa } = await supabase
+      .from("superadmins")
+      .select("user_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (!sa) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/dashboard";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+
     return supabaseAntwort;
   }
 
