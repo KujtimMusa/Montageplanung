@@ -616,9 +616,9 @@ export function DienstleisterVerwaltung() {
 
   return (
     <TooltipProvider>
-      <div className="flex gap-4 h-[calc(100vh-60px)] p-6">
+      <div className="flex flex-col gap-4 p-6">
         {/* HAUPTBEREICH */}
-        <div className="flex-1 flex flex-col gap-4 min-w-0 overflow-y-auto">
+        <div className="w-full flex flex-col gap-4 min-w-0">
           <div className="flex items-start justify-between mb-2">
             <div>
               <h1 className="text-2xl font-bold text-zinc-100">Dienstleister</h1>
@@ -882,18 +882,9 @@ export function DienstleisterVerwaltung() {
           )}
         </div>
 
-        {/* RECHTES PANEL */}
-        <div className="w-80 flex-shrink-0 flex flex-col gap-3">
-          {!detailD ? (
-            <div className="rounded-2xl bg-zinc-900 border border-zinc-800/60 flex items-center justify-center p-8 flex-1">
-              <div className="text-center">
-                <Building2 size={28} className="text-zinc-700 mx-auto mb-2" />
-                <p className="text-sm text-zinc-600">Partner auswählen</p>
-                <p className="text-xs text-zinc-700 mt-1">Klicke auf einen Dienstleister</p>
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-3 flex-1 overflow-y-auto">
+        {detailD ? (
+          <div className="w-full rounded-2xl border border-zinc-800/60 bg-zinc-950 overflow-hidden p-4">
+            <div className="flex flex-col gap-3">
               <div className="rounded-2xl bg-zinc-900 border border-zinc-800/60 p-4">
                 <div className="flex items-start gap-3 mb-4">
                   <div className="w-11 h-11 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center text-base font-bold text-zinc-400 flex-shrink-0">
@@ -1045,8 +1036,8 @@ export function DienstleisterVerwaltung() {
                 </div>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        ) : null}
 
         {/* E-MAIL DIALOG */}
         {emailDialogOffen ? (
