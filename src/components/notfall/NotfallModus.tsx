@@ -672,7 +672,36 @@ export function NotfallModus() {
         }
       );
       if (error) console.error("[absenceEinmalig]", error);
-      if (!error) absenceEingetragenRef.current = true;
+      if (!error) {
+        absenceEingetragenRef.current = true;
+        void fetch("/api/automations/trigger", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            typ: "krankmeldung",
+            payload: {
+              ausfallMitarbeiter: ausfall
+                ? {
+                    id: ausfall.id,
+                    name: ausfall.name,
+                    abteilung: ausfall.abteilung ?? "",
+                    qualifikationen: ausfall.qualifikationen ?? [],
+                  }
+                : { id: ausfallId, name: "", abteilung: "", qualifikationen: [] },
+              datum,
+              betroffeneEinsaetze: einsätze.map((e) => ({
+                id: e.id,
+                projektTitel: e.projects?.title ?? e.project_title ?? "Einsatz",
+                teamName: e.teamName,
+                datum: e.date,
+                startZeit: e.start_time,
+                endZeit: e.end_time,
+              })),
+              verfuegbareKraefte: [],
+            },
+          }),
+        }).catch(() => {});
+      }
     } else {
       console.log(
         "[absenceEinmalig] Tag bereits durch Eintrag",

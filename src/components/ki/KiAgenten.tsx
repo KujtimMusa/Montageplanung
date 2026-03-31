@@ -137,6 +137,41 @@ async function kopiereText(text: string) {
   }
 }
 
+function AgentErgebnis({ text }: { text: string }) {
+  let parsed: Record<string, unknown> | null = null;
+  try {
+    parsed = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    parsed = null;
+  }
+
+  if (parsed) {
+    return (
+      <div className="mt-3 space-y-2">
+        {Object.entries(parsed).map(([k, v]) => (
+          <div
+            key={k}
+            className="rounded-xl border border-zinc-700/40 bg-zinc-800/60 px-3 py-2"
+          >
+            <p className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">
+              {k.replace(/_/g, " ")}
+            </p>
+            <p className="text-xs leading-relaxed text-zinc-300">
+              {typeof v === "string" ? v : JSON.stringify(v)}
+            </p>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 max-h-48 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-zinc-300">
+      {text}
+    </div>
+  );
+}
+
 export function KiAgenten() {
   const [ergebnis, setErgebnis] = useState<Record<string, string>>({});
   const [laed, setLaed] = useState<Record<string, boolean>>({});
@@ -235,13 +270,7 @@ export function KiAgenten() {
               </div>
             </div>
 
-            {ergebnis[agent.id] ? (
-              <div className="mb-3 max-h-48 overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-950/50 p-3">
-                <p className="whitespace-pre-wrap text-xs leading-relaxed text-zinc-300">
-                  {ergebnis[agent.id]}
-                </p>
-              </div>
-            ) : null}
+            {ergebnis[agent.id] ? <AgentErgebnis text={ergebnis[agent.id]} /> : null}
 
             {laed[agent.id] && !ergebnis[agent.id] ? (
               <div className="mb-3 space-y-1.5">

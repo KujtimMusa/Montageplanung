@@ -320,6 +320,37 @@ export function EinsatzNeuDialog({
     }
   }
 
+  async function automationNeuerEinsatzFireAndForget(
+    employeeId: string | null,
+    einsatzTitel: string,
+    datum: string
+  ) {
+    if (!employeeId) return;
+    try {
+      const { data: emp } = await supabase
+        .from("employees")
+        .select("phone")
+        .eq("id", employeeId)
+        .maybeSingle();
+      const mitarbeiterPhone = (emp as { phone?: string | null } | null)?.phone ?? "";
+
+      void fetch("/api/automations/trigger", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          typ: "neuer_einsatz",
+          payload: {
+            mitarbeiter_phone: mitarbeiterPhone,
+            einsatz_titel: einsatzTitel,
+            datum,
+          },
+        }),
+      }).catch(() => {});
+    } catch {
+      /* fire-and-forget */
+    }
+  }
+
   async function onSubmit(werte: EinsatzFormularWerte) {
     setKonfliktText(null);
     setAbwesenheitWarnung(null);
@@ -492,6 +523,9 @@ export function EinsatzNeuDialog({
             console.warn("[EinsatzNeuDialog] pivot upsert fehlgeschlagen:", upErr);
           }
         }
+        const projektTitel =
+          projekte.find((x) => x.id === werte.projekt_id)?.title ?? "Einsatz";
+        void automationNeuerEinsatzFireAndForget(empId, projektTitel, d);
         insgesamt += 1;
       }
       if (!bearbeiten && einTeam) {

@@ -1,4 +1,7 @@
+"use client";
+
 import { Bot, MessageSquare, Sparkles, Zap } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { KiAgenten } from "@/components/ki/KiAgenten";
 import { KiAutomatisierungen } from "@/components/ki/KiAutomatisierungen";
@@ -12,12 +15,10 @@ function parseKiTab(tab: string | string[] | undefined): KiTabId {
   return v && kiTabIds.includes(v as KiTabId) ? (v as KiTabId) : "chat";
 }
 
-type KiSeiteProps = {
-  searchParams?: { tab?: string | string[] };
-};
-
-export default function KiSeite({ searchParams }: KiSeiteProps) {
-  const aktivTab = parseKiTab(searchParams?.tab);
+export default function KiSeite() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const aktivTab = parseKiTab(searchParams.get("tab") ?? undefined);
 
   return (
     <div className="flex min-h-[calc(100dvh-6rem)] flex-col gap-6">
@@ -40,7 +41,10 @@ export default function KiSeite({ searchParams }: KiSeiteProps) {
       </div>
 
       <Tabs
-        defaultValue={aktivTab}
+        value={aktivTab}
+        onValueChange={(tab) => {
+          router.replace(`?tab=${tab}`, { scroll: false });
+        }}
         className="flex w-full flex-1 flex-col gap-4"
       >
         <TabsList className="h-auto w-full flex-wrap justify-start gap-1 rounded-xl border border-zinc-800 bg-zinc-900/50 p-1 sm:w-auto">

@@ -3,7 +3,19 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { istKiKonfiguriert, kiModell } from "@/lib/agents/ki-client";
 
+let kontextCache: {
+  kontext: string;
+  stats: { ma: number; pr: number; zu: number; abw: number };
+  ts: number;
+} | null = null;
+const CACHE_TTL = 60_000;
+
 async function kontextLaden(supabase: SupabaseClient) {
+  const now = Date.now();
+  if (kontextCache && now - kontextCache.ts < CACHE_TTL) {
+    return kontextCache;
+  }
+
   const heute = new Date().toISOString().slice(0, 10);
 
   const [
@@ -66,6 +78,16 @@ async function kontextLaden(supabase: SupabaseClient) {
   ]);
 
   const kontext = [
+    "WICHTIG — ANTWORTFORMAT:",
+    "Wenn du Listen von Mitarbeitern, Einsätzen oder Projekten",
+    "zurückgibst, formatiere sie als Markdown-Tabelle.",
+    "Wenn du eine Warnung oder einen Konflikt erkennst,",
+    "beginne deine Antwort mit '⚠️ WARNUNG:'",
+    "Wenn du eine Empfehlung gibst, beginne mit '💡 EMPFEHLUNG:'",
+    "Wenn du eine Aktion ausführen könntest, beginne mit '⚡ AKTION:'",
+    "Halte Antworten kurz und präzise — max 150 Wörter.",
+    "Kein Markdown-Code-Fences (kein ```).",
+    "",
     `Heutiges Datum (ISO): ${heute}`,
     `Lokales Datum: ${new Date().toLocaleDateString("de-DE")}`,
     "Du bist der KI-Assistent für einen Handwerksbetrieb (Einsatzplanung).",
@@ -98,7 +120,7 @@ async function kontextLaden(supabase: SupabaseClient) {
     JSON.stringify(abwesenheiten ?? []),
   ].join("\n");
 
-  return {
+  const result = {
     kontext,
     stats: {
       ma: ma?.length ?? 0,
@@ -106,7 +128,10 @@ async function kontextLaden(supabase: SupabaseClient) {
       zu: zu?.length ?? 0,
       abw: abw?.length ?? 0,
     },
+    ts: now,
   };
+  kontextCache = result;
+  return result;
 }
 
 export async function POST(request: Request) {
@@ -127,6 +152,11 @@ export async function POST(request: Request) {
     typeof raw.message === "string" &&
     raw.message.trim().length > 0 &&
     (!raw.messages || raw.messages.length === 0);
+
+  const reqUrl = new URL(request.url);
+  if (reqUrl.searchParams.get("noCache") === "1") {
+    kontextCache = null;
+  }
 
   const { kontext, stats } = await kontextLaden(supabase);
 
