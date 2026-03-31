@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { istKiKonfiguriert, kiModell } from "@/lib/agents/ki-client";
 import type { KiStrukturierteAgentAntwort } from "@/types/ki-actions";
+import { getMyOrgId } from "@/lib/org";
 
 /** Planungsoptimierer — Text-Stream */
 export async function POST(request: Request) {
@@ -12,6 +13,10 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser();
   if (!user) {
     return new Response("Unauthorized", { status: 401 });
+  }
+  const orgId = await getMyOrgId();
+  if (!orgId) {
+    return new Response("Keine Org", { status: 403 });
   }
 
   const body = (await request.json().catch(() => ({}))) as {
@@ -23,10 +28,12 @@ export async function POST(request: Request) {
     supabase
       .from("employees")
       .select("id,name,department_id,active,qualifikationen")
+      .eq("organization_id", orgId)
       .eq("active", true),
     supabase
       .from("assignments")
       .select("employee_id,date,start_time,end_time, projects(title)")
+      .eq("organization_id", orgId)
       .limit(300),
   ]);
 

@@ -63,6 +63,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { logFehler } from "@/lib/logger";
 import type {
   Abwesenheit,
   AbwesenheitFormWerte,
@@ -672,7 +673,7 @@ export function AbwesenheitenVerwaltung() {
                 datum: payload.start_date,
               },
             }),
-          }).catch(() => {});
+          }).catch((e) => logFehler("AbwesenheitenVerwaltung:automation", e));
         }
         toast.success("Abwesenheit erfasst.");
       }
@@ -976,7 +977,7 @@ export function AbwesenheitenVerwaltung() {
             typ: "krankmeldung",
             payload: { mitarbeiter_id: ma.id, datum: toDateKey(v.start_date) },
           }),
-        }).catch(() => {});
+        }).catch((e) => logFehler("AbwesenheitenVerwaltung:ki-automation", e));
       }
     }
 

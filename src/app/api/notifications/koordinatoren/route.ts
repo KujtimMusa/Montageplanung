@@ -7,14 +7,16 @@ import {
   templateKrankmeldungKoordinator,
   templateDienstleisterMeldung,
 } from "@/lib/email-templates";
+import { getMyOrgId } from "@/lib/org";
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
 
-async function ladeKoordinatoren(supabase: SupabaseServerClient) {
+async function ladeKoordinatoren(supabase: SupabaseServerClient, orgId: string) {
   const { data } = await supabase
     .from("employees")
     .select("id,name,email,role")
     .in("role", ["admin", "teamleiter", "abteilungsleiter"])
+    .eq("organization_id", orgId)
     .eq("active", true)
     .not("email", "is", null);
   return data ?? [];
@@ -34,14 +36,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const orgId = await getMyOrgId();
+  if (!orgId) {
+    return NextResponse.json({ error: "Keine Organisation" }, { status: 403 });
+  }
+
   const { data: settings } = await supabase
     .from("settings")
     .select("betrieb_name")
     .eq("key", "app")
+    .eq("organization_id", orgId)
     .single();
   const betriebName = (settings as { betrieb_name?: string } | null)?.betrieb_name;
 
-  const koordinatoren = await ladeKoordinatoren(supabase);
+  const koordinatoren = await ladeKoordinatoren(supabase, orgId);
   if (!koordinatoren.length) {
     return NextResponse.json({
       ok: true,

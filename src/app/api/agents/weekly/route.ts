@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { istKiKonfiguriert, kiModell } from "@/lib/agents/ki-client";
 import type { KiStrukturierteAgentAntwort } from "@/types/ki-actions";
+import { getMyOrgId } from "@/lib/org";
 
 /** Wochenbericht — Text-Stream */
 export async function POST() {
@@ -12,6 +13,10 @@ export async function POST() {
   } = await supabase.auth.getUser();
   if (!user) {
     return new Response("Unauthorized", { status: 401 });
+  }
+  const orgId = await getMyOrgId();
+  if (!orgId) {
+    return new Response("Keine Org", { status: 403 });
   }
 
   const heute = new Date();
@@ -31,6 +36,7 @@ export async function POST() {
       .select(
         "date,start_time,end_time,employee_id,project_title, projects(title), teams(name)"
       )
+      .eq("organization_id", orgId)
       .gte("date", von)
       .lte("date", bis)
       .limit(400),
@@ -39,12 +45,14 @@ export async function POST() {
       .select(
         "type,start_date,end_date,employee:employees!employee_id(name)"
       )
+      .eq("organization_id", orgId)
       .lte("start_date", bis)
       .gte("end_date", von)
       .limit(100),
     supabase
       .from("projects")
       .select("title,status,priority")
+      .eq("organization_id", orgId)
       .limit(80),
   ]);
 

@@ -96,6 +96,30 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (user) {
+    const pfadOnboarding = pfad === "/onboarding";
+    const pfadJoin = pfad.startsWith("/join/");
+    const pfadAuth = pfad === "/login" || pfad === "/register" || pfad.startsWith("/auth/");
+
+    const { data: employee } = await supabase
+      .from("employees")
+      .select("id,organization_id")
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
+
+    if (!employee && !pfadOnboarding && !pfadJoin && !pfadAuth) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/onboarding";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+
+    if (employee && pfadOnboarding) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/dashboard";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+
     if (
       pfad === "/" ||
       pfad === "/login" ||

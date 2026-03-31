@@ -2,17 +2,19 @@ import { convertToModelMessages, streamText, type UIMessage } from "ai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { istKiKonfiguriert, kiModell } from "@/lib/agents/ki-client";
+import { getMyOrgId } from "@/lib/org";
 
 let kontextCache: {
+  orgId: string;
   kontext: string;
   stats: { ma: number; pr: number; zu: number; abw: number };
   ts: number;
 } | null = null;
 const CACHE_TTL = 60_000;
 
-async function kontextLaden(supabase: SupabaseClient) {
+async function kontextLaden(supabase: SupabaseClient, orgId: string) {
   const now = Date.now();
-  if (kontextCache && now - kontextCache.ts < CACHE_TTL) {
+  if (kontextCache && kontextCache.orgId === orgId && now - kontextCache.ts < CACHE_TTL) {
     return kontextCache;
   }
 
@@ -31,28 +33,33 @@ async function kontextLaden(supabase: SupabaseClient) {
     supabase
       .from("employees")
       .select("id,name,role,active,department_id")
+      .eq("organization_id", orgId)
       .eq("active", true)
       .limit(300),
     supabase
       .from("projects")
       .select("id,title,status,priority,planned_start,planned_end")
+      .eq("organization_id", orgId)
       .limit(150),
     supabase
       .from("assignments")
       .select(
         "id,employee_id,project_id,project_title,date,start_time,end_time"
       )
+      .eq("organization_id", orgId)
       .order("date", { ascending: false })
       .limit(200),
     supabase
       .from("absences")
       .select("id,employee_id,type,start_date,end_date,status")
+      .eq("organization_id", orgId)
       .limit(200),
     supabase
       .from("assignments")
       .select(
         "id,employee_id,project_id,project_title,date,start_time,end_time"
       )
+      .eq("organization_id", orgId)
       .eq("date", heute)
       .limit(100),
     supabase
@@ -60,12 +67,14 @@ async function kontextLaden(supabase: SupabaseClient) {
       .select(
         "id,date,start_time,end_time,project_title, projects(title), teams(name)"
       )
+      .eq("organization_id", orgId)
       .gte("date", heute)
       .order("date", { ascending: true })
       .limit(50),
     supabase
       .from("projects")
       .select("title,status,priority")
+      .eq("organization_id", orgId)
       .neq("status", "abgeschlossen")
       .limit(20),
     supabase
@@ -73,6 +82,7 @@ async function kontextLaden(supabase: SupabaseClient) {
       .select(
         "type,start_date,end_date,employee:employees!employee_id(name)"
       )
+      .eq("organization_id", orgId)
       .gte("end_date", heute)
       .limit(20),
   ]);
@@ -143,6 +153,7 @@ async function kontextLaden(supabase: SupabaseClient) {
   ].join("\n");
 
   const result = {
+    orgId,
     kontext,
     stats: {
       ma: ma?.length ?? 0,
@@ -165,6 +176,11 @@ export async function POST(request: Request) {
     return new Response("Unauthorized", { status: 401 });
   }
 
+  const orgId = await getMyOrgId();
+  if (!orgId) {
+    return new Response("Keine Org", { status: 403 });
+  }
+
   const raw = (await request.json()) as {
     messages?: UIMessage[];
     message?: string;
@@ -180,7 +196,7 @@ export async function POST(request: Request) {
     kontextCache = null;
   }
 
-  const { kontext, stats } = await kontextLaden(supabase);
+  const { kontext, stats } = await kontextLaden(supabase, orgId);
 
   if (!istKiKonfiguriert()) {
     return new Response(

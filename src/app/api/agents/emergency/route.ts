@@ -2,6 +2,7 @@ import { GoogleGenerativeAI, SchemaType, type Schema } from "@google/generative-
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import type { NotfallAnalyse } from "@/types/notfall-ki";
+import { getMyOrgId } from "@/lib/org";
 
 const SYSTEM_NOTFALL = `Du bist ein Notfall-Planungsassistent für Handwerksbetriebe.
 Antworte ausschließlich im vorgegebenen JSON-Format.
@@ -39,6 +40,10 @@ export async function POST(request: Request) {
     } = await supabase.auth.getUser();
     if (!user) {
       return NextResponse.json({ fehler: "Nicht angemeldet." }, { status: 401 });
+    }
+    const orgId = await getMyOrgId();
+    if (!orgId) {
+      return NextResponse.json({ fehler: "Keine Org" }, { status: 403 });
     }
 
     const body = (await request.json()) as EmergencyBody;

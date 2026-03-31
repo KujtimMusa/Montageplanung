@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { istKiKonfiguriert, kiModell } from "@/lib/agents/ki-client";
 import type { KiStrukturierteAgentAntwort } from "@/types/ki-actions";
 import { logFehler } from "@/lib/logger";
+import { getMyOrgId } from "@/lib/org";
 
 /** Konflikt-Resolver — Text-Stream */
 export async function POST() {
@@ -14,10 +15,15 @@ export async function POST() {
   if (!user) {
     return new Response("Unauthorized", { status: 401 });
   }
+  const orgId = await getMyOrgId();
+  if (!orgId) {
+    return new Response("Keine Org", { status: 403 });
+  }
 
   const { data: zu, error } = await supabase
     .from("assignments")
     .select("id,employee_id,date,start_time,end_time, projects(title)")
+    .eq("organization_id", orgId)
     .limit(500);
 
   if (error) {

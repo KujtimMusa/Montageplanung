@@ -60,7 +60,7 @@ export async function POST(request: Request) {
     );
   }
 
-  // TODO: Für echten Versand muss RESEND_API_KEY in .env.local gesetzt sein.
+  // Echte Versendung nutzt DB-Settings oder Umgebungsvariablen.
   const s = await loadSettingsMap(supabase, ["resend_api_key", "resend_from_email"]);
   const apiKey = s.resend_api_key?.trim() ?? process.env.RESEND_API_KEY?.trim() ?? "";
   const from = s.resend_from_email?.trim() ?? process.env.RESEND_FROM_EMAIL?.trim() ?? "";

@@ -32,6 +32,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScanSearch } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { logFehler } from "@/lib/logger";
 import { toast } from "sonner";
 import { pruefeEinsatzKonflikt } from "@/lib/utils/conflicts";
 import type { KiErsatzKarte, KiNotfallAntwort } from "@/types/notfall-ki";
@@ -700,7 +701,7 @@ export function NotfallModus() {
               verfuegbareKraefte: [],
             },
           }),
-        }).catch(() => {});
+        }).catch((e) => logFehler("NotfallModus:automation", e));
       }
     } else {
       console.log(

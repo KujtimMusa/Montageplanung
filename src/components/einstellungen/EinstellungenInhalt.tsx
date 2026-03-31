@@ -8,6 +8,7 @@ import { IntegrationenTab, type EnvFlags } from "@/components/einstellungen/Inte
 import { BenachrichtigungenTab } from "@/components/einstellungen/BenachrichtigungenTab";
 import { ProfilTab } from "@/components/einstellungen/ProfilTab";
 import { BetriebTab } from "@/components/einstellungen/BetriebTab";
+import { logFehler } from "@/lib/logger";
 
 const tabIds = [
   "betrieb",
@@ -70,7 +71,7 @@ export function EinstellungenInhalt() {
           teams_webhook_url: Boolean(j.teams_webhook_url),
         });
       })
-      .catch(() => {});
+      .catch((e) => logFehler("EinstellungenInhalt:env-flags", e));
   }, []);
 
   return (

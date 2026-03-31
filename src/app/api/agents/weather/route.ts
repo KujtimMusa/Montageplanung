@@ -5,6 +5,7 @@ import { wetterVorhersageLaden } from "@/lib/weather/open-meteo";
 import { istKiKonfiguriert, kiModell } from "@/lib/agents/ki-client";
 import type { KiStrukturierteAgentAntwort } from "@/types/ki-actions";
 import { logFehler } from "@/lib/logger";
+import { getMyOrgId } from "@/lib/org";
 
 /** Wetter — Open-Meteo + KI-Text-Stream */
 export async function POST(request: Request) {
@@ -14,6 +15,10 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser();
   if (!user) {
     return new Response("Unauthorized", { status: 401 });
+  }
+  const orgId = await getMyOrgId();
+  if (!orgId) {
+    return new Response("Keine Org", { status: 403 });
   }
 
   const body = (await request.json()) as { lat?: number; lng?: number };

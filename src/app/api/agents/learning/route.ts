@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { istKiKonfiguriert, kiModell } from "@/lib/agents/ki-client";
 import type { KiStrukturierteAgentAntwort } from "@/types/ki-actions";
+import { getMyOrgId } from "@/lib/org";
 
 /**
  * Lern-/Auswertungs-Agent — Text-Stream.
@@ -16,6 +17,10 @@ export async function POST(request: Request) {
   if (!user) {
     return new Response("Unauthorized", { status: 401 });
   }
+  const orgId = await getMyOrgId();
+  if (!orgId) {
+    return new Response("Keine Org", { status: 403 });
+  }
 
   const body = (await request.json().catch(() => ({}))) as { frage?: string };
   const frage = (body.frage ?? "").trim();
@@ -24,10 +29,19 @@ export async function POST(request: Request) {
     supabase
       .from("agent_log")
       .select("id,agent_type,trigger_event,success,created_at")
+      .eq("organization_id", orgId)
       .order("created_at", { ascending: false })
       .limit(40),
-    supabase.from("employees").select("id,name,role,active").limit(80),
-    supabase.from("projects").select("id,title,status,priority").limit(50),
+    supabase
+      .from("employees")
+      .select("id,name,role,active")
+      .eq("organization_id", orgId)
+      .limit(80),
+    supabase
+      .from("projects")
+      .select("id,title,status,priority")
+      .eq("organization_id", orgId)
+      .limit(50),
   ]);
 
   const logStichprobe = logs ?? [];
