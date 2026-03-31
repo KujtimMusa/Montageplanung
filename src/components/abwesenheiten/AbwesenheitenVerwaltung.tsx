@@ -360,6 +360,10 @@ type KiAbwesenheitVorschlag = {
   error?: string;
 };
 
+type KiZielTyp = "mitarbeiter" | "team" | "abteilung";
+type KiTypAuswahl = "krank" | "urlaub" | "fortbildung" | "sonstiges";
+type KiDatumModus = "heute" | "morgen" | "datum" | "zeitraum";
+
 export function AbwesenheitenVerwaltung() {
   const supabase = useMemo(() => createClient(), []);
   const [abwesenheiten, setAbwesenheiten] = useState<Abwesenheit[]>([]);
@@ -369,6 +373,7 @@ export function AbwesenheitenVerwaltung() {
   const [abteilungen, setAbteilungen] = useState<{ id: string; name: string }[]>(
     []
   );
+  const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
   const [laden, setLaden] = useState(true);
   const [sheetOffen, setSheetOffen] = useState(false);
   const [bearbeitenId, setBearbeitenId] = useState<string | null>(null);
@@ -396,19 +401,28 @@ export function AbwesenheitenVerwaltung() {
   const [kiVorschlag, setKiVorschlag] = useState<KiAbwesenheitVorschlag | null>(
     null
   );
+  const [kiZielTyp, setKiZielTyp] = useState<KiZielTyp>("mitarbeiter");
+  const [kiZielId, setKiZielId] = useState("");
+  const [kiTypAuswahl, setKiTypAuswahl] = useState<KiTypAuswahl>("krank");
+  const [kiDatumModus, setKiDatumModus] = useState<KiDatumModus>("morgen");
+  const [kiDatumVon, setKiDatumVon] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [kiDatumBis, setKiDatumBis] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [kiGrund, setKiGrund] = useState("");
 
   const ladenDaten = useCallback(async () => {
     try {
-      const [resAb, resM] = await Promise.all([
+      const [resAb, resM, resT] = await Promise.all([
         supabase.from("departments").select("id,name").order("name"),
         supabase
           .from("employees")
           .select("id,name,departments!department_id(name)")
           .eq("active", true)
           .order("name"),
+        supabase.from("teams").select("id,name").order("name"),
       ]);
 
       setAbteilungen((resAb.data ?? []) as { id: string; name: string }[]);
+      setTeams((resT.data ?? []) as { id: string; name: string }[]);
 
       if (resM.error) {
         toast.error(resM.error.message);
@@ -814,6 +828,47 @@ export function AbwesenheitenVerwaltung() {
     filter.status === "all" &&
     filter.abteilung === "all";
 
+  function baueKiVorlage() {
+    const zielText =
+      kiZielTyp === "mitarbeiter"
+        ? mitarbeiter.find((m) => m.id === kiZielId)?.name
+        : kiZielTyp === "team"
+          ? teams.find((t) => t.id === kiZielId)?.name
+          : abteilungen.find((a) => a.id === kiZielId)?.name;
+    if (!zielText) {
+      toast.error("Bitte zuerst Mitarbeiter, Team oder Abteilung wählen.");
+      return;
+    }
+
+    const typText =
+      kiTypAuswahl === "krank"
+        ? "krank"
+        : kiTypAuswahl === "urlaub"
+          ? "im Urlaub"
+          : kiTypAuswahl === "fortbildung"
+            ? "in Fortbildung"
+            : "abwesend";
+
+    const datumText =
+      kiDatumModus === "heute"
+        ? "heute"
+        : kiDatumModus === "morgen"
+          ? "morgen"
+          : kiDatumModus === "datum"
+            ? `am ${kiDatumVon}`
+            : `von ${kiDatumVon} bis ${kiDatumBis}`;
+
+    const prefix =
+      kiZielTyp === "mitarbeiter"
+        ? zielText
+        : kiZielTyp === "team"
+          ? `${zielText}-Team`
+          : `${zielText}-Abteilung`;
+
+    const grundText = kiGrund.trim() ? `, Grund: ${kiGrund.trim()}` : "";
+    setKiEingabe(`${prefix} ist ${datumText} ${typText}${grundText}`);
+  }
+
   async function kiAbwesenheitAnalysieren() {
     if (!kiEingabe.trim()) return;
     setKiLaed(true);
@@ -1203,6 +1258,94 @@ export function AbwesenheitenVerwaltung() {
               <span>{label}</span>
             </button>
           ))}
+        </div>
+
+        <div className="px-5 pt-3">
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            <select
+              value={kiZielTyp}
+              onChange={(e) => {
+                setKiZielTyp(e.target.value as KiZielTyp);
+                setKiZielId("");
+              }}
+              className="rounded-lg border border-zinc-700/40 bg-zinc-800/60 px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-violet-500/40"
+            >
+              <option value="mitarbeiter">Mitarbeiter</option>
+              <option value="team">Team</option>
+              <option value="abteilung">Abteilung</option>
+            </select>
+
+            <select
+              value={kiZielId}
+              onChange={(e) => setKiZielId(e.target.value)}
+              className="rounded-lg border border-zinc-700/40 bg-zinc-800/60 px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-violet-500/40"
+            >
+              <option value="">Auswahl treffen…</option>
+              {(kiZielTyp === "mitarbeiter"
+                ? mitarbeiter.map((m) => ({ id: m.id, name: m.name }))
+                : kiZielTyp === "team"
+                  ? teams
+                  : abteilungen
+              ).map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={kiTypAuswahl}
+              onChange={(e) => setKiTypAuswahl(e.target.value as KiTypAuswahl)}
+              className="rounded-lg border border-zinc-700/40 bg-zinc-800/60 px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-violet-500/40"
+            >
+              <option value="krank">Krank</option>
+              <option value="urlaub">Urlaub</option>
+              <option value="fortbildung">Fortbildung</option>
+              <option value="sonstiges">Sonstiges</option>
+            </select>
+
+            <select
+              value={kiDatumModus}
+              onChange={(e) => setKiDatumModus(e.target.value as KiDatumModus)}
+              className="rounded-lg border border-zinc-700/40 bg-zinc-800/60 px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-violet-500/40"
+            >
+              <option value="heute">Heute</option>
+              <option value="morgen">Morgen</option>
+              <option value="datum">Datum</option>
+              <option value="zeitraum">Zeitraum</option>
+            </select>
+
+            {(kiDatumModus === "datum" || kiDatumModus === "zeitraum") && (
+              <input
+                type="date"
+                value={kiDatumVon}
+                onChange={(e) => setKiDatumVon(e.target.value)}
+                className="rounded-lg border border-zinc-700/40 bg-zinc-800/60 px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-violet-500/40"
+              />
+            )}
+            {kiDatumModus === "zeitraum" && (
+              <input
+                type="date"
+                value={kiDatumBis}
+                onChange={(e) => setKiDatumBis(e.target.value)}
+                className="rounded-lg border border-zinc-700/40 bg-zinc-800/60 px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-violet-500/40"
+              />
+            )}
+
+            <input
+              value={kiGrund}
+              onChange={(e) => setKiGrund(e.target.value)}
+              placeholder="Grund (optional)"
+              className="rounded-lg border border-zinc-700/40 bg-zinc-800/60 px-3 py-2 text-xs text-zinc-300 placeholder:text-zinc-600 focus:outline-none focus:border-violet-500/40 md:col-span-2"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={baueKiVorlage}
+            className="mt-2 rounded-lg border border-zinc-700/50 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:border-zinc-600 hover:text-zinc-100"
+          >
+            In Text übernehmen
+          </button>
         </div>
 
         <div className="p-4 pt-3">
