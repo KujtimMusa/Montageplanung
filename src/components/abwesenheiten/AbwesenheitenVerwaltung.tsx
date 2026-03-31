@@ -457,7 +457,38 @@ export function AbwesenheitenVerwaltung() {
         return;
       }
 
-      const list: Abwesenheit[] = (resAbs.data as Record<string, unknown>[]).map(
+      const rohdaten = (resAbs.data ?? []) as Record<string, unknown>[];
+      const tageDiff = (start: string, end: string): number => {
+        const s = Date.parse(`${toDateKey(start)}T00:00:00`);
+        const e = Date.parse(`${toDateKey(end)}T00:00:00`);
+        if (Number.isNaN(s) || Number.isNaN(e)) return 0;
+        return e - s;
+      };
+      const dedupliziert = rohdaten.filter((eintrag, _, alle) => {
+        const eintragStart = toDateKey(String(eintrag.start_date ?? ""));
+        const eintragEnd = toDateKey(String(eintrag.end_date ?? ""));
+        const eintragType = String(
+          (eintrag.absence_type as string | undefined) ?? eintrag.type ?? ""
+        );
+        const ueberlappend = alle.find((other) => {
+          if (other.id === eintrag.id) return false;
+          const otherType = String(
+            (other.absence_type as string | undefined) ?? other.type ?? ""
+          );
+          if (other.employee_id !== eintrag.employee_id) return false;
+          if (otherType !== eintragType) return false;
+          const otherStart = toDateKey(String(other.start_date ?? ""));
+          const otherEnd = toDateKey(String(other.end_date ?? ""));
+          return (
+            otherStart <= eintragEnd &&
+            otherEnd >= eintragStart &&
+            tageDiff(otherStart, otherEnd) > tageDiff(eintragStart, eintragEnd)
+          );
+        });
+        return !ueberlappend;
+      });
+
+      const list: Abwesenheit[] = dedupliziert.map(
         (row) => {
           const e = row.employee;
           const empRaw = Array.isArray(e) ? e[0] : e;
@@ -1142,37 +1173,40 @@ export function AbwesenheitenVerwaltung() {
         )}
       </div>
 
-      <div className="mt-5 overflow-hidden rounded-2xl border border-zinc-800/60 bg-zinc-900">
-        <div className="flex items-center gap-3 border-b border-zinc-800/60 px-5 py-4">
-          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl border border-zinc-700/60 bg-zinc-800">
-            <Sparkles size={14} className="text-zinc-400" />
+      <div className="mt-6 rounded-2xl bg-zinc-900/80 border border-zinc-800/50 overflow-hidden backdrop-blur-sm">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-zinc-800/50">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500/20 to-violet-600/10 border border-violet-500/20 flex items-center justify-center flex-shrink-0">
+            <Sparkles size={13} className="text-violet-400" />
           </div>
-          <div className="flex-1">
-            <p className="text-sm font-semibold text-zinc-200">KI-Schnelleingabe</p>
-            <p className="text-xs text-zinc-600">
-              Abwesenheit in natuerlicher Sprache erfassen
+          <div>
+            <p className="text-sm font-semibold text-zinc-100 tracking-tight">
+              KI-Schnelleingabe
+            </p>
+            <p className="text-xs text-zinc-500 mt-0.5">
+              Abwesenheit per Freitext erfassen
             </p>
           </div>
         </div>
 
-        <div className="space-y-3 p-4">
-          <div className="flex flex-wrap gap-2">
-            {[
-              '"Ali ist morgen krank"',
-              '"Jackson naechste Woche Urlaub"',
-              '"SHK-Team 15. April frei"',
-            ].map((chip) => (
-              <button
-                key={chip}
-                onClick={() => setKiEingabe(chip.replace(/"/g, ""))}
-                className="rounded-full border border-zinc-700/50 bg-zinc-800 px-2.5 py-1 text-xs text-zinc-500 transition-all duration-150 hover:border-zinc-500 hover:text-zinc-300"
-              >
-                {chip}
-              </button>
-            ))}
-          </div>
+        <div className="px-5 pt-4 flex flex-wrap gap-2">
+          {[
+            { label: "Ali ist morgen krank", icon: "🤒" },
+            { label: "Jackson nächste Woche Urlaub", icon: "🏖️" },
+            { label: "SHK-Team 15. April frei", icon: "📅" },
+          ].map(({ label, icon }) => (
+            <button
+              key={label}
+              onClick={() => setKiEingabe(label)}
+              className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-zinc-800/80 border border-zinc-700/40 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600/60 hover:bg-zinc-800 transition-all duration-150 select-none"
+            >
+              <span>{icon}</span>
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
 
-          <div className="relative">
+        <div className="p-4 pt-3">
+          <div className="relative group">
             <textarea
               value={kiEingabe}
               onChange={(e) => setKiEingabe(e.target.value)}
@@ -1182,57 +1216,79 @@ export function AbwesenheitenVerwaltung() {
                   void kiAbwesenheitAnalysieren();
                 }
               }}
-              placeholder={'z.B. "Ali ist ab morgen 3 Tage krank"'}
+              placeholder="Beschreibe die Abwesenheit…"
               rows={2}
-              className="w-full resize-none rounded-xl border border-zinc-700/60 bg-zinc-800/60 px-4 py-3 pr-32 text-sm text-zinc-200 placeholder:text-zinc-600 transition-colors focus:border-zinc-500 focus:outline-none"
+              className="w-full px-4 py-3 pr-36 text-sm bg-zinc-800/50 border border-zinc-700/40 rounded-xl text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-violet-500/30 focus:border-violet-500/40 resize-none transition-all duration-150"
             />
             <button
               onClick={() => void kiAbwesenheitAnalysieren()}
               disabled={!kiEingabe.trim() || kiLaed}
-              className="absolute right-2 bottom-2 flex items-center gap-1.5 rounded-lg bg-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-all duration-150 hover:bg-zinc-600 disabled:cursor-not-allowed disabled:opacity-40"
+              className="absolute right-2.5 bottom-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-600 hover:bg-violet-500 text-white shadow-sm shadow-violet-900/40 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150"
             >
               {kiLaed ? (
                 <>
-                  <Loader2 size={12} className="animate-spin" /> Analysiere...
+                  <Loader2 size={11} className="animate-spin" />
+                  Analysiere…
                 </>
               ) : (
                 <>
-                  <Sparkles size={12} /> Analysieren
+                  <Sparkles size={11} />
+                  Analysieren
                 </>
               )}
             </button>
           </div>
 
+          {!kiEingabe && (
+            <p className="mt-2 text-xs text-zinc-600 pl-1">
+              Enter ↵ zum Analysieren · Shift+Enter für neue Zeile
+            </p>
+          )}
+
           {kiVorschlag?.error && (
-            <div className="flex items-start gap-2.5 rounded-xl border border-red-900/40 bg-red-950/40 px-4 py-3">
-              <AlertCircle size={14} className="mt-0.5 flex-shrink-0 text-red-400" />
+            <div className="mt-3 flex items-start gap-2.5 px-4 py-3 rounded-xl bg-red-950/30 border border-red-900/30">
+              <AlertCircle size={13} className="text-red-400 mt-0.5 flex-shrink-0" />
               <div>
-                <p className="text-sm font-medium text-red-300">
+                <p className="text-xs font-medium text-red-300">
                   Eingabe nicht verstanden
                 </p>
-                <p className="mt-0.5 text-xs text-red-500">
-                  Tipp: Namen genau wie in der Mitarbeiterliste schreiben, z.B.
-                  &quot;Ali ist morgen krank&quot;
+                <p className="text-xs text-red-500/80 mt-0.5">
+                  Tipp: Mitarbeiternamen exakt schreiben, z.B. &quot;Ali ist morgen
+                  krank&quot;
                 </p>
               </div>
             </div>
           )}
 
           {kiVorschlag && !kiVorschlag.error && (
-            <div className="flex items-center justify-between rounded-xl border border-zinc-700/50 bg-zinc-800/60 px-4 py-3">
-              <div className="text-sm text-zinc-300">
-                <span className="font-medium">{kiVorschlag.mitarbeiter?.[0]?.name}</span>
-                {" · "}
-                <span className="text-zinc-500 capitalize">{kiVorschlag.typ}</span>
-                {" · "}
-                <span className="text-zinc-500">
-                  {kiVorschlag.start_date} - {kiVorschlag.end_date} ({kiVorschlag.tage}
-                  T)
-                </span>
+            <div className="mt-3 flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-zinc-800/60 border border-zinc-700/40">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-1.5 h-1.5 rounded-full bg-violet-400 flex-shrink-0" />
+                <p className="text-sm text-zinc-300 truncate">
+                  <span className="font-medium">
+                    {kiVorschlag.mitarbeiter?.[0]?.name}
+                  </span>
+                  <span className="text-zinc-500 mx-1.5">·</span>
+                  <span className="text-zinc-400 capitalize">
+                    {kiVorschlag.typ === "krankheit"
+                      ? "Krank"
+                      : kiVorschlag.typ === "urlaub"
+                        ? "Urlaub"
+                        : "Sonstiges"}
+                  </span>
+                  <span className="text-zinc-500 mx-1.5">·</span>
+                  <span className="text-zinc-500 text-xs">
+                    {kiVorschlag.start_date}
+                    {kiVorschlag.end_date !== kiVorschlag.start_date
+                      ? ` – ${kiVorschlag.end_date}`
+                      : ""}
+                    {" "}({kiVorschlag.tage}T)
+                  </span>
+                </p>
               </div>
               <button
                 onClick={() => void abwesenheitAusKiErstellen(kiVorschlag)}
-                className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-zinc-900 transition-colors hover:bg-zinc-200"
+                className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white transition-colors"
               >
                 Speichern
               </button>
