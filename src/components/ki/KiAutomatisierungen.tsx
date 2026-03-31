@@ -10,7 +10,6 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { Switch } from "@/components/ui/switch";
-import { cn } from "@/lib/utils";
 
 const APP_KEY = "app";
 
@@ -19,10 +18,9 @@ type AutoRow = {
   dbSpalte: keyof DbRow;
   titel: string;
   beschreibung: string;
-  icon: typeof AlertTriangle;
-  farbe: keyof typeof FARBE;
-  trigger: string;
-  aktion: string;
+  Icon: typeof AlertTriangle;
+  triggerLabel: string;
+  letzteAusfuehrung: string | null;
 };
 
 type DbRow = {
@@ -32,81 +30,46 @@ type DbRow = {
   automation_dienstleister_absage: boolean;
 };
 
-const FARBE = {
-  red: {
-    iconOn: "bg-red-500/20",
-    iconOff: "bg-zinc-800",
-    textOn: "text-red-400",
-    textOff: "text-zinc-600",
-    dotOn: "bg-red-400",
-  },
-  blue: {
-    iconOn: "bg-blue-500/20",
-    iconOff: "bg-zinc-800",
-    textOn: "text-blue-400",
-    textOff: "text-zinc-600",
-    dotOn: "bg-blue-400",
-  },
-  orange: {
-    iconOn: "bg-orange-500/20",
-    iconOff: "bg-zinc-800",
-    textOn: "text-orange-400",
-    textOff: "text-zinc-600",
-    dotOn: "bg-orange-400",
-  },
-  yellow: {
-    iconOn: "bg-yellow-500/20",
-    iconOff: "bg-zinc-800",
-    textOn: "text-yellow-400",
-    textOff: "text-zinc-600",
-    dotOn: "bg-yellow-400",
-  },
-} as const;
-
 const AUTOMATISIERUNGEN: AutoRow[] = [
   {
     id: "krankmeldung",
     dbSpalte: "automation_krankmeldung",
     titel: "Krankmeldung → Notfallplan",
     beschreibung:
-      "Wenn Abwesenheit type=krank eingetragen wird, kann der KI-Notfallplan und Teamleiter-Benachrichtigung genutzt werden (Trigger in App-Logik).",
-    icon: AlertTriangle,
-    farbe: "red",
-    trigger: "INSERT auf absences WHERE type=krank",
-    aktion: "POST /api/agents/emergency + Teamleiter-Benachrichtigung",
+      "Bei neuer Krankmeldung startet automatisch der KI-Notfallplan und sucht Ersatz",
+    triggerLabel: "Bei Krankmeldung",
+    Icon: AlertTriangle,
+    letzteAusfuehrung: null,
   },
   {
     id: "neuer_einsatz",
     dbSpalte: "automation_neuer_einsatz",
     titel: "Neuer Einsatz → Monteur benachrichtigen",
     beschreibung:
-      "Wenn ein neuer Einsatz angelegt wird, kann der zugewiesene Monteur per WhatsApp-Link informiert werden.",
-    icon: Bell,
-    farbe: "blue",
-    trigger: "INSERT auf assignments",
-    aktion: "WhatsApp via wa.me Link + Toast",
+      "Generiert automatisch einen WhatsApp-Link wenn ein Einsatz zugewiesen wird",
+    triggerLabel: "Bei Einsatz-Zuweisung",
+    Icon: Bell,
+    letzteAusfuehrung: null,
   },
   {
     id: "projekt_ueberfaellig",
     dbSpalte: "automation_projekt_ueberfaellig",
     titel: "Projekt überfällig → Bereichsleiter",
     beschreibung:
-      "Wenn planned_end überschritten und Projekt noch aktiv, Hinweis an Bereichsleiter (Cron/täglich).",
-    icon: Clock,
-    farbe: "orange",
-    trigger: "Täglich geprüft (Cron oder bei Seitenaufruf)",
-    aktion: "mailto: Link mit Projektdetails",
+      "Tägliche Prüfung: überfällige Projekte werden als Hinweis markiert",
+    triggerLabel: "Täglich (Cron)",
+    Icon: Clock,
+    letzteAusfuehrung: null,
   },
   {
     id: "dienstleister_absage",
     dbSpalte: "automation_dienstleister_absage",
-    titel: "Dienstleister-Absage → Notfallkarte",
+    titel: "Dienstleister inaktiv → Notfallkarte",
     beschreibung:
-      "Wenn Dienstleister-Status auf inaktiv gesetzt wird, Kontext für Notfallplan bereitstellen.",
-    icon: Building2,
-    farbe: "yellow",
-    trigger: "UPDATE auf subcontractors SET status=inaktiv",
-    aktion: "Redirect zu /notfall mit Kontext",
+      "Wenn ein Partner auf inaktiv gesetzt wird, erscheint ein Hinweis im Notfallplan",
+    triggerLabel: "Bei Status-Änderung",
+    Icon: Building2,
+    letzteAusfuehrung: null,
   },
 ];
 
@@ -170,7 +133,7 @@ export function KiAutomatisierungen() {
     void laden();
   }, [laden]);
 
-  const toggleAutomatisierung = async (
+  const toggleAutomation = async (
     id: string,
     dbSpalte: keyof DbRow,
     wert: boolean,
@@ -197,70 +160,51 @@ export function KiAutomatisierungen() {
   }
 
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="space-y-3 p-6">
       {AUTOMATISIERUNGEN.map((a) => {
-        const f = FARBE[a.farbe];
-        const Icon = a.icon;
+        const Icon = a.Icon;
         const on = aktiv[a.id] ?? false;
         return (
           <div
             key={a.id}
-            className="rounded-2xl border border-zinc-800 bg-zinc-900/50 transition-all hover:border-zinc-700"
+            className="flex items-center gap-4 rounded-2xl border border-zinc-800/60 bg-zinc-900 px-5 py-4 transition-colors hover:border-zinc-700/60"
           >
-            <div className="flex items-start justify-between gap-3 p-4">
-              <div className="flex min-w-0 items-center gap-3">
-                <div
-                  className={cn(
-                    "rounded-xl p-2",
-                    on ? f.iconOn : f.iconOff
-                  )}
-                >
-                  <Icon
-                    size={16}
-                    className={on ? f.textOn : f.textOff}
-                  />
-                </div>
-                <div>
-                  <h3
-                    className={cn(
-                      "text-sm font-semibold",
-                      on ? "text-zinc-200" : "text-zinc-500"
-                    )}
-                  >
-                    {a.titel}
-                  </h3>
-                </div>
+            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-zinc-700/60 bg-zinc-800">
+              <Icon size={15} className="text-zinc-400" />
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold text-zinc-100">{a.titel}</p>
+                <span className="rounded-full border border-zinc-700/50 bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-500">
+                  {a.triggerLabel}
+                </span>
               </div>
+              <p className="mt-0.5 text-xs text-zinc-500">{a.beschreibung}</p>
+              <p className="mt-1 text-[10px] text-zinc-600">
+                {a.letzteAusfuehrung
+                  ? `Zuletzt: ${a.letzteAusfuehrung}`
+                  : "Noch nie ausgeführt"}
+              </p>
+            </div>
+
+            <div className="flex flex-shrink-0 items-center gap-3">
+              {on && (
+                <span className="flex items-center gap-1">
+                  <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+                  <span className="text-[10px] text-emerald-500">Aktiv</span>
+                </span>
+              )}
               <Switch
                 checked={on}
                 onCheckedChange={(val) =>
-                  void toggleAutomatisierung(a.id, a.dbSpalte, val, a.titel)
+                  void toggleAutomation(a.id, a.dbSpalte, val, a.titel)
                 }
                 className="data-[state=checked]:bg-violet-600"
               />
-            </div>
-            <p className="px-4 pb-3 text-xs leading-relaxed text-zinc-500">
-              {a.beschreibung}
-            </p>
-            <details className="group border-t border-zinc-800/80 px-4 py-2">
-              <summary className="cursor-pointer select-none text-[10px] text-zinc-700 hover:text-zinc-500">
-                Technische Details ▸
-              </summary>
-              <div className="mt-2 space-y-1 pb-2">
-                <p className="text-[10px] text-zinc-700">Trigger: {a.trigger}</p>
-                <p className="text-[10px] text-zinc-700">Aktion: {a.aktion}</p>
-              </div>
-            </details>
-            <div className="flex items-center gap-1.5 px-4 pb-4">
-              <div
-                className={cn(
-                  "size-1.5 rounded-full",
-                  on ? f.dotOn : "bg-zinc-700"
-                )}
-              />
-              <span className="text-[10px] text-zinc-600">
-                {on ? "Aktiv" : "Inaktiv"}
-              </span>
+              {!on && (
+                <span className="text-[10px] text-zinc-600">Inaktiv</span>
+              )}
             </div>
           </div>
         );

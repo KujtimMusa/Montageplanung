@@ -2,129 +2,81 @@
 
 import {
   AlertTriangle,
-  BarChart3,
-  Calendar,
+  BarChart2,
+  CalendarDays,
   Cloud,
   Copy,
   FileText,
   Lightbulb,
   Loader2,
-  Zap,
+  Sparkles,
 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
 
 type AgentDef = {
   id: string;
   titel: string;
   beschreibung: string;
-  icon: typeof Calendar;
+  icon: "calendar" | "alert" | "chart" | "file" | "cloud" | "lightbulb";
   api: string;
-  buttonText: string;
-  farbe: keyof typeof FARBE;
+  buttonLabel: string;
 };
-
-const FARBE = {
-  blue: {
-    card: "border-blue-800/40 bg-blue-950/20",
-    iconBg: "bg-blue-500/15",
-    icon: "text-blue-400",
-    btn: "bg-blue-600/90 hover:bg-blue-500",
-  },
-  orange: {
-    card: "border-orange-800/40 bg-orange-950/20",
-    iconBg: "bg-orange-500/15",
-    icon: "text-orange-400",
-    btn: "bg-orange-600/90 hover:bg-orange-500",
-  },
-  violet: {
-    card: "border-violet-800/40 bg-violet-950/20",
-    iconBg: "bg-violet-500/15",
-    icon: "text-violet-400",
-    btn: "bg-violet-600/90 hover:bg-violet-500",
-  },
-  emerald: {
-    card: "border-emerald-800/40 bg-emerald-950/20",
-    iconBg: "bg-emerald-500/15",
-    icon: "text-emerald-400",
-    btn: "bg-emerald-600/90 hover:bg-emerald-500",
-  },
-  sky: {
-    card: "border-sky-800/40 bg-sky-950/20",
-    iconBg: "bg-sky-500/15",
-    icon: "text-sky-400",
-    btn: "bg-sky-600/90 hover:bg-sky-500",
-  },
-  yellow: {
-    card: "border-yellow-800/40 bg-yellow-950/30",
-    iconBg: "bg-yellow-500/15",
-    icon: "text-yellow-400",
-    btn: "bg-yellow-600/90 hover:bg-yellow-500",
-  },
-} as const;
 
 const AGENTEN: AgentDef[] = [
   {
     id: "planungsoptimierer",
+    api: "/api/agents/planning",
     titel: "Planungsoptimierer",
     beschreibung:
-      "Analysiert alle offenen Projekte und schlägt optimale Team-Zuweisungen vor",
-    icon: Calendar,
-    farbe: "blue",
-    api: "/api/agents/planning",
-    buttonText: "Analyse starten",
+      "Analysiert offene Projekte und schlägt optimale Team-Zuweisung vor",
+    icon: "calendar",
+    buttonLabel: "Analyse starten",
   },
   {
     id: "konflikt-resolver",
+    api: "/api/agents/conflict",
     titel: "Konflikt-Resolver",
     beschreibung:
       "Findet alle Planungskonflikte und erstellt Lösungsvorschläge",
-    icon: AlertTriangle,
-    farbe: "orange",
-    api: "/api/agents/conflict",
-    buttonText: "Konflikte scannen",
+    icon: "alert",
+    buttonLabel: "Konflikte scannen",
   },
   {
     id: "kapazitaetsplaner",
+    api: "/api/agents/capacity",
     titel: "Kapazitätsplaner",
     beschreibung:
       "Zeigt Auslastung pro Team, Engpässe und freie Kapazitäten",
-    icon: BarChart3,
-    farbe: "violet",
-    api: "/api/agents/capacity",
-    buttonText: "Kapazität analysieren",
+    icon: "chart",
+    buttonLabel: "Kapazität analysieren",
   },
   {
     id: "wochenbericht",
+    api: "/api/agents/weekly",
     titel: "Wochenbericht",
     beschreibung: "Erstellt automatisch einen vollständigen Wochenbericht",
-    icon: FileText,
-    farbe: "emerald",
-    api: "/api/agents/weekly",
-    buttonText: "Bericht erstellen",
+    icon: "file",
+    buttonLabel: "Bericht erstellen",
   },
   {
     id: "wettercheck",
+    api: "/api/agents/weather",
     titel: "Wetter-Prüfer",
     beschreibung:
       "Prüft Wetter für geplante Außeneinsätze und warnt bei Risiken",
-    icon: Cloud,
-    farbe: "sky",
-    api: "/api/agents/weather",
-    buttonText: "Wetter prüfen",
+    icon: "cloud",
+    buttonLabel: "Wetter prüfen",
   },
   {
     id: "lernassistent",
+    api: "/api/agents/learning",
     titel: "Optimierungshinweise",
     beschreibung:
       "Lernt aus vergangenen Einsätzen und gibt Optimierungshinweise",
-    icon: Lightbulb,
-    farbe: "yellow",
-    api: "/api/agents/learning",
-    buttonText: "Hinweise laden",
+    icon: "lightbulb",
+    buttonLabel: "Hinweise laden",
   },
 ];
 
@@ -168,6 +120,77 @@ function AgentErgebnis({ text }: { text: string }) {
   return (
     <div className="mt-3 max-h-48 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-zinc-300">
       {text}
+    </div>
+  );
+}
+
+function AgentIcon({ name }: { name: AgentDef["icon"] }) {
+  const props = { size: 14, className: "text-violet-400" };
+  const icons = {
+    calendar: <CalendarDays {...props} />,
+    alert: <AlertTriangle {...props} />,
+    chart: <BarChart2 {...props} />,
+    file: <FileText {...props} />,
+    cloud: <Cloud {...props} />,
+    lightbulb: <Lightbulb {...props} />,
+  };
+  return icons[name] ?? <Sparkles {...props} />;
+}
+
+function AgentKarte({
+  agent,
+  laed,
+  ergebnis,
+  onStart,
+}: {
+  agent: AgentDef;
+  laed: boolean;
+  ergebnis: string;
+  onStart: () => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-zinc-800/60 bg-zinc-900 transition-colors hover:border-zinc-700/60">
+      <div className="p-4 pb-3">
+        <div className="flex items-start gap-3">
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl border border-zinc-700/60 bg-zinc-800">
+            <AgentIcon name={agent.icon} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold tracking-tight text-zinc-100">
+              {agent.titel}
+            </p>
+            <p className="mt-0.5 text-xs leading-relaxed text-zinc-500">
+              {agent.beschreibung}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {ergebnis && (
+        <div className="max-h-40 overflow-y-auto px-4 pb-3">
+          <AgentErgebnis text={ergebnis} />
+        </div>
+      )}
+
+      <div className="px-4 pb-4">
+        <button
+          onClick={onStart}
+          disabled={laed}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-violet-500/20 bg-violet-600/10 px-3 py-2 text-xs font-medium text-violet-400 transition-all duration-150 hover:border-violet-500/30 hover:bg-violet-600/20 hover:text-violet-300 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {laed ? (
+            <>
+              <Loader2 size={12} className="animate-spin" />
+              Analysiere…
+            </>
+          ) : (
+            <>
+              <Sparkles size={12} />
+              {agent.buttonLabel}
+            </>
+          )}
+        </button>
+      </div>
     </div>
   );
 }
@@ -244,81 +267,28 @@ export function KiAgenten() {
   }, []);
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {AGENTEN.map((agent) => {
-        const f = FARBE[agent.farbe];
-        const Icon = agent.icon;
-        return (
-          <div
-            key={agent.id}
-            className={cn(
-              "rounded-2xl border p-4 transition-all",
-              f.card
-            )}
-          >
-            <div className="mb-3 flex items-start gap-3">
-              <div className={cn("rounded-xl p-2", f.iconBg)}>
-                <Icon size={18} className={f.icon} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <h3 className="text-sm font-semibold text-zinc-200">
-                  {agent.titel}
-                </h3>
-                <p className="mt-0.5 text-xs leading-relaxed text-zinc-500">
-                  {agent.beschreibung}
-                </p>
-              </div>
-            </div>
-
-            {ergebnis[agent.id] ? <AgentErgebnis text={ergebnis[agent.id]} /> : null}
-
-            {laed[agent.id] && !ergebnis[agent.id] ? (
-              <div className="mb-3 space-y-1.5">
-                {[0, 1, 2].map((i) => (
-                  <Skeleton
-                    key={i}
-                    className="h-3 bg-zinc-800"
-                    style={{ width: `${80 - i * 10}%` }}
-                  />
-                ))}
-              </div>
-            ) : null}
-
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                size="sm"
-                className={cn("h-8 flex-1 text-xs text-white", f.btn)}
-                onClick={() => void agentenStarten(agent)}
-                disabled={laed[agent.id]}
-              >
-                {laed[agent.id] ? (
-                  <>
-                    <Loader2 size={12} className="mr-1.5 animate-spin" />
-                    Läuft…
-                  </>
-                ) : (
-                  <>
-                    <Zap size={12} className="mr-1.5" />
-                    {agent.buttonText}
-                  </>
-                )}
-              </Button>
-              {ergebnis[agent.id] ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-8 w-8 shrink-0 border-zinc-700 p-0"
-                  onClick={() => void kopiereText(ergebnis[agent.id])}
-                >
-                  <Copy size={12} />
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        );
-      })}
+    <div className="grid grid-cols-1 gap-4 p-6 lg:grid-cols-2 xl:grid-cols-3">
+      {AGENTEN.map((agent) => (
+        <div key={agent.id} className="relative">
+          <AgentKarte
+            agent={agent}
+            laed={Boolean(laed[agent.id])}
+            ergebnis={ergebnis[agent.id] ?? ""}
+            onStart={() => void agentenStarten(agent)}
+          />
+          {ergebnis[agent.id] ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="absolute right-4 top-4 h-7 w-7 border-zinc-700 bg-zinc-900 p-0 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+              onClick={() => void kopiereText(ergebnis[agent.id])}
+            >
+              <Copy size={12} />
+            </Button>
+          ) : null}
+        </div>
+      ))}
     </div>
   );
 }

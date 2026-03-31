@@ -2,33 +2,15 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
-import {
-  AlertTriangle,
-  BarChart3,
-  CalendarOff,
-  FileText,
-  FolderOpen,
-  Loader2,
-  Send,
-  Sparkles,
-  Users,
-} from "lucide-react";
+import { Loader2, Send, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-
-const SCHNELLZUGRIFF_FRAGEN = [
-  { text: "Wer ist nächste Woche verfügbar?", Icon: Users },
-  { text: "Zeig alle Konflikte diese Woche", Icon: AlertTriangle },
-  { text: "Welche Projekte sind noch ungeplant?", Icon: FolderOpen },
-  { text: "Wer hat die meisten Einsätze diesen Monat?", Icon: BarChart3 },
-  { text: "Gibt es Abwesenheiten nächste Woche?", Icon: CalendarOff },
-  { text: "Erstelle einen Wochenbericht", Icon: FileText },
-] as const;
 
 function textAusNachricht(m: UIMessage): string {
   return (
@@ -47,62 +29,71 @@ function formatZeit(d: Date): string {
 }
 
 function RenderKiText({ text }: { text: string }) {
-  const lines = text.split("\n");
-
   return (
-    <div className="space-y-1.5">
-      {lines.map((line, i) => {
-        if (line.startsWith("⚠️")) {
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        table: (props) => (
+          <div className="my-2 overflow-x-auto">
+            <table
+              className="w-full border-collapse rounded-xl border border-zinc-800/60 bg-zinc-900/60 text-xs"
+              {...props}
+            />
+          </div>
+        ),
+        th: (props) => (
+          <th
+            className="border-b border-zinc-700/60 bg-zinc-800/40 px-3 py-2 text-left font-medium text-zinc-400"
+            {...props}
+          />
+        ),
+        td: (props) => (
+          <td
+            className="border-b border-zinc-800/40 px-3 py-1.5 text-xs text-zinc-300"
+            {...props}
+          />
+        ),
+        strong: (props) => (
+          <strong className="font-semibold text-zinc-100" {...props} />
+        ),
+        ul: (props) => <ul className="my-2 space-y-1 pl-4" {...props} />,
+        li: (props) => (
+          <li
+            className="list-disc text-sm leading-relaxed text-zinc-300 marker:text-zinc-600"
+            {...props}
+          />
+        ),
+        p: (props) => {
+          const content = String(props.children ?? "");
+          if (content.startsWith("⚠️")) {
+            return (
+              <p className="my-1 rounded-lg border border-amber-900/30 bg-amber-950/30 px-3 py-2 text-xs leading-relaxed text-amber-300">
+                {props.children}
+              </p>
+            );
+          }
+          if (content.startsWith("💡")) {
+            return (
+              <p className="my-1 rounded-lg border border-violet-500/20 bg-violet-950/30 px-3 py-2 text-xs leading-relaxed text-violet-300">
+                {props.children}
+              </p>
+            );
+          }
+          if (content.startsWith("⚡")) {
+            return (
+              <p className="my-1 rounded-lg border border-emerald-900/30 bg-emerald-950/30 px-3 py-2 text-xs leading-relaxed text-emerald-300">
+                {props.children}
+              </p>
+            );
+          }
           return (
-            <div
-              key={i}
-              className="flex items-start gap-2 rounded-lg border border-amber-900/30 bg-amber-950/30 px-3 py-2"
-            >
-              <span className="text-xs leading-relaxed text-amber-300">
-                {line}
-              </span>
-            </div>
+            <p className="my-1 text-sm leading-relaxed text-zinc-300" {...props} />
           );
-        }
-        if (line.startsWith("💡")) {
-          return (
-            <div
-              key={i}
-              className="flex items-start gap-2 rounded-lg border border-violet-900/30 bg-violet-950/30 px-3 py-2"
-            >
-              <span className="text-xs leading-relaxed text-violet-300">
-                {line}
-              </span>
-            </div>
-          );
-        }
-        if (line.startsWith("⚡")) {
-          return (
-            <div
-              key={i}
-              className="flex items-start gap-2 rounded-lg border border-emerald-900/30 bg-emerald-950/30 px-3 py-2"
-            >
-              <span className="text-xs leading-relaxed text-emerald-300">
-                {line}
-              </span>
-            </div>
-          );
-        }
-        if (line.startsWith("|")) {
-          return (
-            <p key={i} className="font-mono text-xs leading-relaxed text-zinc-400">
-              {line}
-            </p>
-          );
-        }
-        if (!line.trim()) return <div key={i} className="h-1" />;
-        return (
-          <p key={i} className="text-sm leading-relaxed text-zinc-200">
-            {line}
-          </p>
-        );
-      })}
-    </div>
+        },
+      }}
+    >
+      {text}
+    </ReactMarkdown>
   );
 }
 
@@ -133,48 +124,7 @@ export function KiChat() {
   }
 
   return (
-    <div className="grid min-h-[480px] flex-1 gap-4 lg:grid-cols-[minmax(0,208px)_1fr]">
-      <div className="w-full shrink-0 lg:w-52">
-        <p className="mb-3 px-1 text-xs font-semibold uppercase text-zinc-500">
-          Schnellzugriff
-        </p>
-        {SCHNELLZUGRIFF_FRAGEN.map((frage) => (
-          <button
-            key={frage.text}
-            type="button"
-            onClick={() => frageAbsenden(frage.text)}
-            disabled={kiSchreibt}
-            className="group mb-2 w-full rounded-xl border border-zinc-800 bg-zinc-900/50 p-2.5 text-left transition-all hover:border-violet-700/50 hover:bg-violet-900/10"
-          >
-            <div className="flex items-start gap-2">
-              <frage.Icon
-                size={13}
-                className="mt-0.5 shrink-0 text-violet-400"
-              />
-              <span className="text-xs leading-relaxed text-zinc-300 group-hover:text-zinc-100">
-                {frage.text}
-              </span>
-            </div>
-          </button>
-        ))}
-        <Separator className="my-3 bg-zinc-800" />
-        <p className="px-1 text-[10px] text-zinc-600">
-          Die KI hat Zugriff auf:
-        </p>
-        {[
-          "Mitarbeiter & Teams",
-          "Einsätze & Projekte",
-          "Abwesenheiten",
-          "Konflikte",
-        ].map((k) => (
-          <div key={k} className="flex items-center gap-1.5 px-1 py-0.5">
-            <div className="size-1 rounded-full bg-violet-500" />
-            <span className="text-[10px] text-zinc-600">{k}</span>
-          </div>
-        ))}
-      </div>
-
-      <div className="flex min-h-[420px] flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/30 lg:min-h-[560px]">
+    <div className="flex h-full min-h-[560px] flex-col overflow-hidden rounded-2xl border border-zinc-800/60 bg-zinc-900">
         <ScrollArea ref={scrollRef} className="flex-1 p-4">
           {messages.length === 0 && (
             <div className="flex h-full flex-col items-center justify-center gap-6 px-4">
@@ -376,7 +326,6 @@ export function KiChat() {
             Enter = Senden · Shift+Enter = Neue Zeile · Die KI kennt deine Daten
           </p>
         </div>
-      </div>
     </div>
   );
 }

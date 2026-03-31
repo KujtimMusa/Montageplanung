@@ -47,24 +47,24 @@ export default function KiSeite() {
         }}
         className="flex w-full flex-1 flex-col gap-4"
       >
-        <TabsList className="h-auto w-full flex-wrap justify-start gap-1 rounded-xl border border-zinc-800 bg-zinc-900/50 p-1 sm:w-auto">
+        <TabsList className="h-auto w-full flex-wrap justify-start gap-1 rounded-xl border border-zinc-800/60 bg-zinc-900 p-1 sm:w-auto">
           <TabsTrigger
             value="chat"
-            className="rounded-lg data-[state=active]:bg-zinc-800"
+            className="rounded-lg data-[state=active]:bg-violet-600/20 data-[state=active]:text-violet-300"
           >
             <MessageSquare size={14} className="mr-1.5" />
             Chat
           </TabsTrigger>
           <TabsTrigger
             value="agenten"
-            className="rounded-lg data-[state=active]:bg-zinc-800"
+            className="rounded-lg data-[state=active]:bg-violet-600/20 data-[state=active]:text-violet-300"
           >
             <Bot size={14} className="mr-1.5" />
             Agenten
           </TabsTrigger>
           <TabsTrigger
             value="automatisierungen"
-            className="rounded-lg data-[state=active]:bg-zinc-800"
+            className="rounded-lg data-[state=active]:bg-violet-600/20 data-[state=active]:text-violet-300"
           >
             <Zap size={14} className="mr-1.5" />
             Automatisierungen
