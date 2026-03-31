@@ -71,17 +71,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: settingsError.message }, { status: 500 });
   }
 
-  const { error: empError } = await admin.from("employees").insert({
+  const baseEmployee = {
     name:
       `${vorname ?? ""} ${nachname ?? ""}`.trim() ||
       user.email?.split("@")[0] ||
       "Admin",
-    email: user.email,
     role: "admin",
     active: true,
     auth_user_id: user.id,
     organization_id: org.id,
+  };
+
+  let { error: empError } = await admin.from("employees").insert({
+    ...baseEmployee,
+    email: user.email,
   });
+
+  // Übergangs-Fallback für Alt-Schemata mit global UNIQUE(email)
+  if (empError && /employees_email_key|duplicate key value/i.test(empError.message)) {
+    const retry = await admin.from("employees").insert({
+      ...baseEmployee,
+      email: null,
+    });
+    empError = retry.error;
+  }
 
   if (empError) {
     await admin.from("settings").delete().eq("organization_id", org.id).eq("key", "app");
