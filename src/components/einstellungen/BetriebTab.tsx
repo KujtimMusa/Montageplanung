@@ -49,6 +49,7 @@ type BetriebDaten = {
 
 export function BetriebTab() {
   const supabase = createClient();
+  const [orgId, setOrgId] = useState<string | null>(null);
   const [speichern, setSpeichern] = useState(false);
   const [daten, setDaten] = useState<BetriebDaten>({
     betrieb_name: "",
@@ -65,12 +66,22 @@ export function BetriebTab() {
   });
 
   useEffect(() => {
+    async function ladeOrg() {
+      const { data } = await supabase.rpc("get_my_org_id");
+      setOrgId((data as string | null) ?? null);
+    }
+    void ladeOrg();
+  }, [supabase]);
+
+  useEffect(() => {
     async function laden() {
+      if (!orgId) return;
       const { data } = await supabase
         .from("settings")
         .select(
           "betrieb_name,betrieb_strasse,betrieb_plz,betrieb_ort,betrieb_telefon,betrieb_email,arbeitszeit_start,arbeitszeit_ende,urlaubstage_pro_jahr,schichtmodell,feiertag_bundesland"
         )
+        .eq("organization_id", orgId)
         .eq("key", APP_KEY)
         .maybeSingle();
       if (data) {
@@ -84,20 +95,26 @@ export function BetriebTab() {
       }
     }
     void laden();
-  }, [supabase]);
+  }, [supabase, orgId]);
 
   async function handleSpeichern() {
     setSpeichern(true);
+    if (!orgId) {
+      toast.error("Keine Organisation gefunden");
+      setSpeichern(false);
+      return;
+    }
     const { error } = await supabase
       .from("settings")
       .upsert(
         {
           key: APP_KEY,
+          organization_id: orgId,
           value: "config",
           ...daten,
           updated_at: new Date().toISOString(),
         },
-        { onConflict: "key" }
+        { onConflict: "organization_id,key" }
       );
     setSpeichern(false);
     if (error) toast.error("Fehler beim Speichern");

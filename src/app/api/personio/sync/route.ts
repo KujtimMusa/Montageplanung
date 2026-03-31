@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getMyOrgId } from "@/lib/org";
 
 /**
  * Personio-Synchronisation (Platzhalter — echte API-Anbindung folgt).
@@ -12,6 +13,10 @@ export async function POST() {
   } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
+  }
+  const orgId = await getMyOrgId();
+  if (!orgId) {
+    return NextResponse.json({ error: "Keine Organisation" }, { status: 403 });
   }
 
   const { data: keys } = await supabase
@@ -32,8 +37,8 @@ export async function POST() {
 
   const ts = new Date().toISOString();
   await supabase.from("settings").upsert(
-    { key: "personio_last_sync", value: ts, updated_at: ts },
-    { onConflict: "key" }
+    { key: "personio_last_sync", organization_id: orgId, value: ts, updated_at: ts },
+    { onConflict: "organization_id,key" }
   );
 
   return NextResponse.json({
