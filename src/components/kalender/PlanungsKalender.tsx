@@ -526,14 +526,14 @@ export function PlanungsKalender() {
     };
   }, [supabase, laden]);
 
-  async function sendeEinsatzUpdateMailFireAndForget(opts: {
+  const sendeEinsatzUpdateMailFireAndForget = useCallback(async (opts: {
     assignmentId: string;
     projektTitel: string;
     datumAlt: string;
     datumNeu: string;
     startNeu: string;
     endeNeu: string;
-  }) {
+  }) => {
     try {
       const { data: row } = await supabase
         .from("assignments")
@@ -598,9 +598,9 @@ export function PlanungsKalender() {
     } catch (e) {
       logFehler("PlanungsKalender:email:update:setup", e);
     }
-  }
+  }, [supabase]);
 
-  async function sendeEinsatzStornoMailFireAndForget(assignmentId: string) {
+  const sendeEinsatzStornoMailFireAndForget = useCallback(async (assignmentId: string) => {
     try {
       const { data: zuLoeschen } = await supabase
         .from("assignments")
@@ -646,7 +646,7 @@ export function PlanungsKalender() {
     } catch (e) {
       logFehler("PlanungsKalender:email:cancel:setup", e);
     }
-  }
+  }, [supabase]);
 
   const dlQuery = searchParams.get("dienstleister");
   useEffect(() => {
@@ -1033,7 +1033,13 @@ export function PlanungsKalender() {
       void laden();
       return true;
     },
-    [zuweisungen, supabase, laden]
+    [
+      zuweisungen,
+      supabase,
+      laden,
+      projekteById,
+      sendeEinsatzUpdateMailFireAndForget,
+    ]
   );
 
   function bearbeitenAusDetail() {
@@ -1097,7 +1103,7 @@ export function PlanungsKalender() {
       );
       void laden();
     },
-    [supabase, laden]
+    [supabase, laden, sendeEinsatzStornoMailFireAndForget]
   );
 
   const onEinsatzDragStartHandler = useCallback(

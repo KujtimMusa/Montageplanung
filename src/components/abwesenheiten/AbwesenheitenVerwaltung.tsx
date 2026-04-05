@@ -660,10 +660,18 @@ export function AbwesenheitenVerwaltung() {
       };
 
       if (bearbeitenId) {
-        const { organization_id: _o, ...updateFields } = payload;
         const { error } = await supabase
           .from("absences")
-          .update(updateFields)
+          .update({
+            employee_id: payload.employee_id,
+            type: payload.type,
+            absence_type: payload.absence_type,
+            start_date: payload.start_date,
+            end_date: payload.end_date,
+            status: payload.status,
+            notes: payload.notes,
+            quelle: payload.quelle,
+          })
           .eq("id", bearbeitenId);
         if (error) throw error;
         toast.success("Abwesenheit gespeichert.");
