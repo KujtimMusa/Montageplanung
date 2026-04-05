@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
-import { FileText, Loader2 } from "lucide-react";
+import { FileText, Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -63,12 +63,25 @@ type ApiCalculationRow = {
 
 type StatusFilter = "alle" | "entwurf" | "aktiv" | "archiviert";
 
+function statusLabel(status: CalcStatus): string {
+  switch (status) {
+    case "entwurf":
+      return "Entwurf";
+    case "aktiv":
+      return "Aktiv";
+    case "archiviert":
+      return "Archiviert";
+    default:
+      return status;
+  }
+}
+
 function statusBadgeClass(status: CalcStatus): string {
   switch (status) {
     case "entwurf":
-      return "bg-zinc-700 text-zinc-300";
+      return "border border-zinc-600 bg-zinc-700 text-zinc-300";
     case "aktiv":
-      return "border border-emerald-800 bg-emerald-900/50 text-emerald-400";
+      return "border border-emerald-800 bg-emerald-950 text-emerald-400";
     case "archiviert":
       return "bg-zinc-800 text-zinc-500";
     default:
@@ -93,13 +106,14 @@ export default function KalkulationenSeite() {
 
   const [dialogOffen, setDialogOffen] = useState(false);
   const [createTitel, setCreateTitel] = useState("");
-  const [createProjektId, setCreateProjektId] = useState<string>("");
+  const [createProjektId, setCreateProjektId] = useState<string>("none");
   const [createQuick, setCreateQuick] = useState(false);
   const [createLaden, setCreateLaden] = useState(false);
   const [projektOptionen, setProjektOptionen] = useState<
     { id: string; title: string }[]
   >([]);
   const [projekteLaden, setProjekteLaden] = useState(false);
+  const [projekteFehler, setProjekteFehler] = useState<string | null>(null);
 
   useEffect(() => {
     const t = window.setTimeout(() => setSearchDebounced(searchInput), 400);
@@ -108,6 +122,7 @@ export default function KalkulationenSeite() {
 
   const projekteLadenFn = useCallback(async () => {
     setProjekteLaden(true);
+    setProjekteFehler(null);
     try {
       const supabase = createClient();
       const { data, error } = await supabase
@@ -116,7 +131,9 @@ export default function KalkulationenSeite() {
         .eq("status", "aktiv")
         .order("title", { ascending: true });
       if (error) {
-        toast.error(`Projekte konnten nicht geladen werden: ${error.message}`);
+        const msg = `Projekte konnten nicht geladen werden: ${error.message}`;
+        toast.error(msg);
+        setProjekteFehler(msg);
         setProjektOptionen([]);
         return;
       }
@@ -127,7 +144,9 @@ export default function KalkulationenSeite() {
         }))
       );
     } catch {
-      toast.error("Projekte konnten nicht geladen werden.");
+      const msg = "Projekte konnten nicht geladen werden.";
+      toast.error(msg);
+      setProjekteFehler(msg);
       setProjektOptionen([]);
     } finally {
       setProjekteLaden(false);
@@ -263,10 +282,8 @@ export default function KalkulationenSeite() {
       const body: Record<string, unknown> = {
         title: titel,
         quick_mode: createQuick,
+        project_id: createProjektId === "none" ? null : createProjektId,
       };
-      if (createProjektId) {
-        body.project_id = createProjektId;
-      }
 
       const r = await fetch("/api/calculations", {
         method: "POST",
@@ -292,7 +309,7 @@ export default function KalkulationenSeite() {
       toast.success("Kalkulation erstellt");
       setDialogOffen(false);
       setCreateTitel("");
-      setCreateProjektId("");
+      setCreateProjektId("none");
       setCreateQuick(false);
       router.push(`/kalkulation/${newId}`);
     } catch {
@@ -311,18 +328,18 @@ export default function KalkulationenSeite() {
 
   const filterLeiste = useMemo(
     () => (
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3">
         <Input
           placeholder="Kalkulation suchen..."
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          className="max-w-xs border-zinc-800 bg-zinc-900 text-zinc-100 placeholder:text-zinc-600"
+          className="max-w-xs border-zinc-700 bg-zinc-800/80 text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-500 focus:ring-0"
         />
         <Select
           value={statusFilter}
           onValueChange={(v) => setStatusFilter(v as StatusFilter)}
         >
-          <SelectTrigger className="w-[180px] border-zinc-800 bg-zinc-900 text-zinc-100">
+          <SelectTrigger className="w-[180px] border-zinc-700 bg-zinc-800/80 text-zinc-100 focus:ring-0">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent className="border-zinc-800 bg-zinc-900 text-zinc-100">
@@ -338,7 +355,7 @@ export default function KalkulationenSeite() {
             variant="ghost"
             size="sm"
             className={cn(
-              "text-zinc-400 hover:text-zinc-200",
+              "text-zinc-400 transition-colors hover:text-zinc-200",
               showArchived && "bg-zinc-800 text-zinc-200"
             )}
             onClick={() => setShowArchived((v) => !v)}
@@ -352,8 +369,8 @@ export default function KalkulationenSeite() {
   );
 
   return (
-    <div className="mx-auto min-h-0 max-w-6xl space-y-6 bg-zinc-950 px-4 pb-8 pt-4">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="mx-auto min-h-0 max-w-6xl bg-zinc-950 px-4 pb-8 pt-4">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-zinc-50">Kalkulationen</h1>
           <p className="mt-1 text-sm text-zinc-400">
@@ -362,20 +379,21 @@ export default function KalkulationenSeite() {
         </div>
         <Button
           type="button"
-          className="shrink-0 bg-zinc-100 text-zinc-900 hover:bg-zinc-200"
+          className="shrink-0 rounded-xl bg-zinc-100 px-4 py-2 text-zinc-900 transition-colors hover:bg-zinc-200"
           onClick={() => setDialogOffen(true)}
         >
-          ＋ Neue Kalkulation
+          <Plus size={18} className="mr-2" />
+          Neue Kalkulation
         </Button>
       </div>
 
       {filterLeiste}
 
       {fehler ? (
-        <p className="text-sm text-red-400">{fehler}</p>
+        <p className="mb-4 text-sm text-red-400">{fehler}</p>
       ) : null}
 
-      <div className="overflow-hidden rounded-2xl border border-zinc-800/60 bg-zinc-900">
+      <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900">
         {laden ? (
           <div className="space-y-2 p-4">
             {Array.from({ length: 5 }).map((_, i) => (
@@ -383,24 +401,38 @@ export default function KalkulationenSeite() {
             ))}
           </div>
         ) : rows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-            <FileText className="size-10 text-zinc-600" aria-hidden />
-            <p className="text-lg font-semibold text-zinc-200">
-              Noch keine Kalkulationen
+          <div className="flex min-h-[300px] flex-col items-center justify-center gap-3 px-4 text-center">
+            <FileText size={48} className="text-zinc-700" aria-hidden />
+            <p className="font-medium text-zinc-400">Noch keine Kalkulationen</p>
+            <p className="max-w-sm text-sm text-zinc-600">
+              Erstelle deine erste Kalkulation und starte mit der Positionsplanung
             </p>
-            <p className="max-w-sm text-sm text-zinc-500">
-              Erstelle deine erste Kalkulation mit dem Button oben
-            </p>
+            <Button
+              type="button"
+              className="mt-1 rounded-xl bg-zinc-100 text-zinc-900 transition-colors hover:bg-zinc-200"
+              onClick={() => setDialogOffen(true)}
+            >
+              <Plus size={18} className="mr-2" />
+              Erste Kalkulation erstellen
+            </Button>
           </div>
         ) : (
-          <Table>
+          <Table className="border-0">
             <TableHeader>
               <TableRow className="border-zinc-800 hover:bg-transparent">
-                <TableHead className="text-zinc-400">Titel</TableHead>
-                <TableHead className="text-zinc-400">Status</TableHead>
-                <TableHead className="text-zinc-400">Projekt</TableHead>
-                <TableHead className="text-zinc-400">Erstellt</TableHead>
-                <TableHead className="w-[200px] text-right text-zinc-400">
+                <TableHead className="bg-zinc-800/50 text-xs font-medium uppercase tracking-wide text-zinc-500">
+                  Titel
+                </TableHead>
+                <TableHead className="bg-zinc-800/50 text-xs font-medium uppercase tracking-wide text-zinc-500">
+                  Status
+                </TableHead>
+                <TableHead className="bg-zinc-800/50 text-xs font-medium uppercase tracking-wide text-zinc-500">
+                  Projekt
+                </TableHead>
+                <TableHead className="bg-zinc-800/50 text-xs font-medium uppercase tracking-wide text-zinc-500">
+                  Erstellt
+                </TableHead>
+                <TableHead className="w-[200px] bg-zinc-800/50 text-right text-xs font-medium uppercase tracking-wide text-zinc-500">
                   Aktionen
                 </TableHead>
               </TableRow>
@@ -409,7 +441,7 @@ export default function KalkulationenSeite() {
               {rows.map((row) => (
                 <TableRow
                   key={row.id}
-                  className="cursor-pointer border-zinc-800 hover:bg-zinc-800/40"
+                  className="group cursor-pointer border-zinc-800 transition-colors hover:bg-zinc-800/40"
                   onClick={() => zeilenClick(row.id)}
                 >
                   <TableCell className="font-medium text-zinc-100">
@@ -418,11 +450,11 @@ export default function KalkulationenSeite() {
                   <TableCell>
                     <Badge
                       className={cn(
-                        "font-normal",
+                        "px-2.5 py-1 text-xs font-medium",
                         statusBadgeClass(row.status)
                       )}
                     >
-                      {row.status}
+                      {statusLabel(row.status)}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-zinc-500">
@@ -437,14 +469,14 @@ export default function KalkulationenSeite() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div
-                      className="flex justify-end gap-2"
+                      className="flex justify-end gap-2 opacity-0 transition-opacity group-hover:opacity-100"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <Link
                         href={`/kalkulation/${row.id}`}
                         className={cn(
                           buttonVariants({ variant: "ghost", size: "sm" }),
-                          "text-zinc-300"
+                          "text-zinc-300 transition-colors"
                         )}
                         onClick={(e) => e.stopPropagation()}
                       >
@@ -455,7 +487,7 @@ export default function KalkulationenSeite() {
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="text-zinc-500 hover:text-zinc-300"
+                          className="text-zinc-500 transition-colors hover:text-zinc-300"
                           onClick={() => void archivieren(row.id)}
                         >
                           Archivieren
@@ -473,39 +505,40 @@ export default function KalkulationenSeite() {
       <Dialog open={dialogOffen} onOpenChange={setDialogOffen}>
         <DialogContent className="border-zinc-800 bg-zinc-900 text-zinc-100">
           <DialogHeader>
-            <DialogTitle>Neue Kalkulation</DialogTitle>
+            <DialogTitle className="font-bold">Neue Kalkulation</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="kalk-titel">Titel *</Label>
+            <div>
+              <Label
+                htmlFor="kalk-titel"
+                className="mb-1 block text-sm text-zinc-400"
+              >
+                Titel *
+              </Label>
               <Input
                 id="kalk-titel"
                 value={createTitel}
                 onChange={(e) => setCreateTitel(e.target.value)}
                 placeholder="z. B. Elektro Neubau Musterstraße"
-                className="border-zinc-800 bg-zinc-950 text-zinc-100"
+                className="rounded-xl border-zinc-700 bg-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-500 focus:ring-0"
               />
             </div>
-            <div className="space-y-2">
-              <Label>Projekt verknüpfen (optional)</Label>
+            <div>
+              <Label className="mb-1 block text-sm text-zinc-400">
+                Projekt verknüpfen (optional)
+              </Label>
               <Select
-                value={createProjektId || "__none__"}
-                onValueChange={(v) => {
-                  if (!v || v === "__none__") {
-                    setCreateProjektId("");
-                  } else {
-                    setCreateProjektId(v);
-                  }
-                }}
+                value={createProjektId}
+                onValueChange={(v) => setCreateProjektId(v ?? "none")}
                 disabled={projekteLaden}
               >
-                <SelectTrigger className="border-zinc-800 bg-zinc-950 text-zinc-100">
+                <SelectTrigger className="rounded-xl border-zinc-700 bg-zinc-800 text-zinc-100 focus:ring-0">
                   <SelectValue
                     placeholder={projekteLaden ? "Lade …" : "Kein Projekt"}
                   />
                 </SelectTrigger>
-                <SelectContent className="border-zinc-800 bg-zinc-950 text-zinc-100">
-                  <SelectItem value="__none__">Kein Projekt</SelectItem>
+                <SelectContent className="border-zinc-800 bg-zinc-900 text-zinc-100">
+                  <SelectItem value="none">Kein Projekt</SelectItem>
                   {projektOptionen.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
                       {p.title}
@@ -513,8 +546,21 @@ export default function KalkulationenSeite() {
                   ))}
                 </SelectContent>
               </Select>
+              {projekteFehler ? (
+                <p className="mt-1 text-xs text-red-400">{projekteFehler}</p>
+              ) : null}
+              {!projekteLaden && projektOptionen.length === 0 && !projekteFehler ? (
+                <p className="mt-1 text-xs text-zinc-500">
+                  Keine aktiven Projekte vorhanden
+                </p>
+              ) : null}
             </div>
-            <div className="flex items-start gap-3 rounded-xl border border-zinc-800/80 bg-zinc-950/50 p-3">
+            <label
+              htmlFor="kalk-quick"
+              className={cn(
+                "flex cursor-pointer items-start gap-3 rounded-xl border border-zinc-800 bg-zinc-800/50 p-3 transition-colors hover:border-zinc-600"
+              )}
+            >
               <Checkbox
                 id="kalk-quick"
                 checked={createQuick}
@@ -522,20 +568,20 @@ export default function KalkulationenSeite() {
                 className="mt-0.5 border-zinc-600"
               />
               <div>
-                <Label htmlFor="kalk-quick" className="cursor-pointer">
+                <span className="text-sm font-medium text-zinc-200">
                   Schnellkalkulation (Quick Mode)
-                </Label>
+                </span>
                 <p className="mt-1 text-xs text-zinc-500">
                   Für schnelle Telefonschätzungen ohne vollständige Kalkulation
                 </p>
               </div>
-            </div>
+            </label>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button
               type="button"
               variant="outline"
-              className="border-zinc-700 bg-transparent text-zinc-200"
+              className="rounded-xl border-zinc-700 bg-transparent text-zinc-200 transition-colors"
               onClick={() => setDialogOffen(false)}
             >
               Abbrechen
@@ -543,7 +589,7 @@ export default function KalkulationenSeite() {
             <Button
               type="button"
               disabled={createLaden}
-              className="bg-zinc-100 text-zinc-900 hover:bg-zinc-200"
+              className="rounded-xl bg-zinc-100 text-zinc-900 transition-colors hover:bg-zinc-200"
               onClick={() => void kalkulationErstellen()}
             >
               {createLaden ? (

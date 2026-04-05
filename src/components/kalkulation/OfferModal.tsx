@@ -165,7 +165,7 @@ export function OfferModal({
                 className={cn(
                   "flex-1 rounded-xl border py-2 text-sm transition-colors",
                   positionDisplay === "detail"
-                    ? "border-zinc-500 bg-zinc-700 text-zinc-100"
+                    ? "border-zinc-800 bg-zinc-700 text-zinc-100 ring-2 ring-zinc-400"
                     : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-zinc-600"
                 )}
               >
@@ -177,7 +177,7 @@ export function OfferModal({
                 className={cn(
                   "flex-1 rounded-xl border py-2 text-sm transition-colors",
                   positionDisplay === "aggregiert"
-                    ? "border-zinc-500 bg-zinc-700 text-zinc-100"
+                    ? "border-zinc-800 bg-zinc-700 text-zinc-100 ring-2 ring-zinc-400"
                     : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-zinc-600"
                 )}
               >
@@ -189,18 +189,27 @@ export function OfferModal({
           <div className="space-y-2">
             <Label className="text-zinc-400">Enthaltene Klauseln</Label>
             <div className="grid grid-cols-2 gap-2">
-              {SECTION_KEYS.map(({ key, label }) => (
-                <label
-                  key={key}
-                  className="flex cursor-pointer items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/50 px-2 py-2 text-sm text-zinc-300 hover:border-zinc-700"
-                >
-                  <Checkbox
-                    checked={includeSections.includes(key)}
-                    onCheckedChange={() => toggleSection(key)}
-                  />
-                  <span>{label}</span>
-                </label>
-              ))}
+              {SECTION_KEYS.map(({ key, label }) => {
+                const active = includeSections.includes(key);
+                return (
+                  <label
+                    key={key}
+                    className={cn(
+                      "flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-left text-sm text-zinc-300 transition-colors",
+                      active
+                        ? "border-zinc-500 bg-zinc-800"
+                        : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
+                    )}
+                  >
+                    <Checkbox
+                      checked={active}
+                      onCheckedChange={() => toggleSection(key)}
+                      className="mt-0.5"
+                    />
+                    <span>{label}</span>
+                  </label>
+                );
+              })}
             </div>
           </div>
 
@@ -236,20 +245,17 @@ export function OfferModal({
           </div>
 
           <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-            <div className="flex justify-between text-sm">
+            <p className="text-xs text-zinc-500">Angebotssumme</p>
+            <p className="mt-1 text-2xl font-bold text-zinc-50">
+              {formatEuro(bruttoGesamt)}
+            </p>
+            <div className="mt-4 flex justify-between text-sm">
               <span className="text-zinc-400">Nettobetrag</span>
               <span className="text-zinc-200">{formatEuro(nettoGesamt)}</span>
             </div>
             <div className="mt-1 flex justify-between text-sm">
               <span className="text-zinc-400">MwSt. 19%</span>
               <span className="text-zinc-400">{formatEuro(mwst)}</span>
-            </div>
-            <div className="my-2 border-t border-zinc-800" />
-            <div className="flex justify-between">
-              <span className="text-sm font-semibold text-zinc-100">Bruttobetrag</span>
-              <span className="text-base font-bold text-zinc-50">
-                {formatEuro(bruttoGesamt)}
-              </span>
             </div>
           </div>
 

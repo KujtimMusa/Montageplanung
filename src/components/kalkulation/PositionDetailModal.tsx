@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { createClient } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -111,6 +112,11 @@ function detailsToDraft(d: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
+function isDetailsEmpty(d: Record<string, unknown> | undefined | null): boolean {
+  if (d == null) return true;
+  return Object.keys(d).length === 0;
+}
+
 function parseOptNumber(raw: unknown): number | undefined {
   const s = String(raw ?? "").trim().replace(",", ".");
   if (s === "") return undefined;
@@ -182,18 +188,40 @@ function buildDetailsForSave(
   }
 }
 
-function confidenceBannerClass(c: HistoryConfidence): string {
+function confidenceBannerStyles(c: HistoryConfidence): { bar: string; bg: string } {
   switch (c) {
     case "hoch":
-      return "border-emerald-800 bg-emerald-950/50";
+      return { bar: "border-l-emerald-500", bg: "bg-emerald-950/50" };
     case "mittel":
-      return "border-yellow-800 bg-yellow-950/50";
+      return { bar: "border-l-yellow-500", bg: "bg-yellow-950/50" };
     case "niedrig":
-      return "border-zinc-700 bg-zinc-800/50";
+      return { bar: "border-l-zinc-500", bg: "bg-zinc-800/50" };
     default:
-      return "border-zinc-700 bg-zinc-800/50";
+      return { bar: "border-l-zinc-600", bg: "bg-zinc-800/50" };
   }
 }
+
+function positionTypeLabel(t: PositionType): string {
+  switch (t) {
+    case "arbeit":
+      return "Arbeit";
+    case "material":
+      return "Material";
+    case "pauschal":
+      return "Pauschal";
+    case "fremdleistung":
+      return "Fremdleistung";
+    case "nachlass":
+      return "Nachlass";
+    default:
+      return t;
+  }
+}
+
+const fieldLabel = "mb-1 block text-xs font-medium uppercase tracking-wide text-zinc-400";
+
+const inputClass =
+  "rounded-xl border-zinc-700 bg-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-500 focus:ring-0";
 
 // ─── Komponente ───────────────────────────────────────────────────────────────
 
@@ -252,15 +280,41 @@ export function PositionDetailModal({
     setDraftTitle(p.title);
     setDraftTradeCategory(p.trade_category_id ?? "");
     setDraftLineTotal(p.line_total_net != null ? String(p.line_total_net) : "");
-    setDraft(detailsToDraft({ ...p.details }));
     setHistoryEstimate(null);
     setHistoryFehler(null);
+
+    const baseDetails = p.details ?? {};
+    if (p.library_item_id && isDetailsEmpty(baseDetails)) {
+      let cancelled = false;
+      void (async () => {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from("position_library")
+          .select("default_details")
+          .eq("id", p.library_item_id as string)
+          .maybeSingle();
+        if (cancelled || error) {
+          if (!cancelled) setDraft(detailsToDraft({ ...baseDetails }));
+          return;
+        }
+        const lib = (data?.default_details as Record<string, unknown>) ?? {};
+        if (cancelled) return;
+        setDraft(detailsToDraft({ ...lib }));
+        if (p.position_type === "arbeit" && p.trade_category_id) {
+          void fetchHistoryEstimate(p.trade_category_id, p.title);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setDraft(detailsToDraft({ ...baseDetails }));
 
     if (p.position_type === "arbeit" && p.trade_category_id) {
       void fetchHistoryEstimate(p.trade_category_id, p.title);
     }
-    // Nur bei geöffneter anderer Position neu initialisieren — nicht bei jedem positions-Update.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- positions bewusst nur zum Lesen beim Öffnen
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- nur beim Öffnen / Positionswechsel
   }, [positionId, fetchHistoryEstimate]);
 
   const pt = pos?.position_type;
@@ -323,39 +377,38 @@ export function PositionDetailModal({
       }}
     >
       <DialogContent
-        className="max-h-[90vh] max-w-2xl overflow-y-auto border-zinc-800 bg-zinc-900 text-zinc-100"
+        className="max-h-[90vh] max-w-xl overflow-y-auto border-zinc-800 bg-zinc-900 text-zinc-100"
       >
-        <DialogHeader>
-          <DialogTitle>Position editieren</DialogTitle>
-          <DialogDescription className="sr-only">
-            {pos ? `${pos.position_type}: ${pos.title}` : "Position"}
-          </DialogDescription>
-          {pos && (
-            <div className="flex flex-wrap items-center gap-2 pt-1">
+        <DialogHeader className="space-y-0 border-b border-zinc-800 pb-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <DialogTitle className="text-lg font-bold">Position editieren</DialogTitle>
+            {pos ? (
               <Badge
                 variant="outline"
                 className={cn("text-xs", positionTypeBadgeClass(pos.position_type))}
               >
                 {pos.position_type}
               </Badge>
-              <span className="text-sm text-zinc-400">{pos.title}</span>
-            </div>
-          )}
+            ) : null}
+          </div>
+          <DialogDescription className="sr-only">
+            {pos ? `${pos.position_type}: ${pos.title}` : "Position"}
+          </DialogDescription>
         </DialogHeader>
 
         {!pos ? null : (
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label className="text-zinc-400">Bezeichnung / Tätigkeit</Label>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label className={fieldLabel}>Bezeichnung / Tätigkeit</Label>
               <Input
-                className="border-zinc-700 bg-zinc-950"
+                className={inputClass}
                 value={draftTitle}
                 onChange={(e) => setDraftTitle(e.target.value)}
               />
             </div>
 
-            <div className="space-y-2">
-              <Label className="text-zinc-400">Gewerk</Label>
+            <div>
+              <Label className={fieldLabel}>Gewerk</Label>
               <Select
                 value={draftTradeCategory || "__none__"}
                 onValueChange={(v) => {
@@ -369,7 +422,7 @@ export function PositionDetailModal({
                   }
                 }}
               >
-                <SelectTrigger className="border-zinc-700 bg-zinc-950">
+                <SelectTrigger className={cn(inputClass, "h-10")}>
                   <SelectValue placeholder="Kein Gewerk" />
                 </SelectTrigger>
                 <SelectContent className="border-zinc-800 bg-zinc-900">
@@ -383,37 +436,50 @@ export function PositionDetailModal({
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label className="text-zinc-400">Gesamtbetrag (überschreibt Berechnung)</Label>
+            <div>
+              <Label className={fieldLabel}>Gesamtbetrag (überschreibt Berechnung)</Label>
               <Input
                 type="text"
                 inputMode="decimal"
-                className="border-zinc-700 bg-zinc-950"
+                className={inputClass}
                 placeholder="Leer lassen für automatische Berechnung"
                 value={draftLineTotal}
                 onChange={(e) => setDraftLineTotal(e.target.value)}
               />
-              <p className="text-xs text-zinc-500">
+              <p className="mt-1 text-xs text-zinc-500">
                 Wenn gesetzt, wird dieser Betrag direkt verwendet
               </p>
             </div>
 
+            <div className="relative py-2">
+              <div
+                className="flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-600"
+                aria-hidden
+              >
+                <span className="h-px flex-1 bg-zinc-800" />
+                <span className="shrink-0 whitespace-nowrap">
+                  Details für {pt ? positionTypeLabel(pt) : ""}
+                </span>
+                <span className="h-px flex-1 bg-zinc-800" />
+              </div>
+            </div>
+
             {pt === "arbeit" && (
               <>
-                <div className="space-y-2">
-                  <Label className="text-zinc-400">Tätigkeit</Label>
+                <div>
+                  <Label className={fieldLabel}>Tätigkeit</Label>
                   <Input
-                    className="border-zinc-700 bg-zinc-950"
+                    className={inputClass}
                     value={String(draft.taetigkeit ?? "")}
                     onChange={(e) =>
                       setDraft((d) => ({ ...d, taetigkeit: e.target.value }))
                     }
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-zinc-400">Einheit</Label>
+                <div>
+                  <Label className={fieldLabel}>Einheit</Label>
                   <Input
-                    className="border-zinc-700 bg-zinc-950"
+                    className={inputClass}
                     placeholder="Std"
                     value={String(draft.einheit ?? "")}
                     onChange={(e) =>
@@ -421,29 +487,34 @@ export function PositionDetailModal({
                     }
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-zinc-400">Menge / Stunden</Label>
+                <div>
+                  <Label className={fieldLabel}>Menge / Stunden</Label>
                   <Input
                     type="text"
                     inputMode="decimal"
-                    className="border-zinc-700 bg-zinc-950"
+                    className={inputClass}
                     value={String(draft.menge ?? "")}
                     onChange={(e) =>
                       setDraft((d) => ({ ...d, menge: e.target.value }))
                     }
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-zinc-400">Stundensatz (€/Std)</Label>
+                <div>
+                  <Label className={fieldLabel}>Stundensatz (€/Std)</Label>
                   <Input
                     type="text"
                     inputMode="decimal"
-                    className="border-zinc-700 bg-zinc-950"
+                    className={inputClass}
+                    placeholder="z. B. 65"
                     value={String(draft.stundensatz ?? "")}
                     onChange={(e) =>
                       setDraft((d) => ({ ...d, stundensatz: e.target.value }))
                     }
                   />
+                  <p className="mt-1 text-xs text-zinc-500">
+                    💡 Richtwert: Elektro/Sanitär 65–85 €/h · Trockenbau/Maler
+                    50–65 €/h · Allgemein 40–55 €/h
+                  </p>
                 </div>
 
                 {historyLaden && <Skeleton className="h-10 rounded-xl bg-zinc-800" />}
@@ -451,11 +522,14 @@ export function PositionDetailModal({
                 {!historyLaden &&
                   historyEstimate &&
                   historyEstimate.data_points > 0 &&
-                  historyEstimate.confidence !== "keine_daten" && (
+                  historyEstimate.confidence !== "keine_daten" && (() => {
+                    const hi = confidenceBannerStyles(historyEstimate.confidence);
+                    return (
                     <div
                       className={cn(
-                        "rounded-xl border p-3",
-                        confidenceBannerClass(historyEstimate.confidence)
+                        "rounded-r-xl border border-zinc-800/80 p-3 pl-4 border-l-4",
+                        hi.bar,
+                        hi.bg
                       )}
                     >
                       <p className="text-xs text-zinc-400">
@@ -480,7 +554,8 @@ export function PositionDetailModal({
                         </Button>
                       )}
                     </div>
-                  )}
+                    );
+                  })()}
 
                 {historyFehler && (
                   <p className="text-xs italic text-zinc-500">{historyFehler}</p>
@@ -497,68 +572,68 @@ export function PositionDetailModal({
 
             {pt === "material" && (
               <>
-                <div className="space-y-2">
-                  <Label className="text-zinc-400">Artikelnummer</Label>
+                <div>
+                  <Label className={fieldLabel}>Artikelnummer</Label>
                   <Input
-                    className="border-zinc-700 bg-zinc-950"
+                    className={inputClass}
                     value={String(draft.artikelnummer ?? "")}
                     onChange={(e) =>
                       setDraft((d) => ({ ...d, artikelnummer: e.target.value }))
                     }
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-zinc-400">Bezeichnung</Label>
+                <div>
+                  <Label className={fieldLabel}>Bezeichnung</Label>
                   <Input
-                    className="border-zinc-700 bg-zinc-950"
+                    className={inputClass}
                     value={String(draft.bezeichnung ?? "")}
                     onChange={(e) =>
                       setDraft((d) => ({ ...d, bezeichnung: e.target.value }))
                     }
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-zinc-400">Menge</Label>
+                <div>
+                  <Label className={fieldLabel}>Menge</Label>
                   <Input
                     type="text"
                     inputMode="decimal"
-                    className="border-zinc-700 bg-zinc-950"
+                    className={inputClass}
                     value={String(draft.menge ?? "")}
                     onChange={(e) =>
                       setDraft((d) => ({ ...d, menge: e.target.value }))
                     }
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-zinc-400">Einkaufspreis (€)</Label>
+                <div>
+                  <Label className={fieldLabel}>Einkaufspreis (€)</Label>
                   <Input
                     type="text"
                     inputMode="decimal"
-                    className="border-zinc-700 bg-zinc-950"
+                    className={inputClass}
                     value={String(draft.ek_preis ?? "")}
                     onChange={(e) =>
                       setDraft((d) => ({ ...d, ek_preis: e.target.value }))
                     }
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-zinc-400">Aufschlag %</Label>
+                <div>
+                  <Label className={fieldLabel}>Aufschlag %</Label>
                   <Input
                     type="text"
                     inputMode="decimal"
-                    className="border-zinc-700 bg-zinc-950"
+                    className={inputClass}
                     value={String(draft.aufschlag_pct ?? "")}
                     onChange={(e) =>
                       setDraft((d) => ({ ...d, aufschlag_pct: e.target.value }))
                     }
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-zinc-400">Verkaufspreis (€)</Label>
+                <div>
+                  <Label className={fieldLabel}>Verkaufspreis (€)</Label>
                   <Input
                     type="text"
                     inputMode="decimal"
-                    className="border-zinc-700 bg-zinc-950"
+                    className={inputClass}
                     value={String(draft.vk_preis ?? "")}
                     onChange={(e) =>
                       setDraft((d) => ({ ...d, vk_preis: e.target.value }))
@@ -588,23 +663,23 @@ export function PositionDetailModal({
 
             {pt === "pauschal" && (
               <>
-                <div className="space-y-2">
-                  <Label className="text-zinc-400">Beschreibung</Label>
+                <div>
+                  <Label className={fieldLabel}>Beschreibung</Label>
                   <Textarea
                     rows={3}
-                    className="border-zinc-700 bg-zinc-950"
+                    className={cn(inputClass, "min-h-[88px]")}
                     value={String(draft.beschreibung ?? "")}
                     onChange={(e) =>
                       setDraft((d) => ({ ...d, beschreibung: e.target.value }))
                     }
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-zinc-400">Pauschalbetrag (€)</Label>
+                <div>
+                  <Label className={fieldLabel}>Pauschalbetrag (€)</Label>
                   <Input
                     type="text"
                     inputMode="decimal"
-                    className="border-zinc-700 bg-zinc-950"
+                    className={inputClass}
                     value={String(draft.betrag ?? "")}
                     onChange={(e) =>
                       setDraft((d) => ({ ...d, betrag: e.target.value }))
@@ -616,10 +691,10 @@ export function PositionDetailModal({
 
             {pt === "fremdleistung" && (
               <>
-                <div className="space-y-2">
-                  <Label className="text-zinc-400">Subunternehmer</Label>
+                <div>
+                  <Label className={fieldLabel}>Subunternehmer</Label>
                   <Input
-                    className="border-zinc-700 bg-zinc-950"
+                    className={inputClass}
                     value={String(draft.subunternehmer_name ?? "")}
                     onChange={(e) =>
                       setDraft((d) => ({
@@ -629,11 +704,11 @@ export function PositionDetailModal({
                     }
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-zinc-400">Leistungsbeschreibung</Label>
+                <div>
+                  <Label className={fieldLabel}>Leistungsbeschreibung</Label>
                   <Textarea
                     rows={3}
-                    className="border-zinc-700 bg-zinc-950"
+                    className={cn(inputClass, "min-h-[88px]")}
                     value={String(draft.leistungsbeschreibung ?? "")}
                     onChange={(e) =>
                       setDraft((d) => ({
@@ -643,24 +718,24 @@ export function PositionDetailModal({
                     }
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-zinc-400">Fremdleistungsbetrag (€)</Label>
+                <div>
+                  <Label className={fieldLabel}>Fremdleistungsbetrag (€)</Label>
                   <Input
                     type="text"
                     inputMode="decimal"
-                    className="border-zinc-700 bg-zinc-950"
+                    className={inputClass}
                     value={String(draft.betrag ?? "")}
                     onChange={(e) =>
                       setDraft((d) => ({ ...d, betrag: e.target.value }))
                     }
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-zinc-400">Aufschlag %</Label>
+                <div>
+                  <Label className={fieldLabel}>Aufschlag %</Label>
                   <Input
                     type="text"
                     inputMode="decimal"
-                    className="border-zinc-700 bg-zinc-950"
+                    className={inputClass}
                     value={String(draft.aufschlag_pct ?? "")}
                     onChange={(e) =>
                       setDraft((d) => ({ ...d, aufschlag_pct: e.target.value }))
@@ -678,8 +753,8 @@ export function PositionDetailModal({
 
             {pt === "nachlass" && (
               <>
-                <div className="space-y-2">
-                  <Label className="text-zinc-400">Modus</Label>
+                <div>
+                  <Label className={fieldLabel}>Modus</Label>
                   <Select
                     value={nachlassMode}
                     onValueChange={(v) =>
@@ -689,7 +764,7 @@ export function PositionDetailModal({
                       }))
                     }
                   >
-                    <SelectTrigger className="border-zinc-700 bg-zinc-950">
+                    <SelectTrigger className={cn(inputClass, "h-10")}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="border-zinc-800 bg-zinc-900">
@@ -698,14 +773,14 @@ export function PositionDetailModal({
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-zinc-400">
+                <div>
+                  <Label className={fieldLabel}>
                     {nachlassMode === "pct" ? "Nachlass (%)" : "Nachlass (€)"}
                   </Label>
                   <Input
                     type="text"
                     inputMode="decimal"
-                    className="border-zinc-700 bg-zinc-950"
+                    className={inputClass}
                     value={String(draft.wert ?? "")}
                     onChange={(e) =>
                       setDraft((d) => ({ ...d, wert: e.target.value }))

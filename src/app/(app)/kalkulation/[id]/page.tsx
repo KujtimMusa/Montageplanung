@@ -26,6 +26,7 @@ import {
   GripVertical,
   MoreHorizontal,
   Plus,
+  Search,
   Settings2,
   Trash2,
 } from "lucide-react";
@@ -135,31 +136,51 @@ function embedRelation<T>(v: T | T[] | null | undefined): T | null {
   return Array.isArray(v) ? (v[0] as T) ?? null : (v as T);
 }
 
-function statusBadgeClass(status: Calculation["status"]): string {
-  switch (status) {
-    case "entwurf":
-      return "bg-zinc-700 text-zinc-300";
-    case "aktiv":
-      return "border border-emerald-800 bg-emerald-900/50 text-emerald-400";
-    case "archiviert":
-      return "bg-zinc-800 text-zinc-500";
+const TRADE_DOT_COLORS = [
+  "bg-blue-500",
+  "bg-emerald-500",
+  "bg-orange-500",
+  "bg-purple-500",
+  "bg-yellow-500",
+  "bg-pink-500",
+  "bg-cyan-500",
+] as const;
+
+function tradeCategoryDotClass(name: string): string {
+  if (!name.length) return TRADE_DOT_COLORS[0];
+  const i = Math.abs(name.charCodeAt(0)) % TRADE_DOT_COLORS.length;
+  return TRADE_DOT_COLORS[i] ?? "bg-zinc-500";
+}
+
+function positionTypeDotClass(type: PositionType): string {
+  switch (type) {
+    case "arbeit":
+      return "bg-blue-500";
+    case "material":
+      return "bg-orange-500";
+    case "pauschal":
+      return "bg-purple-500";
+    case "fremdleistung":
+      return "bg-yellow-500";
+    case "nachlass":
+      return "bg-red-500";
     default:
-      return "bg-zinc-800 text-zinc-400";
+      return "bg-zinc-500";
   }
 }
 
-function positionTypeBadgeClass(type: PositionType): string {
+function libraryTypeBadgeClass(type: PositionType): string {
   switch (type) {
     case "arbeit":
-      return "bg-sky-900/50 text-sky-300 border border-sky-800";
+      return "bg-blue-950/80 text-blue-300";
     case "material":
-      return "bg-amber-900/50 text-amber-300 border border-amber-800";
+      return "bg-orange-950/80 text-orange-300";
     case "pauschal":
-      return "bg-violet-900/50 text-violet-300 border border-violet-800";
+      return "bg-purple-950/80 text-purple-300";
     case "fremdleistung":
-      return "bg-orange-900/50 text-orange-300 border border-orange-800";
+      return "bg-yellow-950/80 text-yellow-300";
     case "nachlass":
-      return "bg-rose-900/50 text-rose-300 border border-rose-800";
+      return "bg-red-950/80 text-red-300";
     default:
       return "bg-zinc-800 text-zinc-400";
   }
@@ -346,37 +367,40 @@ function DraggableLibraryItem({
       {...listeners}
       {...attributes}
       className={cn(
-        "mx-3 mb-2 cursor-grab rounded-xl border border-zinc-800 bg-zinc-900 p-3",
-        "active:cursor-grabbing hover:border-zinc-600",
+        "mx-3 mb-1.5 cursor-grab rounded-lg border border-zinc-800/80 bg-zinc-900 p-2.5 transition-all",
+        "hover:border-zinc-600 hover:bg-zinc-800/50 active:cursor-grabbing",
         isDragging && "opacity-50"
       )}
     >
-      <div className="flex items-start gap-2">
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-sm text-zinc-200">{item.name}</p>
-          <Badge
-            variant="outline"
-            className={cn("mt-1 text-xs", positionTypeBadgeClass(item.position_type))}
-          >
-            {item.position_type}
-          </Badge>
-          {item.default_hours != null && (
-            <p className="mt-1 text-xs text-zinc-500">{item.default_hours} Std.</p>
-          )}
+          <p className="text-sm font-medium leading-tight text-zinc-200">{item.name}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <span
+              className={cn(
+                "rounded-md px-1.5 py-0.5 text-[10px] font-medium",
+                libraryTypeBadgeClass(item.position_type)
+              )}
+            >
+              {item.position_type}
+            </span>
+            {item.default_hours != null && (
+              <span className="text-[10px] text-zinc-600">{item.default_hours} Std.</span>
+            )}
+          </div>
         </div>
-        <Button
+        <button
           type="button"
-          size="icon"
-          variant="ghost"
-          className="h-8 w-8 shrink-0"
+          className="shrink-0 rounded-md p-0.5 text-zinc-500 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
           onClick={(e) => {
             e.stopPropagation();
             onAdd(item);
           }}
           onPointerDown={(e) => e.stopPropagation()}
+          aria-label="Hinzufügen"
         >
-          <Plus className="h-4 w-4" />
-        </Button>
+          <Plus size={16} />
+        </button>
       </div>
     </div>
   );
@@ -432,7 +456,7 @@ function SortablePositionRow({
       ref={setNodeRef}
       style={style}
       className={cn(
-        "flex items-center gap-3 border-b border-zinc-800/60 px-4 py-3",
+        "group flex items-center gap-2.5 border-b border-zinc-800/40 px-3 py-2.5 transition-colors",
         "hover:bg-zinc-800/30",
         isDragging && "bg-zinc-800/50"
       )}
@@ -440,20 +464,21 @@ function SortablePositionRow({
       <div
         {...attributes}
         {...listeners}
-        className="cursor-grab text-zinc-600 hover:text-zinc-400 active:cursor-grabbing"
+        className="flex-shrink-0 cursor-grab text-zinc-700 transition-colors hover:text-zinc-500 active:cursor-grabbing"
       >
-        <GripVertical size={16} />
+        <GripVertical size={14} />
       </div>
-      <Badge
-        variant="outline"
-        className={cn("shrink-0 text-xs", positionTypeBadgeClass(pos.position_type))}
-      >
-        {pos.position_type}
-      </Badge>
+      <div
+        className={cn(
+          "h-2 w-2 flex-shrink-0 rounded-full",
+          positionTypeDotClass(pos.position_type)
+        )}
+        aria-hidden
+      />
       <div className="min-w-0 flex-1">
         {isEditing ? (
           <Input
-            className="h-8 border-zinc-700 bg-zinc-900 text-sm"
+            className="h-auto border-0 border-b border-zinc-600 bg-transparent px-0 py-0 text-sm text-zinc-200 outline-none focus-visible:ring-0"
             value={draftTitle}
             autoFocus
             onChange={(e) => setDraftTitle(e.target.value)}
@@ -470,7 +495,7 @@ function SortablePositionRow({
         ) : (
           <button
             type="button"
-            className="truncate text-left text-sm text-zinc-200 hover:underline"
+            className="w-full truncate text-left text-sm text-zinc-200 transition-colors hover:text-zinc-100"
             onClick={() => {
               setEditingTitleId(pos.id);
               setDraftTitle(pos.title);
@@ -480,29 +505,27 @@ function SortablePositionRow({
           </button>
         )}
       </div>
-      <div className="ml-auto flex shrink-0 items-center gap-4">
-        <span className="text-sm text-zinc-300">{rechtsText}</span>
-        <span className="text-sm font-medium text-zinc-100">
+      <div className="ml-auto flex shrink-0 items-center gap-3">
+        <span className="text-xs text-zinc-500">{rechtsText}</span>
+        <span className="min-w-[80px] text-right text-sm font-medium text-zinc-100">
           {formatEuro(lineAmount)}
         </span>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-zinc-500 hover:text-zinc-200"
-          onClick={() => onOpenDetail(pos.id)}
-        >
-          <Settings2 className="h-4 w-4" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-zinc-600 hover:text-red-400"
-          onClick={() => onDelete(pos.id)}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+          <button
+            type="button"
+            className="rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+            onClick={() => onOpenDetail(pos.id)}
+          >
+            <Settings2 size={14} />
+          </button>
+          <button
+            type="button"
+            className="rounded-md p-1 text-zinc-600 transition-colors hover:bg-zinc-800 hover:text-red-400"
+            onClick={() => onDelete(pos.id)}
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -527,7 +550,7 @@ export default function KalkulationBuilderPage() {
   const [librarySearchInput, setLibrarySearchInput] = useState("");
   const [librarySearchDebounced, setLibrarySearchDebounced] = useState("");
   const [libraryTradeFilter, setLibraryTradeFilter] = useState<string>("");
-  const [libraryIncludeGlobal, setLibraryIncludeGlobal] = useState(false);
+  const [libraryIncludeGlobal, setLibraryIncludeGlobal] = useState(true);
 
   const [activePositionId, setActivePositionId] = useState<string | null>(null);
   const [showOfferModal, setShowOfferModal] = useState(false);
@@ -543,8 +566,15 @@ export default function KalkulationBuilderPage() {
   const [projektOptionen, setProjektOptionen] = useState<
     { id: string; title: string }[]
   >([]);
-  const [projectSelectId, setProjectSelectId] = useState<string>("");
+  const [projectSelectId, setProjectSelectId] = useState<string>("none");
   const [notesDraft, setNotesDraft] = useState("");
+
+  const [mounted, setMounted] = useState(false);
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [quickAddTitel, setQuickAddTitel] = useState("");
+  const [quickAddTyp, setQuickAddTyp] = useState<PositionType>("arbeit");
+  const [quickAddGewerk, setQuickAddGewerk] = useState<string>("");
+  const [quickAddLaden, setQuickAddLaden] = useState(false);
 
   // NEU: Drag & Drop Overlay
   const [activeLibraryItem, setActiveLibraryItem] = useState<LibraryItem | null>(null);
@@ -560,6 +590,10 @@ export default function KalkulationBuilderPage() {
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextAutosave = useRef(true);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const t = window.setTimeout(() => setLibrarySearchDebounced(librarySearchInput), 300);
@@ -586,17 +620,32 @@ export default function KalkulationBuilderPage() {
   const { order: groupOrder, map: groupMap, sorted: sortedPositions } =
     useMemo(() => groupPositions(positions), [positions]);
 
-  const loadAll = useCallback(async () => {
+  const loadLibrary = useCallback(async () => {
+    try {
+      const libRes = await fetch(
+        `/api/position-library?include_global=${libraryIncludeGlobal ? "true" : "false"}`
+      );
+      if (!libRes.ok) {
+        toast.error("Bibliothek konnte nicht geladen werden.");
+        setLibraryItems([]);
+        return;
+      }
+      const libJson = (await libRes.json()) as { items: LibraryItem[] };
+      setLibraryItems(libJson.items ?? []);
+    } catch {
+      toast.error("Bibliothek konnte nicht geladen werden.");
+      setLibraryItems([]);
+    }
+  }, [libraryIncludeGlobal]);
+
+  const loadCalculation = useCallback(async () => {
     setLaden(true);
     setFehler(null);
     skipNextAutosave.current = true;
     try {
       const supabase = createClient();
-      const [calcRes, libRes, tcRes] = await Promise.all([
+      const [calcRes, tcRes] = await Promise.all([
         fetch(`/api/calculations/${id}`),
-        fetch(
-          `/api/position-library?include_global=${libraryIncludeGlobal ? "true" : "false"}`
-        ),
         supabase.from("trade_categories").select("id, name").order("name"),
       ]);
 
@@ -618,14 +667,6 @@ export default function KalkulationBuilderPage() {
       setPositions(posList);
       setTitleDraft(c.title);
 
-      if (!libRes.ok) {
-        toast.error("Bibliothek konnte nicht geladen werden.");
-        setLibraryItems([]);
-      } else {
-        const libJson = (await libRes.json()) as { items: LibraryItem[] };
-        setLibraryItems(libJson.items ?? []);
-      }
-
       if (tcRes.error) {
         toast.error(`Gewerke: ${tcRes.error.message}`);
         setTradeCategories([]);
@@ -639,11 +680,15 @@ export default function KalkulationBuilderPage() {
     } finally {
       setLaden(false);
     }
-  }, [id, libraryIncludeGlobal]);
+  }, [id]);
 
   useEffect(() => {
-    void loadAll();
-  }, [loadAll]);
+    void loadCalculation();
+  }, [loadCalculation]);
+
+  useEffect(() => {
+    void loadLibrary();
+  }, [loadLibrary]);
 
   useEffect(() => {
     if (!showProjectModal) return;
@@ -928,6 +973,44 @@ export default function KalkulationBuilderPage() {
     }
   };
 
+  const quickAddPosition = async () => {
+    const titel = quickAddTitel.trim();
+    if (titel.length < 1) {
+      toast.error("Bitte einen Titel eingeben.");
+      return;
+    }
+    setQuickAddLaden(true);
+    try {
+      const res = await fetch(`/api/calculations/${id}/positions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: titel,
+          position_type: quickAddTyp,
+          trade_category_id: quickAddGewerk ? quickAddGewerk : null,
+          details: {},
+          sort_order: positions.length * 10,
+        }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error((j as { error?: string }).error ?? "Anlegen fehlgeschlagen");
+      }
+      const j = (await res.json()) as { position: unknown };
+      const np = normalizePosition(j.position);
+      setPositions((prev) => [...prev, np]);
+      toast.success("Position hinzugefügt");
+      setShowQuickAdd(false);
+      setQuickAddTitel("");
+      setQuickAddTyp("arbeit");
+      setQuickAddGewerk("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Position konnte nicht angelegt werden");
+    } finally {
+      setQuickAddLaden(false);
+    }
+  };
+
   const deletePosition = async (posId: string) => {
     const prev = positions;
     setPositions((p) => p.filter((x) => x.id !== posId));
@@ -980,27 +1063,30 @@ export default function KalkulationBuilderPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
+    <div
+      className="flex flex-col overflow-hidden bg-zinc-950 text-zinc-100"
+      style={{ height: "calc(100dvh - 56px)" }}
+    >
       <header
         className={cn(
-          "sticky top-0 z-10 flex items-center gap-4 border-b border-zinc-800 bg-zinc-950",
-          "px-4 py-3"
+          "flex-none sticky top-0 z-10 flex h-14 items-center gap-3 border-b border-zinc-800/80",
+          "bg-zinc-950/90 px-4 backdrop-blur-sm"
         )}
       >
         <Link
           href="/kalkulation"
-          aria-label="Zurück"
           className={cn(
-            buttonVariants({ variant: "ghost", size: "icon" }),
-            "shrink-0 text-zinc-400"
+            buttonVariants({ variant: "ghost", size: "sm" }),
+            "shrink-0 gap-1.5 px-2 text-zinc-400 transition-colors hover:bg-transparent hover:text-zinc-200"
           )}
         >
-          <ArrowLeft className="h-5 w-5" />
+          <ArrowLeft size={18} />
+          <span className="text-sm">Kalkulationen</span>
         </Link>
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
           {titleEditing ? (
             <Input
-              className="max-w-md border-zinc-700 bg-zinc-900"
+              className="max-w-md border-0 border-b border-zinc-500 bg-transparent px-0 text-lg font-semibold text-zinc-100 outline-none focus-visible:ring-0"
               value={titleDraft}
               autoFocus
               onChange={(e) => setTitleDraft(e.target.value)}
@@ -1012,7 +1098,7 @@ export default function KalkulationBuilderPage() {
           ) : (
             <button
               type="button"
-              className="truncate text-left text-lg font-semibold text-zinc-50 hover:underline"
+              className="truncate text-left text-lg font-semibold text-zinc-100 underline decoration-transparent decoration-2 underline-offset-4 transition-colors hover:decoration-zinc-700"
               onClick={() => {
                 setTitleEditing(true);
                 setTitleDraft(calculation.title);
@@ -1021,39 +1107,39 @@ export default function KalkulationBuilderPage() {
               {calculation.title}
             </button>
           )}
-          <Badge className={statusBadgeClass(calculation.status)}>
-            {calculation.status}
-          </Badge>
         </div>
         <div className="flex shrink-0 items-center gap-3">
           {gespeichertAt && !speichern && (
-            <span className="text-xs text-zinc-500">Gespeichert ✓</span>
+            <span className="text-xs text-zinc-600">
+              <span className="text-emerald-500">●</span> Gespeichert
+            </span>
           )}
           {speichern && (
-            <span className="animate-pulse text-xs text-zinc-400">Speichern…</span>
+            <span className="animate-pulse text-xs text-zinc-400">
+              <span className="text-amber-400">●</span> Speichern…
+            </span>
           )}
           <Button
             type="button"
-            size="sm"
-            variant="secondary"
+            className="rounded-xl bg-zinc-100 px-4 py-1.5 text-sm font-medium text-zinc-900 transition-colors hover:bg-white"
             onClick={() => setShowOfferModal(true)}
           >
-            Angebot
+            Angebot erstellen
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger
               className={cn(
-                buttonVariants({ variant: "outline", size: "icon" }),
-                "border-zinc-700"
+                buttonVariants({ variant: "ghost", size: "icon" }),
+                "text-zinc-400 hover:text-zinc-200"
               )}
             >
-              <MoreHorizontal className="h-4 w-4" />
+              <MoreHorizontal size={18} />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="border-zinc-800 bg-zinc-900">
               <DropdownMenuItem
                 className="cursor-pointer"
                 onClick={() => {
-                  setProjectSelectId(calculation.project_id ?? "");
+                  setProjectSelectId(calculation.project_id ?? "none");
                   setShowProjectModal(true);
                 }}
               >
@@ -1085,6 +1171,8 @@ export default function KalkulationBuilderPage() {
         </div>
       </header>
 
+      {mounted ? (
+      <div className="flex min-h-0 flex-1 flex-col">
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -1092,40 +1180,65 @@ export default function KalkulationBuilderPage() {
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-      <div className="flex h-[calc(100vh-57px)] min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         <aside
           className={cn(
-            "flex w-80 shrink-0 flex-col overflow-y-auto border-r border-zinc-800",
+            "flex w-80 shrink-0 flex-col border-r border-zinc-800",
             "bg-zinc-900/50"
           )}
         >
-          <h2 className="px-4 pt-4 text-sm font-semibold text-zinc-400">Bibliothek</h2>
-          <div className="space-y-3 p-4">
+          <p className="px-4 pb-2 pt-4 text-xs font-semibold uppercase tracking-widest text-zinc-600">
+            Positionen
+          </p>
+          <div className="relative mx-3 mb-2">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+              size={16}
+              aria-hidden
+            />
             <Input
               placeholder="Suchen…"
-              className="border-zinc-700 bg-zinc-900"
+              className="h-9 rounded-xl border-zinc-700/50 bg-zinc-800/50 pl-9 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-500 focus:ring-0"
               value={librarySearchInput}
               onChange={(e) => setLibrarySearchInput(e.target.value)}
             />
-            <Select
-              value={libraryTradeFilter || "__all__"}
-              onValueChange={(v) =>
-                setLibraryTradeFilter(!v || v === "__all__" ? "" : v)
-              }
+          </div>
+          <div
+            className={cn(
+              "flex gap-1.5 overflow-x-auto px-3 pb-3",
+              "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            )}
+          >
+            <button
+              type="button"
+              onClick={() => setLibraryTradeFilter("")}
+              className={cn(
+                "shrink-0 rounded-full px-3 py-1 text-xs transition-colors",
+                libraryTradeFilter === ""
+                  ? "bg-zinc-600 text-zinc-100"
+                  : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+              )}
             >
-              <SelectTrigger className="border-zinc-700 bg-zinc-900">
-                <SelectValue placeholder="Gewerk" />
-              </SelectTrigger>
-              <SelectContent className="border-zinc-800 bg-zinc-900">
-                <SelectItem value="__all__">Alle Gewerke</SelectItem>
-                {tradeCategories.map((tc) => (
-                  <SelectItem key={tc.id} value={tc.id}>
-                    {tc.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-400">
+              Alle
+            </button>
+            {tradeCategories.map((tc) => (
+              <button
+                key={tc.id}
+                type="button"
+                onClick={() => setLibraryTradeFilter(tc.id)}
+                className={cn(
+                  "shrink-0 rounded-full px-3 py-1 text-xs transition-colors",
+                  libraryTradeFilter === tc.id
+                    ? "bg-zinc-600 text-zinc-100"
+                    : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+                )}
+              >
+                {tc.name}
+              </button>
+            ))}
+          </div>
+          <div className="px-4 pb-2">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-400 transition-colors">
               <Checkbox
                 checked={libraryIncludeGlobal}
                 onCheckedChange={(c) => setLibraryIncludeGlobal(c === true)}
@@ -1133,7 +1246,15 @@ export default function KalkulationBuilderPage() {
               Globale Vorlagen
             </label>
           </div>
-          <div className="flex-1 pb-4">
+          <button
+            type="button"
+            onClick={() => setShowQuickAdd(true)}
+            className="mx-3 mb-3 w-[calc(100%-1.5rem)] rounded-xl border border-dashed border-zinc-700 py-2 text-xs text-zinc-500 transition-colors hover:border-zinc-500 hover:text-zinc-300"
+          >
+            ＋ Eigene Position anlegen
+          </button>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="flex-1 overflow-y-auto pb-4">
             {libraryFiltered.map((item) => (
               <DraggableLibraryItem
                 key={item.id}
@@ -1144,14 +1265,29 @@ export default function KalkulationBuilderPage() {
             {libraryFiltered.length === 0 && (
               <p className="px-4 text-xs text-zinc-500">Keine Einträge.</p>
             )}
+            </div>
           </div>
         </aside>
 
-        <main className="min-w-0 flex-1 overflow-y-auto">
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           {sortedPositions.length === 0 ? (
-            <p className="p-8 text-sm text-zinc-500">
-              Noch keine Positionen — wählen Sie links aus der Bibliothek.
-            </p>
+            <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-8 text-center">
+              <div className="text-4xl text-zinc-600">📋</div>
+              <p className="text-sm font-medium text-zinc-400">
+                Noch keine Positionen
+              </p>
+              <p className="max-w-xs text-xs text-zinc-600">
+                Ziehe Positionen aus der Bibliothek links oder lege eine neue an
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowQuickAdd(true)}
+                className="rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-2 text-sm text-zinc-300 hover:border-zinc-500"
+              >
+                ＋ Erste Position hinzufügen
+              </button>
+            </div>
           ) : (
             groupOrder.map((gkey) => {
               const list = groupMap.get(gkey) ?? [];
@@ -1161,6 +1297,7 @@ export default function KalkulationBuilderPage() {
                   : list[0]?.trade_categories?.name ??
                     tradeCategories.find((t) => t.id === gkey)?.name ??
                     gkey;
+              const dotClass = tradeCategoryDotClass(tcName);
               let gruppenSumme = 0;
               for (const p of list) {
                 const idx = sortedPositions.findIndex((x) => x.id === p.id);
@@ -1170,15 +1307,21 @@ export default function KalkulationBuilderPage() {
                 <section key={gkey}>
                   <div
                     className={cn(
-                      "sticky top-0 z-[1] flex items-center gap-2 border-b border-zinc-800",
-                      "bg-zinc-950/95 px-4 py-2 backdrop-blur"
+                      "sticky top-0 z-10 flex items-center gap-2 border-b border-zinc-800/60",
+                      "bg-zinc-950/95 px-4 py-2 backdrop-blur-sm"
                     )}
                   >
-                    <span className="text-sm font-semibold text-zinc-300">{tcName}</span>
-                    <span className="text-xs text-zinc-500">
+                    <div
+                      className={cn("h-2 w-2 shrink-0 rounded-full", dotClass)}
+                      aria-hidden
+                    />
+                    <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                      {tcName}
+                    </span>
+                    <span className="ml-1 text-xs text-zinc-600">
                       {list.length} Position{list.length === 1 ? "" : "en"}
                     </span>
-                    <span className="ml-auto text-xs text-zinc-400">
+                    <span className="ml-auto text-xs font-medium text-zinc-300">
                       Σ {formatEuro(gruppenSumme)}
                     </span>
                   </div>
@@ -1209,6 +1352,7 @@ export default function KalkulationBuilderPage() {
               );
             })
           )}
+          </div>
         </main>
       </div>
 
@@ -1225,59 +1369,71 @@ export default function KalkulationBuilderPage() {
         )}
       </DragOverlay>
       </DndContext>
+      </div>
+      ) : (
+        <div className="flex min-h-0 flex-1">
+          <div className="w-80 shrink-0 border-r border-zinc-800 bg-zinc-900/50" />
+          <div className="flex flex-1 items-center justify-center">
+            <div className="text-sm text-zinc-500">Wird geladen…</div>
+          </div>
+        </div>
+      )}
 
       <footer
         className={cn(
-          "border-t border-zinc-800 bg-zinc-900/80 px-6 py-4 backdrop-blur",
-          "grid grid-cols-1 gap-6 md:grid-cols-2"
+          "flex-none border-t border-zinc-800 bg-zinc-900/80 px-5 py-3 backdrop-blur",
+          "grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-8"
         )}
       >
-        <div className="space-y-1 text-sm text-zinc-400">
+        <div className="space-y-1">
           <div className="flex justify-between gap-4">
-            <span>Arbeit</span>
-            <span>
+            <span className="text-xs text-zinc-500">Arbeit</span>
+            <span className="text-xs text-zinc-400">
               {formatEuro(summary.arbeitskosten)}{" "}
-              <span className="text-zinc-500">
+              <span className="text-zinc-600">
                 ({summary.arbeitsStundenGesamt.toFixed(1)} h)
               </span>
             </span>
           </div>
           <div className="flex justify-between gap-4">
-            <span>Material (netto)</span>
-            <span>{formatEuro(summary.materialNetto)}</span>
+            <span className="text-xs text-zinc-500">Material (netto)</span>
+            <span className="text-xs text-zinc-400">{formatEuro(summary.materialNetto)}</span>
           </div>
           <div className="flex justify-between gap-4">
-            <span>Pauschalen</span>
-            <span>{formatEuro(summary.pauschalen)}</span>
+            <span className="text-xs text-zinc-500">Pauschalen</span>
+            <span className="text-xs text-zinc-400">{formatEuro(summary.pauschalen)}</span>
           </div>
           <div className="flex justify-between gap-4">
-            <span>Fremdleistung</span>
-            <span>{formatEuro(summary.fremdleistung)}</span>
+            <span className="text-xs text-zinc-500">Fremdleistung</span>
+            <span className="text-xs text-zinc-400">{formatEuro(summary.fremdleistung)}</span>
           </div>
           <div className="flex justify-between gap-4">
-            <span>Nachlässe</span>
-            <span>-{formatEuro(summary.nachlaesse)}</span>
+            <span className="text-xs text-zinc-500">Nachlässe</span>
+            <span className="text-xs text-zinc-400">-{formatEuro(summary.nachlaesse)}</span>
           </div>
-          <div className="my-2 border-t border-zinc-700" />
-          <div className="flex justify-between gap-4 font-semibold text-zinc-100">
+          <div className="my-2 border-t border-zinc-700/50" />
+          <div className="flex justify-between gap-4 text-sm font-medium text-zinc-200">
             <span>Netto gesamt</span>
             <span>{formatEuro(summary.nettoGesamt)}</span>
           </div>
         </div>
-        <div className="flex flex-col items-end justify-center space-y-1">
-          <div className="text-lg font-medium text-zinc-100">
-            Netto: {formatEuro(summary.nettoGesamt)}
+        <div className="flex flex-col items-end justify-center gap-1">
+          <div className="text-sm text-zinc-400">
+            Netto {formatEuro(summary.nettoGesamt)}
           </div>
-          <div className="text-sm text-zinc-400">MwSt 19%: {formatEuro(summary.mwst)}</div>
-          <div className="border-t border-zinc-700 pt-2 text-2xl font-bold text-zinc-50">
-            Brutto: {formatEuro(summary.bruttoGesamt)}
+          <div className="text-sm text-zinc-400">MwSt 19% {formatEuro(summary.mwst)}</div>
+          <div className="text-right">
+            <span className="block text-xs text-zinc-500">Brutto</span>
+            <span className="text-xl font-bold text-zinc-50">
+              {formatEuro(summary.bruttoGesamt)}
+            </span>
           </div>
-          <div className="mt-2 flex items-center gap-2">
-            <Badge className={margeBadgeClass}>
-              Marge: {margePct.toFixed(1)}%
+          <div className="mt-1 flex items-center gap-2">
+            <Badge className={cn("text-xs", margeBadgeClass)}>
+              Marge {margePct.toFixed(1)}%
             </Badge>
             {targetPct != null && (
-              <span className="text-xs text-zinc-500">Ziel: {targetPct}%</span>
+              <span className="text-xs text-zinc-500">Ziel {targetPct}%</span>
             )}
           </div>
         </div>
@@ -1302,6 +1458,88 @@ export default function KalkulationBuilderPage() {
         onSave={() => {}}
       />
 
+      <Dialog
+        open={showQuickAdd}
+        onOpenChange={(o) => {
+          setShowQuickAdd(o);
+          if (!o) {
+            setQuickAddTitel("");
+            setQuickAddTyp("arbeit");
+            setQuickAddGewerk("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-sm border-zinc-800 bg-zinc-900 text-zinc-100">
+          <DialogHeader>
+            <DialogTitle>Position anlegen</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-2">
+              <Label className="text-zinc-400">Titel *</Label>
+              <Input
+                className="border-zinc-700 bg-zinc-950"
+                value={quickAddTitel}
+                onChange={(e) => setQuickAddTitel(e.target.value)}
+                placeholder="Bezeichnung"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-zinc-400">Typ</Label>
+              <Select
+                value={quickAddTyp}
+                onValueChange={(v) => setQuickAddTyp(v as PositionType)}
+              >
+                <SelectTrigger className="border-zinc-700 bg-zinc-950">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="border-zinc-800 bg-zinc-900">
+                  <SelectItem value="arbeit">arbeit</SelectItem>
+                  <SelectItem value="material">material</SelectItem>
+                  <SelectItem value="pauschal">pauschal</SelectItem>
+                  <SelectItem value="fremdleistung">fremdleistung</SelectItem>
+                  <SelectItem value="nachlass">nachlass</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-zinc-400">Gewerk (optional)</Label>
+              <Select
+                value={quickAddGewerk === "" ? "" : quickAddGewerk}
+                onValueChange={(v) => setQuickAddGewerk(v ?? "")}
+              >
+                <SelectTrigger className="border-zinc-700 bg-zinc-950">
+                  <SelectValue placeholder="—" />
+                </SelectTrigger>
+                <SelectContent className="border-zinc-800 bg-zinc-900">
+                  <SelectItem value="">—</SelectItem>
+                  {tradeCategories.map((tc) => (
+                    <SelectItem key={tc.id} value={tc.id}>
+                      {tc.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setShowQuickAdd(false)}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="button"
+              disabled={quickAddLaden}
+              onClick={() => void quickAddPosition()}
+            >
+              {quickAddLaden ? "…" : "Hinzufügen"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showProjectModal} onOpenChange={setShowProjectModal}>
         <DialogContent className="border-zinc-800 bg-zinc-900 text-zinc-100">
           <DialogHeader>
@@ -1310,16 +1548,14 @@ export default function KalkulationBuilderPage() {
           <div className="space-y-2">
             <Label className="text-zinc-400">Projekt</Label>
             <Select
-              value={projectSelectId || "__none__"}
-              onValueChange={(v) =>
-                setProjectSelectId(!v || v === "__none__" ? "" : v)
-              }
+              value={projectSelectId}
+              onValueChange={(v) => setProjectSelectId(v ?? "none")}
             >
               <SelectTrigger className="border-zinc-700 bg-zinc-950">
                 <SelectValue placeholder="Kein Projekt" />
               </SelectTrigger>
               <SelectContent className="border-zinc-800 bg-zinc-900">
-                <SelectItem value="__none__">Kein Projekt</SelectItem>
+                <SelectItem value="none">Kein Projekt</SelectItem>
                 {projektOptionen.map((p) => (
                   <SelectItem key={p.id} value={p.id}>
                     {p.title}
@@ -1336,7 +1572,7 @@ export default function KalkulationBuilderPage() {
               type="button"
               onClick={async () => {
                 const ok = await patchCalculation({
-                  project_id: projectSelectId || null,
+                  project_id: projectSelectId === "none" ? null : projectSelectId,
                 });
                 if (ok) {
                   toast.success("Projekt gespeichert");
