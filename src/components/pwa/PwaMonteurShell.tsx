@@ -1,7 +1,10 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useCallback, useState } from "react";
+import { cn } from "@/lib/utils";
 import { PwaBottomNav } from "@/components/pwa/PwaBottomNav";
+import { PwaInstallBanner } from "@/components/pwa/PwaInstallBanner";
 
 export function PwaMonteurShell({
   token,
@@ -10,10 +13,23 @@ export function PwaMonteurShell({
   token: string;
   children: ReactNode;
 }) {
+  const [bannerOben, setBannerOben] = useState(false);
+  const onBannerVisibleChange = useCallback((visible: boolean) => {
+    setBannerOben(visible);
+  }, []);
+
   return (
-    <div className="pwa-shell min-h-dvh bg-zinc-950 text-zinc-100">
-      <div className="mx-auto max-w-lg pb-2">{children}</div>
-      <PwaBottomNav token={token} />
-    </div>
+    <>
+      <PwaInstallBanner onBannerVisibleChange={onBannerVisibleChange} />
+      <div
+        className={cn(
+          "pwa-shell min-h-dvh bg-zinc-950 text-zinc-100",
+          bannerOben && "has-banner"
+        )}
+      >
+        <div className="mx-auto max-w-lg pb-2">{children}</div>
+        <PwaBottomNav token={token} />
+      </div>
+    </>
   );
 }

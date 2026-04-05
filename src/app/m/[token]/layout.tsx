@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import {
   istGueltigeTokenZeichenfolge,
@@ -5,6 +6,17 @@ import {
 } from "@/lib/pwa/token-resolver";
 import { PwaMonteurProvider } from "@/lib/pwa/monteur-context";
 import { PwaMonteurShell } from "@/components/pwa/PwaMonteurShell";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ token: string }>;
+}): Promise<Metadata> {
+  const { token } = await params;
+  return {
+    manifest: `/m/${token}/manifest.webmanifest`,
+  };
+}
 
 export default async function PwaMonteurLayout({
   children,

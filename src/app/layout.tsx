@@ -18,8 +18,17 @@ export const metadata: Metadata = {
   description:
     "Die smarte Einsatzplanung für Handwerksbetriebe — Kalender, Konflikte, KI.",
   manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Vlerafy",
+  },
   icons: {
     icon: "/icon.svg",
+    apple: [
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
   },
 };
 

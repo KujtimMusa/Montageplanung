@@ -105,6 +105,11 @@ export function templateEinsatzNeu(data: {
   </div>
   ${pwaBlock}
 
+  <p style="color:#71717a;font-size:12px;margin-top:20px;line-height:1.5;max-width:520px">
+    Tipp: In Safari auf <strong style="color:#a1a1aa">Teilen</strong> →
+    <strong style="color:#a1a1aa">„Zum Home-Bildschirm“</strong> tippen, um die Monteur-App dauerhaft zu speichern.
+  </p>
+
   <div style="${FOOTER_STYLE}">
     ${data.betrieb_name ?? "Einsatzplanung"} • Diese E-Mail wurde automatisch generiert.
   </div>

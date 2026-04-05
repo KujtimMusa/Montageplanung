@@ -359,3 +359,12 @@
 .pwa-shell select {
   font-size: 16px !important;
 }
+
+/* Monteur-PWA: Safe Area + Abstand zum festen Install-Banner */
+.pwa-shell {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.pwa-shell.has-banner {
+  padding-top: calc(64px + env(safe-area-inset-top, 0px));
+}
