@@ -136,7 +136,9 @@ export function NotfallModus() {
   const ladenMitarbeiter = useCallback(async () => {
     const { data, error } = await supabase
       .from("employees")
-      .select("id,name,department_id,qualifikationen,phone,whatsapp")
+      .select(
+        "id,name,organization_id,department_id,qualifikationen,phone,whatsapp"
+      )
       .order("name");
     if (error || !data) {
       toast.error(error?.message ?? "Mitarbeiter konnten nicht geladen werden.");
@@ -187,6 +189,7 @@ export function NotfallModus() {
         return {
           id: row.id as string,
           name: row.name as string,
+          organization_id: (row.organization_id as string | null) ?? null,
           department_id: deptId,
           qualifikationen: (row.qualifikationen as string[] | null) ?? null,
           phone: (row.phone as string | null) ?? null,
@@ -655,9 +658,19 @@ export function NotfallModus() {
       .maybeSingle();
 
     if (!bestehend) {
+      const organization_id =
+        ausfall?.organization_id ??
+        mitarbeiter.find((m) => m.id === ausfallId)?.organization_id ??
+        null;
+      if (!organization_id) {
+        console.error("[absenceEinmalig] organization_id fehlt");
+        return;
+      }
+
       const { error } = await supabase.from("absences").upsert(
         {
           employee_id: ausfallId,
+          organization_id,
           type: "krank",
           absence_type: "krank",
           start_date: datum,

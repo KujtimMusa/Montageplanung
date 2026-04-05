@@ -107,6 +107,21 @@ export async function POST(req: NextRequest) {
     case "einsatz_erstellen": {
       const { employee_id, project_id, project_title, date, start_time, end_time } =
         action.payload;
+      const { data: empRow, error: orgErr } = await supabase
+        .from("employees")
+        .select("organization_id")
+        .eq("id", employee_id)
+        .maybeSingle();
+      if (orgErr) {
+        return NextResponse.json({ error: orgErr.message }, { status: 500 });
+      }
+      const organization_id = empRow?.organization_id as string | undefined;
+      if (!organization_id) {
+        return NextResponse.json(
+          { error: "Mitarbeiter oder Organisation nicht gefunden." },
+          { status: 400 }
+        );
+      }
       const { error } = await supabase.from("assignments").insert({
         employee_id,
         project_id,
@@ -114,6 +129,7 @@ export async function POST(req: NextRequest) {
         date,
         start_time,
         end_time,
+        organization_id,
       });
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 500 });

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 export type NotfallMitarbeiter = {
   id: string;
   name: string;
+  organization_id: string | null;
   department_id: string | null;
   qualifikationen: string[] | null;
   phone: string | null;

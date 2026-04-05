@@ -24,6 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { fetchMyOrganizationId } from "@/lib/supabase/org-client";
 import { formatDatum } from "@/lib/utils/datum";
 import {
   normalisierePrioritaet,
@@ -377,7 +378,17 @@ export const ProjekteVerwaltung = forwardRef<
         if (error) throw error;
         toast.success("Projekt gespeichert.");
       } else {
-        const insert: Record<string, unknown> = { ...payload };
+        const orgId = await fetchMyOrganizationId(supabase);
+        if (!orgId) {
+          toast.error(
+            "Organisation nicht ermittelt. Bitte Seite neu laden oder Admin kontaktieren."
+          );
+          return;
+        }
+        const insert: Record<string, unknown> = {
+          ...payload,
+          organization_id: orgId,
+        };
         if (eigeneId) insert.created_by = eigeneId;
         const { error } = await supabase.from("projects").insert(insert);
         if (error) throw error;

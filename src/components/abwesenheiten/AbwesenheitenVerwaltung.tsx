@@ -409,9 +409,25 @@ export function AbwesenheitenVerwaltung() {
   const [kiDatumVon, setKiDatumVon] = useState(format(new Date(), "yyyy-MM-dd"));
   const [kiDatumBis, setKiDatumBis] = useState(format(new Date(), "yyyy-MM-dd"));
   const [kiGrund, setKiGrund] = useState("");
+  const [meineOrgId, setMeineOrgId] = useState<string | null>(null);
 
   const ladenDaten = useCallback(async () => {
     try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      let orgId: string | null = null;
+      if (user) {
+        const { data: meRow } = await supabase
+          .from("employees")
+          .select("organization_id")
+          .eq("auth_user_id", user.id)
+          .eq("active", true)
+          .maybeSingle();
+        orgId = (meRow?.organization_id as string | null) ?? null;
+      }
+      setMeineOrgId(orgId);
+
       const [resAb, resM, resT] = await Promise.all([
         supabase.from("departments").select("id,name").order("name"),
         supabase
@@ -624,8 +640,16 @@ export function AbwesenheitenVerwaltung() {
     setSpeichern(true);
     setKonflikte([]);
     try {
+      if (!meineOrgId) {
+        toast.error(
+          "Organisation nicht ermittelt. Bitte Seite neu laden oder Admin kontaktieren."
+        );
+        return;
+      }
+
       const payload = {
         employee_id: werte.employee_id,
+        organization_id: meineOrgId,
         type: werte.type,
         absence_type: werte.type,
         start_date: toDateKey(werte.start_date),
@@ -636,9 +660,10 @@ export function AbwesenheitenVerwaltung() {
       };
 
       if (bearbeitenId) {
+        const { organization_id: _o, ...updateFields } = payload;
         const { error } = await supabase
           .from("absences")
-          .update(payload)
+          .update(updateFields)
           .eq("id", bearbeitenId);
         if (error) throw error;
         toast.success("Abwesenheit gespeichert.");
@@ -945,7 +970,15 @@ export function AbwesenheitenVerwaltung() {
   }
 
   async function abwesenheitAusKiErstellen(v: KiAbwesenheitVorschlag) {
+    if (!meineOrgId) {
+      toast.error(
+        "Organisation nicht ermittelt. Bitte Seite neu laden oder Admin kontaktieren."
+      );
+      return;
+    }
+
     let fehler = 0;
+    let ersteFehlerMsg: string | null = null;
     const typMapped: AbwesenheitTyp =
       v.typ === "krankheit" ? "krank" : v.typ === "urlaub" ? "urlaub" : "sonstiges";
 
@@ -953,6 +986,7 @@ export function AbwesenheitenVerwaltung() {
       const { error } = await supabase.from("absences").upsert(
         {
           employee_id: ma.id,
+          organization_id: meineOrgId,
           start_date: toDateKey(v.start_date),
           end_date: toDateKey(v.end_date),
           type: typMapped,
@@ -969,6 +1003,7 @@ export function AbwesenheitenVerwaltung() {
       if (error) {
         console.error("[KI Abwesenheit]", error);
         fehler++;
+        if (!ersteFehlerMsg) ersteFehlerMsg = error.message;
       } else if (typMapped === "krank") {
         void fetch("/api/automations/trigger", {
           method: "POST",
@@ -982,7 +1017,11 @@ export function AbwesenheitenVerwaltung() {
     }
 
     if (fehler > 0) {
-      toast.error(`${fehler} Einträge fehlgeschlagen`);
+      toast.error(
+        ersteFehlerMsg
+          ? `${fehler} Einträge fehlgeschlagen: ${ersteFehlerMsg}`
+          : `${fehler} Einträge fehlgeschlagen`
+      );
       return;
     }
 

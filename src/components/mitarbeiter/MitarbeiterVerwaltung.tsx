@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/client";
+import { fetchMyOrganizationId } from "@/lib/supabase/org-client";
 import {
   Table,
   TableBody,
@@ -584,9 +585,16 @@ export function MitarbeiterVerwaltung({
         }
         toast.success("Mitarbeiter gespeichert.");
       } else {
+        const orgId = await fetchMyOrganizationId(supabase);
+        if (!orgId) {
+          toast.error(
+            "Organisation nicht ermittelt. Bitte Seite neu laden oder Admin kontaktieren."
+          );
+          return;
+        }
         const { data: neu, error } = await supabase
           .from("employees")
-          .insert(payload)
+          .insert({ ...payload, organization_id: orgId })
           .select("id")
           .single();
         if (error) throw error;

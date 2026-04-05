@@ -174,6 +174,8 @@ type Props = {
     dienstleister_name?: string;
   } | null;
   eigeneMitarbeiterId: string | null;
+  /** Tenant für assignments.organization_id (NOT NULL / RLS). */
+  organizationId: string | null;
   formularSchluessel: number;
   onGespeichert: () => void;
 };
@@ -187,6 +189,7 @@ export function EinsatzNeuDialog({
   bearbeiten,
   vorgaben,
   eigeneMitarbeiterId,
+  organizationId,
   formularSchluessel,
   onGespeichert,
 }: Props) {
@@ -549,6 +552,13 @@ export function EinsatzNeuDialog({
       }
     }
 
+    if (!organizationId) {
+      toast.error(
+        "Organisation nicht ermittelt. Bitte Seite neu laden oder Admin kontaktieren."
+      );
+      return;
+    }
+
     if (bearbeiten) {
       const zuLoeschen = [
         bearbeiten.id,
@@ -581,6 +591,7 @@ export function EinsatzNeuDialog({
         end_time: endNorm,
         notes: werte.notes?.trim() || null,
         prioritaet: prioritaetDb,
+        organization_id: organizationId,
       };
       if (eigeneMitarbeiterId) insertBase.created_by = eigeneMitarbeiterId;
 

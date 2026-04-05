@@ -5,6 +5,7 @@ import { useForm, Controller, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/client";
+import { fetchMyOrganizationId } from "@/lib/supabase/org-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -262,7 +263,16 @@ export function DienstleisterVerwaltung() {
         if (error) throw error;
         toast.success("Gespeichert.");
       } else {
-        const { error } = await supabase.from("subcontractors").insert(payload);
+        const orgId = await fetchMyOrganizationId(supabase);
+        if (!orgId) {
+          toast.error(
+            "Organisation nicht ermittelt. Bitte Seite neu laden oder Admin kontaktieren."
+          );
+          return;
+        }
+        const { error } = await supabase
+          .from("subcontractors")
+          .insert({ ...payload, organization_id: orgId });
         if (error) throw error;
         toast.success("Dienstleister angelegt.");
       }

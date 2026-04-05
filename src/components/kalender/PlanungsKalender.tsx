@@ -122,6 +122,9 @@ export function PlanungsKalender() {
   const [eigeneMitarbeiterId, setEigeneMitarbeiterId] = useState<string | null>(
     null
   );
+  const [meineOrganizationId, setMeineOrganizationId] = useState<string | null>(
+    null
+  );
   const [kalenderBereit, setKalenderBereit] = useState(false);
   const [mitgliederByTeam, setMitgliederByTeam] = useState<
     Map<string, { id: string; name: string }[]>
@@ -195,10 +198,11 @@ export function PlanungsKalender() {
 
       const { data: ich } = await supabase
         .from("employees")
-        .select("id")
+        .select("id, organization_id")
         .eq("auth_user_id", auth.user.id)
         .maybeSingle();
       if (ich?.id) setEigeneMitarbeiterId(ich.id);
+      setMeineOrganizationId((ich?.organization_id as string | null) ?? null);
 
       const { data: teamRows, error: teamErr } = await supabase
         .from("teams")
@@ -804,6 +808,12 @@ export function PlanungsKalender() {
         toast.warning(k.nachricht);
         // Wir blockieren das Speichern nicht: Notfall-Plan übernimmt ggf. die Umplanung.
       }
+      if (!meineOrganizationId) {
+        toast.error(
+          "Organisation nicht ermittelt. Bitte Seite neu laden oder Admin kontaktieren."
+        );
+        return;
+      }
       const insertPayload: Record<string, unknown> = {
         employee_id: empId,
         project_id: projectId,
@@ -814,6 +824,7 @@ export function PlanungsKalender() {
         start_time: startNorm,
         end_time: endNorm,
         notes: null,
+        organization_id: meineOrganizationId,
       };
       if (eigeneMitarbeiterId) insertPayload.created_by = eigeneMitarbeiterId;
 
@@ -839,7 +850,14 @@ export function PlanungsKalender() {
       toast.success(`Team „${teamName}“ wurde zugewiesen.`);
       void laden();
     },
-    [zuweisungen, supabase, laden, eigeneMitarbeiterId, teamsListe]
+    [
+      zuweisungen,
+      supabase,
+      laden,
+      eigeneMitarbeiterId,
+      teamsListe,
+      meineOrganizationId,
+    ]
   );
 
   const dialogNeuOeffnen = useCallback(
@@ -1389,6 +1407,7 @@ export function PlanungsKalender() {
         bearbeiten={bearbeiten}
         vorgaben={vorgaben}
         eigeneMitarbeiterId={eigeneMitarbeiterId}
+        organizationId={meineOrganizationId}
         formularSchluessel={formularSchluessel}
         onGespeichert={() => void laden()}
       />
