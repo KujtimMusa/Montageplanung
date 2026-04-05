@@ -45,5 +45,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  const { error: updErr } = await supabase
+    .from("employees")
+    .update({ push_status: "granted" })
+    .eq("id", resolved.employeeId);
+
+  if (updErr) {
+    console.warn("[push-subscribe] push_status:", updErr.message);
+  }
+
   return NextResponse.json({ ok: true });
 }

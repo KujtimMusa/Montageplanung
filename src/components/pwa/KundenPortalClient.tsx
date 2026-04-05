@@ -6,7 +6,7 @@ import { de } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Loader2, MapPin, RefreshCw } from "lucide-react";
+import { Building2, Calendar, Camera, Loader2, MapPin, MessageCircle, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { STATUS_CONFIG } from "@/lib/projekt-status";
 import { normalisiereStatus } from "@/types/projekte";
@@ -55,6 +55,34 @@ type Msg = {
 
 const POLL_MS = 15_000;
 
+const portalVisitedKey = (t: string) => `portal_visited_${t.trim().slice(0, 8)}`;
+const portalInstallDismissKey = (t: string) =>
+  `portal_install_dismissed_${t.trim().slice(0, 8)}`;
+
+function detectPlatform(): "ios" | "android" | "desktop" {
+  if (typeof window === "undefined") return "desktop";
+  const ua = navigator.userAgent;
+  if (/iPhone|iPad|iPod/.test(ua)) return "ios";
+  if (/Android/.test(ua)) return "android";
+  return "desktop";
+}
+
+function isStandalone(): boolean {
+  if (typeof window === "undefined") return false;
+  const standalone =
+    "standalone" in window.navigator &&
+    (window.navigator as Navigator & { standalone?: boolean }).standalone ===
+      true;
+  return (
+    window.matchMedia("(display-mode: standalone)").matches || standalone
+  );
+}
+
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+};
+
 export function KundenPortalClient({ token }: { token: string }) {
   const [info, setInfo] = useState<ProjektInfo | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -63,6 +91,13 @@ export function KundenPortalClient({ token }: { token: string }) {
   const [text, setText] = useState("");
   const [name, setName] = useState("");
   const [sende, setSende] = useState(false);
+  const [willkommenOffen, setWillkommenOffen] = useState(false);
+  const [installDismissed, setInstallDismissed] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] =
+    useState<BeforeInstallPromptEvent | null>(null);
+  const [plattform, setPlattform] = useState<"ios" | "android" | "desktop">(
+    "desktop"
+  );
 
   const laden = useCallback(async () => {
     try {
@@ -107,6 +142,33 @@ export function KundenPortalClient({ token }: { token: string }) {
       setAktualisiert(false);
     }
   }, [laden, ladenNachrichten]);
+
+  useEffect(() => {
+    setPlattform(detectPlatform());
+    try {
+      if (localStorage.getItem(portalInstallDismissKey(token)) === "1") {
+        setInstallDismissed(true);
+      }
+    } catch {
+      /* ignore */
+    }
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e as BeforeInstallPromptEvent);
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, [token]);
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(portalVisitedKey(token)) !== "1") {
+        setWillkommenOffen(true);
+      }
+    } catch {
+      setWillkommenOffen(true);
+    }
+  }, [token]);
 
   useEffect(() => {
     let cancelled = false;
@@ -184,8 +246,105 @@ export function KundenPortalClient({ token }: { token: string }) {
     (e) => e.status?.toLowerCase() === "abgeschlossen"
   );
 
+  const installBannerSichtbar =
+    !isStandalone() &&
+    !installDismissed &&
+    (plattform === "ios" || plattform === "android");
+
   return (
-    <div className="mx-auto max-w-lg px-4 pt-6">
+    <div className="relative mx-auto max-w-lg px-4 pt-6">
+      {willkommenOffen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
+            <div className="bg-primary/15 mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full">
+              <Building2 className="text-primary size-9" aria-hidden />
+            </div>
+            <h2 className="text-center text-xl font-bold text-slate-50">
+              Ihr persönliches Projektportal
+            </h2>
+            <p className="text-muted-foreground mt-2 text-center text-sm leading-relaxed">
+              Hier sehen Sie jederzeit den aktuellen Stand Ihres Projekts — wer
+              wann kommt, aktuelle Fotos und direkte Nachrichten an uns.
+            </p>
+            <ul className="mt-4 space-y-2 text-left text-sm text-slate-200">
+              <li className="flex items-start gap-2">
+                <Calendar className="text-primary mt-0.5 size-4 shrink-0" />
+                Alle Termine und wer kommt
+              </li>
+              <li className="flex items-start gap-2">
+                <Camera className="text-primary mt-0.5 size-4 shrink-0" />
+                Aktuelle Fotos vom Projektfortschritt
+              </li>
+              <li className="flex items-start gap-2">
+                <MessageCircle className="text-primary mt-0.5 size-4 shrink-0" />
+                Direkt Nachrichten senden
+              </li>
+            </ul>
+            <p className="text-muted-foreground mt-4 text-xs leading-relaxed">
+              💡 Tipp: Fügen Sie diese Seite zum Homescreen hinzu für schnellen
+              Zugriff.
+            </p>
+            <Button
+              type="button"
+              className="mt-6 w-full bg-[#01696f] hover:bg-[#015a5f]"
+              onClick={() => {
+                try {
+                  localStorage.setItem(portalVisitedKey(token), "1");
+                } catch {
+                  /* ignore */
+                }
+                setWillkommenOffen(false);
+              }}
+            >
+              Portal öffnen
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {installBannerSichtbar ? (
+        <div className="mb-4 flex flex-col gap-2 rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs text-slate-300">
+          <div className="flex items-start justify-between gap-2">
+            <span>
+              {plattform === "ios"
+                ? "📱 Zum Homescreen: Teilen → „Zum Home-Bildschirm“"
+                : deferredPrompt
+                  ? "App installieren für schnelleren Zugriff"
+                  : "Speichern Sie diese Seite als Lesezeichen."}
+            </span>
+            <button
+              type="button"
+              className="shrink-0 text-slate-500 hover:text-slate-300"
+              aria-label="Schließen"
+              onClick={() => {
+                try {
+                  localStorage.setItem(portalInstallDismissKey(token), "1");
+                } catch {
+                  /* ignore */
+                }
+                setInstallDismissed(true);
+              }}
+            >
+              ✕
+            </button>
+          </div>
+          {plattform === "android" && deferredPrompt ? (
+            <Button
+              type="button"
+              size="sm"
+              className="w-full bg-[#01696f] text-xs"
+              onClick={async () => {
+                if (!deferredPrompt) return;
+                await deferredPrompt.prompt();
+                setDeferredPrompt(null);
+              }}
+            >
+              App installieren
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
       <header className="mb-6 border-b border-slate-800 pb-4">
         <div className="flex items-start justify-between gap-2">
           <div>

@@ -148,7 +148,7 @@ export async function sendeEinsatzBenachrichtigung(
 
   const { data: employee } = await supabase
     .from("employees")
-    .select("id, name, email, pwa_token")
+    .select("id, name, email, pwa_token, push_status")
     .eq("id", params.employeeId)
     .maybeSingle();
 
@@ -162,7 +162,8 @@ export async function sendeEinsatzBenachrichtigung(
     .limit(1)
     .maybeSingle();
 
-  const hatPushAktiv = !!pushSub;
+  const pushStatus = String(emp.push_status ?? "unknown");
+  const hasSub = !!pushSub;
 
   let projektName = params.projectTitle ?? "Einsatz";
   let adresse: string | undefined;
@@ -240,7 +241,21 @@ export async function sendeEinsatzBenachrichtigung(
   if (adresse) msgParts.push(`· ${adresse}`);
   const message = msgParts.join(" ");
 
-  if (hatPushAktiv) {
+  async function emailFallback(): Promise<void> {
+    if (!params.nurNotification && emp.email) {
+      await sendeEinsatzEmailResend();
+    }
+  }
+
+  if (pushStatus === "denied" || pushStatus === "unsupported") {
+    await emailFallback();
+  } else if (pushStatus === "granted" && !hasSub) {
+    await supabase
+      .from("employees")
+      .update({ push_status: "unknown" })
+      .eq("id", params.employeeId);
+    await emailFallback();
+  } else if (hasSub && (pushStatus === "granted" || pushStatus === "unknown")) {
     try {
       const pushOk = await sendePushFuerEinsatz({
         employeeId: params.employeeId,
@@ -248,17 +263,19 @@ export async function sendeEinsatzBenachrichtigung(
         body: message,
         url: pwaLink,
       });
-      if (!pushOk) {
-        throw new Error("push_failed");
-      }
+      if (!pushOk) throw new Error("push_failed");
     } catch (e) {
       console.warn("[einsatz-benachrichtigung] Push:", e);
-      if (!params.nurNotification && emp.email) {
-        await sendeEinsatzEmailResend();
+      if (pushStatus === "granted") {
+        await supabase
+          .from("employees")
+          .update({ push_status: "unknown" })
+          .eq("id", params.employeeId);
       }
+      await emailFallback();
     }
-  } else if (!params.nurNotification && emp.email) {
-    await sendeEinsatzEmailResend();
+  } else {
+    await emailFallback();
   }
 
   const { error: nErr } = await supabase.from("notifications").insert({

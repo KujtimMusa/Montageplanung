@@ -180,10 +180,49 @@ export function templateKundenZugang(data: {
     </a>
   </div>
   <p style="color:#52525b;font-size:12px">${data.projektName}</p>
+  <div style="${CARD_STYLE};margin-top:20px">
+    <p style="${LABEL_STYLE}">Was Sie im Portal sehen</p>
+    <p style="color:#a1a1aa;font-size:13px;line-height:1.6;margin:0">
+      ✓ Alle geplanten Termine mit Uhrzeiten<br/>
+      ✓ Wer von unserem Team zu Ihnen kommt<br/>
+      ✓ Aktuelle Fotos vom Projektfortschritt<br/>
+      ✓ Direkte Nachrichtenfunktion
+    </p>
+  </div>
+  <div style="margin-top:16px;padding:14px;border-radius:12px;border:1px solid #27272a;background:#18181b">
+    <p style="color:#a1a1aa;font-size:12px;line-height:1.55;margin:0">
+      💡 Speichern Sie den Link als Lesezeichen oder fügen Sie das Portal zum Homescreen Ihres Handys hinzu —
+      so haben Sie immer direkten Zugriff.
+    </p>
+  </div>
   <p style="color:#52525b;font-size:11px;margin-top:16px;line-height:1.5">
     Tipp: Seite speichern — auf dem Smartphone <strong style="color:#a1a1aa">Teilen</strong> →
     <strong style="color:#a1a1aa">Zum Home-Bildschirm</strong>, damit Sie Termine immer aktuell sehen (ohne App-Store).
   </p>
+</div>`,
+  };
+}
+
+/** Willkommens-E-Mail nach Einladung — Koordinator-PWA-Link. */
+export function templateKoordinatorWillkommen(data: {
+  koordinatorName: string;
+  firmenName: string;
+  pwaLink: string;
+}): { subject: string; html: string } {
+  return {
+    subject: "Ihr Koordinator-Zugang für Vlerafy",
+    html: `
+<div style="${BASE_STYLE}">
+  <h1 style="color:#f4f4f5;font-size:20px;font-weight:700;margin:0 0 8px">Hallo ${data.koordinatorName}</h1>
+  <p style="color:#71717a;font-size:14px;margin:0 0 16px">
+    Planen Sie Einsätze, sehen Sie den Live-Status Ihres Teams und behalten Sie alle Projekte im Blick — mobil mit der Koordinator-App.
+  </p>
+  <div style="margin:20px 0">
+    <a href="${data.pwaLink}" style="display:inline-block;background:#01696f;color:#fff;text-decoration:none;padding:14px 22px;border-radius:12px;font-size:15px;font-weight:600">
+      Zur Koordinator-App
+    </a>
+  </div>
+  <p style="color:#52525b;font-size:11px;margin-top:16px">${data.firmenName}</p>
 </div>`,
   };
 }

@@ -48,3 +48,18 @@ export async function subscribeMonteurPush(token: string): Promise<void> {
     throw new Error(j.error ?? res.statusText);
   }
 }
+
+export async function meldePushStatus(
+  token: string,
+  status: "denied" | "unsupported"
+): Promise<void> {
+  const res = await fetch("/api/pwa/push-status", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, status }),
+  });
+  if (!res.ok) {
+    const j = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(j.error ?? res.statusText);
+  }
+}

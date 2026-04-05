@@ -1,8 +1,10 @@
-import { redirect } from "next/navigation";
 import {
   istGueltigeTokenZeichenfolge,
   resolveToken,
 } from "@/lib/pwa/token-resolver";
+import { createServiceRoleClient } from "@/lib/supabase/admin";
+import { MonteurPwaEntry } from "@/components/pwa/MonteurPwaEntry";
+import { redirect } from "next/navigation";
 
 export default async function PwaMonteurIndex({
   params,
@@ -17,5 +19,24 @@ export default async function PwaMonteurIndex({
   if (!resolved || resolved.role === "customer") {
     return null;
   }
-  redirect(`/m/${token}/projekte`);
+  if (resolved.role === "coordinator") {
+    redirect(`/pwa/${token}/dashboard`);
+  }
+
+  const supabase = createServiceRoleClient();
+  const { data: emp } = await supabase
+    .from("employees")
+    .select("email")
+    .eq("id", resolved.employeeId)
+    .maybeSingle();
+
+  const employeeEmail = (emp?.email as string | null | undefined)?.trim() || null;
+
+  return (
+    <MonteurPwaEntry
+      token={token}
+      resolved={resolved}
+      employeeEmail={employeeEmail}
+    />
+  );
 }

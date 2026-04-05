@@ -5,7 +5,7 @@ import { useCallback, useState } from "react";
 import { cn } from "@/lib/utils";
 import { PwaBottomNav } from "@/components/pwa/PwaBottomNav";
 import { PwaInstallBanner } from "@/components/pwa/PwaInstallBanner";
-import { PwaPushPromptBanner } from "@/components/pwa/PwaPushPromptBanner";
+import { PwaPushReminderBanner } from "@/components/pwa/PwaPushReminderBanner";
 import { MonteurAppLiveRefresh } from "@/components/pwa/MonteurAppLiveRefresh";
 
 export function PwaMonteurShell({
@@ -22,9 +22,9 @@ export function PwaMonteurShell({
 
   return (
     <>
-      <PwaInstallBanner onBannerVisibleChange={onBannerVisibleChange} />
+      <PwaInstallBanner token={token} onBannerVisibleChange={onBannerVisibleChange} />
       <MonteurAppLiveRefresh />
-      <PwaPushPromptBanner token={token} />
+      <PwaPushReminderBanner token={token} />
       <div
         className={cn(
           "pwa-shell min-h-dvh bg-zinc-950 text-zinc-100",

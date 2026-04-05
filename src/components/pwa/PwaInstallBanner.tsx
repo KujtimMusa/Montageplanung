@@ -30,11 +30,17 @@ type BeforeInstallPromptEvent = Event & {
 };
 
 export type PwaInstallBannerProps = {
+  /** PWA-Token (UUID) — localStorage-Key für „Banner geschlossen“. */
+  token: string;
   /** Wird gesetzt, wenn das feste Banner (oben) sichtbar ist — für Shell-Padding. */
   onBannerVisibleChange?: (visible: boolean) => void;
 };
 
+const installStorageKey = (token: string) =>
+  `pwa_install_dismissed_${token.trim().slice(0, 8)}`;
+
 export function PwaInstallBanner({
+  token,
   onBannerVisibleChange,
 }: PwaInstallBannerProps) {
   const [platform, setPlatform] = useState<Platform>("unknown");
@@ -47,6 +53,13 @@ export function PwaInstallBanner({
   useEffect(() => {
     setPlatform(detectPlatform());
     setIsInstalled(isInStandaloneMode());
+    try {
+      if (localStorage.getItem(installStorageKey(token)) === "true") {
+        setDismissed(true);
+      }
+    } catch {
+      /* ignore */
+    }
 
     const handler = (e: Event) => {
       e.preventDefault();
@@ -54,7 +67,16 @@ export function PwaInstallBanner({
     };
     window.addEventListener("beforeinstallprompt", handler);
     return () => window.removeEventListener("beforeinstallprompt", handler);
-  }, []);
+  }, [token]);
+
+  function handleDismiss() {
+    try {
+      localStorage.setItem(installStorageKey(token), "true");
+    } catch {
+      /* ignore */
+    }
+    setDismissed(true);
+  }
 
   const bannerSichtbar =
     !isInstalled &&
@@ -114,7 +136,7 @@ export function PwaInstallBanner({
 
         <button
           type="button"
-          onClick={() => setDismissed(true)}
+          onClick={handleDismiss}
           className="shrink-0 p-1 text-white/60 hover:text-white"
           aria-label="Schließen"
         >
@@ -185,7 +207,7 @@ export function PwaInstallBanner({
               type="button"
               onClick={() => {
                 setShowIosGuide(false);
-                setDismissed(true);
+                handleDismiss();
               }}
               className="mt-6 w-full rounded-xl bg-[#01696f] py-3 text-base font-semibold text-white"
             >

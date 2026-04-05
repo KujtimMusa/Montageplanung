@@ -28,16 +28,52 @@ self.addEventListener("push", function (event) {
 
 self.addEventListener("notificationclick", function (event) {
   event.notification.close();
-  var url = event.notification.data && event.notification.data.url;
-  if (!url) return;
+  var url = (event.notification.data && event.notification.data.url) || "/";
+
   event.waitUntil(
     clients
       .matchAll({ type: "window", includeUncontrolled: true })
       .then(function (clientList) {
+        var urlObj;
+        try {
+          urlObj = new URL(url, self.location.origin);
+        } catch (e) {
+          if (clients.openWindow) return clients.openWindow(url);
+          return undefined;
+        }
+        var targetPath = urlObj.pathname + urlObj.search + urlObj.hash;
+
         for (var i = 0; i < clientList.length; i++) {
           var client = clientList[i];
-          if ("focus" in client) return client.focus();
+          try {
+            var cu = new URL(client.url);
+            if (
+              cu.origin === urlObj.origin &&
+              cu.pathname + cu.search + cu.hash === targetPath &&
+              "focus" in client
+            ) {
+              return client.focus();
+            }
+          } catch (e2) {
+            /* continue */
+          }
         }
+
+        for (var j = 0; j < clientList.length; j++) {
+          var cl = clientList[j];
+          if ("navigate" in cl && typeof cl.navigate === "function") {
+            return cl
+              .navigate(url)
+              .then(function (nc) {
+                if (nc && "focus" in nc) return nc.focus();
+                if ("focus" in cl) return cl.focus();
+              })
+              .catch(function () {
+                if (clients.openWindow) return clients.openWindow(url);
+              });
+          }
+        }
+
         if (clients.openWindow) return clients.openWindow(url);
       })
   );

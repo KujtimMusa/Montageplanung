@@ -5,6 +5,7 @@ import { useCallback, useState } from "react";
 import { cn } from "@/lib/utils";
 import { KoordinatorBottomNav } from "@/components/pwa/KoordinatorBottomNav";
 import { PwaInstallBanner } from "@/components/pwa/PwaInstallBanner";
+import { PwaPushReminderBanner } from "@/components/pwa/PwaPushReminderBanner";
 
 export function KoordinatorPwaShell({
   token,
@@ -20,7 +21,8 @@ export function KoordinatorPwaShell({
 
   return (
     <>
-      <PwaInstallBanner onBannerVisibleChange={onBannerVisibleChange} />
+      <PwaInstallBanner token={token} onBannerVisibleChange={onBannerVisibleChange} />
+      <PwaPushReminderBanner token={token} />
       <div
         className={cn(
           "pwa-shell min-h-dvh bg-zinc-950 text-zinc-100",

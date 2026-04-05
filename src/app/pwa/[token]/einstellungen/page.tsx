@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useKoordinatorPwa } from "@/lib/pwa/koordinator-context";
 import { rolleLabel } from "@/lib/rollen";
+import { PwaPushSubscribe } from "@/components/pwa/PwaPushSubscribe";
 
 export default function KoordinatorPwaEinstellungenPage() {
   const params = useParams<{ token: string }>();
@@ -37,6 +38,12 @@ export default function KoordinatorPwaEinstellungenPage() {
       </div>
 
       <div className="space-y-2">
+        <PwaPushSubscribe
+          token={token}
+          vapidKonfiguriert={Boolean(
+            process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim()
+          )}
+        />
         <Button type="button" variant="secondary" className="w-full" onClick={kopieren}>
           Diesen PWA-Link kopieren
         </Button>
