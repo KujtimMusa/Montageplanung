@@ -11,10 +11,10 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -106,8 +106,8 @@ export default function KalkulationenSeite() {
 
   const [dialogOffen, setDialogOffen] = useState(false);
   const [createTitel, setCreateTitel] = useState("");
-  const [createProjektId, setCreateProjektId] = useState<string>("none");
-  const [createQuick, setCreateQuick] = useState(false);
+  /** Separater Wert vom Select-Label, damit nicht „none“/Rohwert angezeigt wird */
+  const [createProjektId, setCreateProjektId] = useState<string>("__no_project__");
   const [createLaden, setCreateLaden] = useState(false);
   const [projektOptionen, setProjektOptionen] = useState<
     { id: string; title: string }[]
@@ -125,10 +125,11 @@ export default function KalkulationenSeite() {
     setProjekteFehler(null);
     try {
       const supabase = createClient();
+      /** Alle nicht abgeschlossenen Projekte (vorher nur „aktiv“ → oft leer, weil Standard „neu“) */
       const { data, error } = await supabase
         .from("projects")
         .select("id, title, status")
-        .eq("status", "aktiv")
+        .neq("status", "abgeschlossen")
         .order("title", { ascending: true });
       if (error) {
         const msg = `Projekte konnten nicht geladen werden: ${error.message}`;
@@ -281,8 +282,8 @@ export default function KalkulationenSeite() {
     try {
       const body: Record<string, unknown> = {
         title: titel,
-        quick_mode: createQuick,
-        project_id: createProjektId === "none" ? null : createProjektId,
+        project_id:
+          createProjektId === "__no_project__" ? null : createProjektId,
       };
 
       const r = await fetch("/api/calculations", {
@@ -309,15 +310,14 @@ export default function KalkulationenSeite() {
       toast.success("Kalkulation erstellt");
       setDialogOffen(false);
       setCreateTitel("");
-      setCreateProjektId("none");
-      setCreateQuick(false);
+      setCreateProjektId("__no_project__");
       router.push(`/kalkulation/${newId}`);
     } catch {
       toast.error("Netzwerkfehler");
     } finally {
       setCreateLaden(false);
     }
-  }, [createTitel, createProjektId, createQuick, router]);
+  }, [createTitel, createProjektId, router]);
 
   const zeilenClick = useCallback(
     (id: string) => {
@@ -503,42 +503,61 @@ export default function KalkulationenSeite() {
       </div>
 
       <Dialog open={dialogOffen} onOpenChange={setDialogOffen}>
-        <DialogContent className="border-zinc-800 bg-zinc-900 text-zinc-100">
-          <DialogHeader>
-            <DialogTitle className="font-bold">Neue Kalkulation</DialogTitle>
+        <DialogContent
+          showCloseButton
+          className={cn(
+            "gap-0 overflow-hidden border border-zinc-800 bg-zinc-900 p-0 text-zinc-100 shadow-2xl ring-0 sm:max-w-md"
+          )}
+        >
+          <DialogHeader className="space-y-1 border-b border-zinc-800 px-6 pb-4 pt-6">
+            <DialogTitle className="text-xl font-semibold tracking-tight text-zinc-50">
+              Neue Kalkulation
+            </DialogTitle>
+            <DialogDescription className="text-sm text-zinc-500">
+              Titel vergeben und optional ein laufendes Projekt zuordnen.
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
+          <div className="space-y-5 px-6 py-5">
+            <div className="space-y-2">
               <Label
                 htmlFor="kalk-titel"
-                className="mb-1 block text-sm text-zinc-400"
+                className="text-xs font-medium uppercase tracking-wide text-zinc-500"
               >
-                Titel *
+                Titel
+                <span className="text-red-400" aria-hidden>
+                  {" "}
+                  *
+                </span>
               </Label>
               <Input
                 id="kalk-titel"
                 value={createTitel}
                 onChange={(e) => setCreateTitel(e.target.value)}
                 placeholder="z. B. Elektro Neubau Musterstraße"
-                className="rounded-xl border-zinc-700 bg-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-500 focus:ring-0"
+                className="h-11 rounded-xl border-zinc-700 bg-zinc-800/80 text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-500 focus:ring-0"
+                autoComplete="off"
               />
             </div>
-            <div>
-              <Label className="mb-1 block text-sm text-zinc-400">
-                Projekt verknüpfen (optional)
+            <div className="space-y-2">
+              <Label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                Projekt (optional)
               </Label>
               <Select
                 value={createProjektId}
-                onValueChange={(v) => setCreateProjektId(v ?? "none")}
+                onValueChange={(v) =>
+                  setCreateProjektId(v ?? "__no_project__")
+                }
                 disabled={projekteLaden}
               >
-                <SelectTrigger className="rounded-xl border-zinc-700 bg-zinc-800 text-zinc-100 focus:ring-0">
+                <SelectTrigger className="h-11 rounded-xl border-zinc-700 bg-zinc-800/80 text-zinc-100 focus:ring-0 [&>span]:line-clamp-1">
                   <SelectValue
-                    placeholder={projekteLaden ? "Lade …" : "Kein Projekt"}
+                    placeholder={
+                      projekteLaden ? "Projekte werden geladen …" : "Kein Projekt"
+                    }
                   />
                 </SelectTrigger>
                 <SelectContent className="border-zinc-800 bg-zinc-900 text-zinc-100">
-                  <SelectItem value="none">Kein Projekt</SelectItem>
+                  <SelectItem value="__no_project__">Kein Projekt</SelectItem>
                   {projektOptionen.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
                       {p.title}
@@ -546,42 +565,27 @@ export default function KalkulationenSeite() {
                   ))}
                 </SelectContent>
               </Select>
-              {projekteFehler ? (
-                <p className="mt-1 text-xs text-red-400">{projekteFehler}</p>
+              {projekteLaden ? (
+                <p className="text-xs text-zinc-600">Projekte werden geladen …</p>
               ) : null}
-              {!projekteLaden && projektOptionen.length === 0 && !projekteFehler ? (
-                <p className="mt-1 text-xs text-zinc-500">
-                  Keine aktiven Projekte vorhanden
+              {projekteFehler ? (
+                <p className="text-xs text-red-400">{projekteFehler}</p>
+              ) : null}
+              {!projekteLaden &&
+              projektOptionen.length === 0 &&
+              !projekteFehler ? (
+                <p className="text-xs leading-relaxed text-zinc-500">
+                  Keine offenen Projekte gefunden (abgeschlossene sind
+                  ausgeschlossen). Lege zuerst ein Projekt unter „Projekte“ an.
                 </p>
               ) : null}
             </div>
-            <label
-              htmlFor="kalk-quick"
-              className={cn(
-                "flex cursor-pointer items-start gap-3 rounded-xl border border-zinc-800 bg-zinc-800/50 p-3 transition-colors hover:border-zinc-600"
-              )}
-            >
-              <Checkbox
-                id="kalk-quick"
-                checked={createQuick}
-                onCheckedChange={(c) => setCreateQuick(c === true)}
-                className="mt-0.5 border-zinc-600"
-              />
-              <div>
-                <span className="text-sm font-medium text-zinc-200">
-                  Schnellkalkulation (Quick Mode)
-                </span>
-                <p className="mt-1 text-xs text-zinc-500">
-                  Für schnelle Telefonschätzungen ohne vollständige Kalkulation
-                </p>
-              </div>
-            </label>
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="m-0 gap-2 rounded-none border-t border-zinc-800 bg-zinc-950/50 px-6 py-4 sm:justify-end">
             <Button
               type="button"
               variant="outline"
-              className="rounded-xl border-zinc-700 bg-transparent text-zinc-200 transition-colors"
+              className="rounded-xl border-zinc-700 bg-transparent text-zinc-200 transition-colors hover:bg-zinc-800"
               onClick={() => setDialogOffen(false)}
             >
               Abbrechen
@@ -589,7 +593,7 @@ export default function KalkulationenSeite() {
             <Button
               type="button"
               disabled={createLaden}
-              className="rounded-xl bg-zinc-100 text-zinc-900 transition-colors hover:bg-zinc-200"
+              className="rounded-xl bg-zinc-100 text-zinc-900 transition-colors hover:bg-white"
               onClick={() => void kalkulationErstellen()}
             >
               {createLaden ? (
