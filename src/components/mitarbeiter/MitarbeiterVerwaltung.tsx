@@ -554,6 +554,11 @@ export function MitarbeiterVerwaltung({
       active: true,
     };
 
+    if (payload.role !== "monteur") {
+      toast.error('Ungültige Rolle: Es darf nur "monteur" gespeichert werden.');
+      return;
+    }
+
     try {
       if (bearbeitenId) {
         const { error } = await supabase
@@ -599,7 +604,7 @@ export function MitarbeiterVerwaltung({
         const { data: neu, error } = await supabase
           .from("employees")
           .insert({ ...payload, organization_id: orgId })
-          .select("id")
+          .select("id, pwa_token")
           .single();
         if (error) throw error;
         const nid = neu?.id as string | undefined;
@@ -622,6 +627,20 @@ export function MitarbeiterVerwaltung({
             team_role: "mitglied",
           });
           if (e2) throw e2;
+        }
+        const mailNeu = payload.email?.trim();
+        const pwaTokNeu = neu?.pwa_token as string | undefined;
+        if (nid && mailNeu && pwaTokNeu) {
+          void fetch("/api/admin/mitarbeiter/pwa-einladen", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              mitarbeiterId: nid,
+              email: mailNeu,
+              pwa_token: pwaTokNeu,
+              name: payload.name,
+            }),
+          }).catch(() => {});
         }
         toast.success("Mitarbeiter angelegt.");
       }

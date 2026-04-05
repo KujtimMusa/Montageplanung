@@ -227,6 +227,33 @@ export function templateKoordinatorWillkommen(data: {
   };
 }
 
+/** Willkommens-E-Mail — Monteur-PWA-Link nach Anlage. */
+export function templateMonteurWillkommen(data: {
+  monteurName: string;
+  firmenName: string;
+  monteurLink: string;
+}): { subject: string; html: string } {
+  return {
+    subject: `Du wurdest zu ${data.firmenName} eingeladen`,
+    html: `
+<div style="${BASE_STYLE}">
+  <h1 style="color:#f4f4f5;font-size:20px;font-weight:700;margin:0 0 8px">Hallo ${data.monteurName}</h1>
+  <p style="color:#71717a;font-size:14px;margin:0 0 16px">
+    Über diesen Link erreichst du deine Einsätze und Termine — direkt auf dem Handy.
+  </p>
+  <div style="margin:20px 0">
+    <a href="${data.monteurLink}" style="display:inline-block;background:#01696f;color:#fff;text-decoration:none;padding:14px 22px;border-radius:12px;font-size:15px;font-weight:600">
+      Zur Monteur-App →
+    </a>
+  </div>
+  <p style="color:#52525b;font-size:12px;line-height:1.55;margin:0">
+    Speichere den Link oder installiere die App auf dem Homescreen — so bleibst du ohne App Store auf dem Laufenden.
+  </p>
+  <p style="color:#52525b;font-size:11px;margin-top:16px">${data.firmenName}</p>
+</div>`,
+  };
+}
+
 /** Hinweis nach Planungsänderung — Link zum Kundenportal. */
 export function templateKundenTermineUpdate(data: {
   kundenName: string;

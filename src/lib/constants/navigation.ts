@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   Bot,
+  Calculator,
   CalendarDays,
   CalendarOff,
   Clock,
@@ -37,6 +38,12 @@ export const sidebarNavigation: NavEintrag[] = [
     icon: CalendarOff,
   },
   { href: "/projekte", label: "Projekte", labelKurz: "Proj.", icon: FolderKanban },
+  {
+    href: "/kalkulation",
+    label: "Kalkulationen",
+    labelKurz: "Kalk.",
+    icon: Calculator,
+  },
   { href: "/planung", label: "Planung", labelKurz: "Plan", icon: CalendarDays },
   {
     href: "/notfall",

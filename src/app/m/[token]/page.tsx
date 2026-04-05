@@ -19,9 +19,6 @@ export default async function PwaMonteurIndex({
   if (!resolved || resolved.role === "customer") {
     return null;
   }
-  if (resolved.role === "coordinator") {
-    redirect(`/pwa/${token}/dashboard`);
-  }
 
   const supabase = createServiceRoleClient();
   const { data: emp } = await supabase

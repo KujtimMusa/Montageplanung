@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import {
   istGueltigeTokenZeichenfolge,
   resolveToken,
@@ -42,6 +42,10 @@ export default async function PwaMonteurLayout({
         </p>
       </div>
     );
+  }
+
+  if (resolved.role === "coordinator") {
+    redirect(`/pwa/${token}/dashboard`);
   }
 
   return (
