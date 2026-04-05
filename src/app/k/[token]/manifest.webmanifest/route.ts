@@ -15,21 +15,18 @@ export async function GET(
   }
 
   const resolved = await resolveToken(token);
-  if (!resolved || resolved.role !== "coordinator") {
+  if (!resolved || resolved.role !== "customer") {
     return NextResponse.json({ error: "Nicht gefunden" }, { status: 404 });
   }
 
-  const shortName =
-    resolved.employeeName.split(/\s+/)[0]?.trim() || "Vlerafy";
-
   const body = {
-    name: resolved.orgName || "Vlerafy",
-    short_name: shortName,
-    start_url: `/pwa/${token}/dashboard`,
-    scope: `/pwa/${token}/`,
+    name: resolved.orgName || "Projektstatus",
+    short_name: "Projekt",
+    start_url: `/k/${token}`,
+    scope: `/k/${token}/`,
     display: "standalone" as const,
     orientation: "portrait-primary" as const,
-    background_color: "#0f172a",
+    background_color: "#020617",
     theme_color: "#01696f",
     launch_handler: {
       client_mode: "navigate-existing" as const,

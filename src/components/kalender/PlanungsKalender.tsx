@@ -855,30 +855,51 @@ export function PlanungsKalender() {
         insertedId = insRow?.id as string | undefined;
       }
 
-      if (
-        insertedId &&
-        insertPayload.employee_id &&
-        meineOrganizationId
-      ) {
-        void fetch("/api/pwa/einsatz-benachrichtigung", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({
-            assignmentId: insertedId,
-            organizationId: meineOrganizationId,
-            employeeId: insertPayload.employee_id as string,
-            projectId: (insertPayload.project_id as string) ?? null,
-            projectTitle: (insertPayload.project_title as string | null) ?? null,
-            datum: insertPayload.date as string,
-            startzeit: (insertPayload.start_time as string) ?? null,
-            endzeit: (insertPayload.end_time as string) ?? null,
-            notes: (insertPayload.notes as string | null) ?? null,
-          }),
-        }).catch(() => {});
+      if (insertedId && insertPayload.employee_id && meineOrganizationId) {
+        let empIdsToNotify: string[] = [insertPayload.employee_id as string];
+        const { data: teamMitglieder } = await supabase
+          .from("team_members")
+          .select("employee_id")
+          .eq("team_id", teamId);
+        const ausTeam = (teamMitglieder ?? []).map(
+          (m) => m.employee_id as string
+        );
+        empIdsToNotify = Array.from(
+          new Set([...empIdsToNotify, ...ausTeam])
+        );
+
+        for (const eid of empIdsToNotify) {
+          void fetch("/api/pwa/einsatz-benachrichtigung", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({
+              assignmentId: insertedId,
+              organizationId: meineOrganizationId,
+              employeeId: eid,
+              projectId: (insertPayload.project_id as string) ?? null,
+              projectTitle: (insertPayload.project_title as string | null) ?? null,
+              datum: insertPayload.date as string,
+              startzeit: (insertPayload.start_time as string) ?? null,
+              endzeit: (insertPayload.end_time as string) ?? null,
+              notes: (insertPayload.notes as string | null) ?? null,
+            }),
+          }).catch(() => {});
+        }
       }
 
       await bumpProjektGeplantWennNeu(supabase, projectId);
+
+      void fetch("/api/pwa/kunden-termin-update-mail", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          projectId,
+          organizationId: meineOrganizationId,
+        }),
+      }).catch(() => {});
+
       const teamName =
         teamsListe.find((t) => t.id === teamId)?.name ?? "Team";
       toast.success(`Team „${teamName}“ wurde zugewiesen.`);

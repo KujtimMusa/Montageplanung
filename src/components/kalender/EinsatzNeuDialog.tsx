@@ -672,31 +672,44 @@ export function EinsatzNeuDialog({
           projekte.find((x) => x.id === werte.projekt_id)?.title ?? "Einsatz";
         void automationNeuerEinsatzFireAndForget(empId, projektTitel, d);
         if (insertedId && empId) {
-          void sendeEinsatzMailFireAndForget({
-            assignmentId: insertedId,
-            employeeId: empId,
-            projektTitel,
-            datum: d,
-            start: startNorm,
-            ende: endNorm,
-          });
-          void fetch("/api/pwa/einsatz-benachrichtigung", {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
+          let empIdsToNotify = [empId];
+          if (einTeam) {
+            const { data: teamMitglieder } = await supabase
+              .from("team_members")
+              .select("employee_id")
+              .eq("team_id", einTeam);
+            const ausTeam = (teamMitglieder ?? []).map(
+              (m) => m.employee_id as string
+            );
+            empIdsToNotify = Array.from(new Set([empId, ...ausTeam]));
+          }
+          for (const eid of empIdsToNotify) {
+            void sendeEinsatzMailFireAndForget({
               assignmentId: insertedId,
-              organizationId: organizationId,
-              employeeId: empId,
-              projectId: werte.projekt_id,
-              projectTitle: projektTitel,
+              employeeId: eid,
+              projektTitel,
               datum: d,
-              startzeit: startNorm,
-              endzeit: endNorm,
-              notes: werte.notes?.trim() || null,
-              nurNotification: true,
-            }),
-          }).catch(() => {});
+              start: startNorm,
+              ende: endNorm,
+            });
+            void fetch("/api/pwa/einsatz-benachrichtigung", {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                assignmentId: insertedId,
+                organizationId: organizationId,
+                employeeId: eid,
+                projectId: werte.projekt_id,
+                projectTitle: projektTitel,
+                datum: d,
+                startzeit: startNorm,
+                endzeit: endNorm,
+                notes: werte.notes?.trim() || null,
+                nurNotification: true,
+              }),
+            }).catch(() => {});
+          }
         }
         insgesamt += 1;
       }
@@ -715,6 +728,17 @@ export function EinsatzNeuDialog({
       .eq("id", werte.projekt_id);
 
     await bumpProjektGeplantWennNeu(supabase, werte.projekt_id);
+
+    void fetch("/api/pwa/kunden-termin-update-mail", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        projectId: werte.projekt_id,
+        organizationId,
+      }),
+    }).catch(() => {});
+
     const pnNeu = projekte.find((x) => x.id === werte.projekt_id)?.title ?? "Projekt";
     const datumTxt =
       werte.date_von === werte.date_bis

@@ -63,18 +63,22 @@ async function ladeResendUndBetrieb(
   return { apiKey, fromEmail, betriebName };
 }
 
+/**
+ * Sendet Web-Push an alle Subscriptions des Mitarbeiters.
+ * @returns true, wenn mindestens eine Nachricht erfolgreich war; sonst false (kein VAPID, keine Subs, alle fehlgeschlagen).
+ */
 async function sendePushFuerEinsatz(opts: {
   employeeId: string;
   title: string;
   body: string;
   url?: string;
-}): Promise<void> {
+}): Promise<boolean> {
   const vapidSubject = process.env.VAPID_SUBJECT?.trim();
   const publicKey =
     process.env.VAPID_PUBLIC_KEY?.trim() ??
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim();
   const privateKey = process.env.VAPID_PRIVATE_KEY?.trim();
-  if (!vapidSubject || !publicKey || !privateKey) return;
+  if (!vapidSubject || !publicKey || !privateKey) return false;
 
   const mailto = vapidSubject.startsWith("mailto:")
     ? vapidSubject
@@ -87,7 +91,7 @@ async function sendePushFuerEinsatz(opts: {
     .select("endpoint, p256dh, auth")
     .eq("employee_id", opts.employeeId);
 
-  if (!subs?.length) return;
+  if (!subs?.length) return false;
 
   const payload = JSON.stringify({
     title: opts.title,
@@ -96,7 +100,7 @@ async function sendePushFuerEinsatz(opts: {
     icon: "/icons/icon-192.png",
   });
 
-  await Promise.allSettled(
+  const ergebnisse = await Promise.all(
     subs.map(async (sub) => {
       try {
         await webpush.sendNotification(
@@ -110,6 +114,7 @@ async function sendePushFuerEinsatz(opts: {
           payload,
           { TTL: 3600 }
         );
+        return true;
       } catch (err: unknown) {
         const status =
           err instanceof webpush.WebPushError
@@ -121,15 +126,18 @@ async function sendePushFuerEinsatz(opts: {
             .delete()
             .eq("endpoint", sub.endpoint as string);
         }
+        return false;
       }
     })
   );
+
+  return ergebnisse.some(Boolean);
 }
 
 /**
  * Zentrale Benachrichtigung nach neuem Einsatz:
- * optional Resend (templateEinsatzNeu), immer In-App + optional Web Push.
- * Mit `nurNotification: true` nur letztere (z. B. wenn EinsatzNeuDialog bereits E-Mail+ICS sendet).
+ * Push zuerst (wenn Subscription), sonst E-Mail — außer `nurNotification` blockiert E-Mail (Dialog hat bereits gesendet).
+ * Immer In-App-Notification.
  */
 export async function sendeEinsatzBenachrichtigung(
   params: EinsatzBenachrichtigungParams
@@ -145,7 +153,16 @@ export async function sendeEinsatzBenachrichtigung(
     .maybeSingle();
 
   if (!employee) return;
-  if (!params.nurNotification && !employee.email) return;
+  const emp = employee;
+
+  const { data: pushSub } = await supabase
+    .from("push_subscriptions")
+    .select("id")
+    .eq("employee_id", params.employeeId)
+    .limit(1)
+    .maybeSingle();
+
+  const hatPushAktiv = !!pushSub;
 
   let projektName = params.projectTitle ?? "Einsatz";
   let adresse: string | undefined;
@@ -163,7 +180,7 @@ export async function sendeEinsatzBenachrichtigung(
   }
 
   const baseUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/\/$/, "");
-  const pwaTok = employee.pwa_token as string | null | undefined;
+  const pwaTok = emp.pwa_token as string | null | undefined;
   const pwaLink =
     baseUrl && pwaTok ? `${baseUrl}/m/${pwaTok}/projekte` : undefined;
 
@@ -180,14 +197,14 @@ export async function sendeEinsatzBenachrichtigung(
     }
   );
 
-  if (!params.nurNotification) {
+  async function sendeEinsatzEmailResend(): Promise<void> {
     const { apiKey, fromEmail, betriebName } = await ladeResendUndBetrieb(
       supabase,
       params.organizationId
     );
 
     const { subject, html } = templateEinsatzNeu({
-      mitarbeiter_name: (employee.name as string) ?? "Mitarbeiter",
+      mitarbeiter_name: (emp.name as string) ?? "Mitarbeiter",
       projekt: projektName,
       datum: datumFormatiert,
       start: startZeit,
@@ -198,23 +215,23 @@ export async function sendeEinsatzBenachrichtigung(
       pwa_link: pwaLink,
     });
 
-    if (apiKey && fromEmail && employee.email) {
-      const res = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          from: fromEmail,
-          to: [employee.email as string],
-          subject,
-          html,
-        }),
-      });
-      if (!res.ok) {
-        console.warn("[einsatz-benachrichtigung] Resend:", await res.text());
-      }
+    if (!apiKey || !fromEmail || !emp.email) return;
+
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: fromEmail,
+        to: [emp.email as string],
+        subject,
+        html,
+      }),
+    });
+    if (!res.ok) {
+      console.warn("[einsatz-benachrichtigung] Resend:", await res.text());
     }
   }
 
@@ -222,6 +239,27 @@ export async function sendeEinsatzBenachrichtigung(
   if (params.startzeit) msgParts.push(`um ${startZeit}`);
   if (adresse) msgParts.push(`· ${adresse}`);
   const message = msgParts.join(" ");
+
+  if (hatPushAktiv) {
+    try {
+      const pushOk = await sendePushFuerEinsatz({
+        employeeId: params.employeeId,
+        title: `Neuer Einsatz: ${projektName}`,
+        body: message,
+        url: pwaLink,
+      });
+      if (!pushOk) {
+        throw new Error("push_failed");
+      }
+    } catch (e) {
+      console.warn("[einsatz-benachrichtigung] Push:", e);
+      if (!params.nurNotification && emp.email) {
+        await sendeEinsatzEmailResend();
+      }
+    }
+  } else if (!params.nurNotification && emp.email) {
+    await sendeEinsatzEmailResend();
+  }
 
   const { error: nErr } = await supabase.from("notifications").insert({
     employee_id: params.employeeId,
@@ -237,11 +275,4 @@ export async function sendeEinsatzBenachrichtigung(
   if (nErr) {
     console.warn("[einsatz-benachrichtigung] notifications:", nErr.message);
   }
-
-  await sendePushFuerEinsatz({
-    employeeId: params.employeeId,
-    title: `Neuer Einsatz: ${projektName}`,
-    body: message,
-    url: pwaLink,
-  });
 }

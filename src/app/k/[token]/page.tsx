@@ -1,8 +1,26 @@
+import type { Metadata } from "next";
 import {
   istGueltigeTokenZeichenfolge,
   resolveToken,
 } from "@/lib/pwa/token-resolver";
 import { KundenPortalClient } from "@/components/pwa/KundenPortalClient";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ token: string }>;
+}): Promise<Metadata> {
+  const { token } = await params;
+  if (!istGueltigeTokenZeichenfolge(token)) {
+    return { title: "Kundenportal" };
+  }
+  return {
+    title: "Projektstatus",
+    manifest: `/k/${token}/manifest.webmanifest`,
+    themeColor: "#01696f",
+    appleWebApp: { capable: true, title: "Projektstatus" },
+  };
+}
 
 export default async function KundenPortalPage({
   params,

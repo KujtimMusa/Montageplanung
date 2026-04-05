@@ -5,7 +5,13 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { PwaPushSubscribe } from "@/components/pwa/PwaPushSubscribe";
 
-export function PwaProfilActions({ token }: { token: string }) {
+export function PwaProfilActions({
+  token,
+  vapidKonfiguriert,
+}: {
+  token: string;
+  vapidKonfiguriert: boolean;
+}) {
   const [busy, setBusy] = useState(false);
 
   function kopieren() {
@@ -25,7 +31,7 @@ export function PwaProfilActions({ token }: { token: string }) {
 
   return (
     <div className="space-y-3">
-      <PwaPushSubscribe token={token} />
+      <PwaPushSubscribe token={token} vapidKonfiguriert={vapidKonfiguriert} />
       <Button
         type="button"
         variant="secondary"

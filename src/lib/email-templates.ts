@@ -106,8 +106,12 @@ export function templateEinsatzNeu(data: {
   ${pwaBlock}
 
   <p style="color:#71717a;font-size:12px;margin-top:20px;line-height:1.5;max-width:520px">
-    Tipp: In Safari auf <strong style="color:#a1a1aa">Teilen</strong> →
-    <strong style="color:#a1a1aa">„Zum Home-Bildschirm“</strong> tippen, um die Monteur-App dauerhaft zu speichern.
+    <strong style="color:#e4e4e7">Installierte App nutzen:</strong> E-Mail in <strong>Chrome</strong> oder <strong>Safari</strong> öffnen (nicht in der Gmail-/Outlook-Vorschau) und den Button antippen.
+    iOS öffnet Links aus der Mail oft in Safari – das ist normal; die gespeicherte Home-Bildschirm-App können Sie dort über dieselbe Adresse starten.
+  </p>
+  <p style="color:#52525b;font-size:11px;margin-top:12px;line-height:1.5;max-width:520px">
+    Android (Chrome): Wenn die App installiert ist, kann der gleiche Link in Chrome dieselbe Sitzung nutzen.
+    In Safari: <strong style="color:#a1a1aa">Teilen</strong> → <strong style="color:#a1a1aa">„Zum Home-Bildschirm“</strong> für die Monteur-App.
   </p>
 
   <div style="${FOOTER_STYLE}">
@@ -176,6 +180,38 @@ export function templateKundenZugang(data: {
     </a>
   </div>
   <p style="color:#52525b;font-size:12px">${data.projektName}</p>
+  <p style="color:#52525b;font-size:11px;margin-top:16px;line-height:1.5">
+    Tipp: Seite speichern — auf dem Smartphone <strong style="color:#a1a1aa">Teilen</strong> →
+    <strong style="color:#a1a1aa">Zum Home-Bildschirm</strong>, damit Sie Termine immer aktuell sehen (ohne App-Store).
+  </p>
+</div>`,
+  };
+}
+
+/** Hinweis nach Planungsänderung — Link zum Kundenportal. */
+export function templateKundenTermineUpdate(data: {
+  kundenName: string;
+  projektName: string;
+  firmenName: string;
+  portalLink: string;
+}): { subject: string; html: string } {
+  return {
+    subject: `Termine aktualisiert: ${data.projektName}`,
+    html: `
+<div style="${BASE_STYLE}">
+  <h1 style="color:#f4f4f5;font-size:18px;font-weight:700;margin:0 0 8px">Hallo ${data.kundenName}</h1>
+  <p style="color:#71717a;font-size:14px;margin:0 0 16px">
+    Für Ihr Projekt „${data.projektName}“ bei ${data.firmenName} gibt es neue oder geänderte Termine — wer wann vor Ort ist, sehen Sie im Portal.
+  </p>
+  <div style="margin:20px 0">
+    <a href="${data.portalLink}" style="display:inline-block;background:#01696f;color:#fff;text-decoration:none;padding:14px 22px;border-radius:12px;font-size:15px;font-weight:600">
+      Termine &amp; Status ansehen
+    </a>
+  </div>
+  <p style="color:#52525b;font-size:11px;line-height:1.5">
+    Link zum Merken:<br/>
+    <span style="word-break:break-all;color:#71717a">${data.portalLink}</span>
+  </p>
 </div>`,
   };
 }

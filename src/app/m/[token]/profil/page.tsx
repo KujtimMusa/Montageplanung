@@ -102,7 +102,12 @@ export default async function PwaProfilPage({
         </ul>
       </div>
 
-      <PwaProfilActions token={token} />
+      <PwaProfilActions
+        token={token}
+        vapidKonfiguriert={Boolean(
+          process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim()
+        )}
+      />
     </div>
   );
 }

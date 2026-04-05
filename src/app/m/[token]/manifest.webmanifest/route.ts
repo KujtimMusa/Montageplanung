@@ -31,6 +31,10 @@ export async function GET(
     orientation: "portrait-primary" as const,
     background_color: "#0f172a",
     theme_color: "#01696f",
+    /** Wo möglich: bestehendes PWA-Fenster bei gleicher Scope-URL wiederverwenden (Chrome u. a.). */
+    launch_handler: {
+      client_mode: "navigate-existing" as const,
+    },
     icons: [
       {
         src: "/icons/icon-192.png",
