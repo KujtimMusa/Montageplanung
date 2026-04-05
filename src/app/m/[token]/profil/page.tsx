@@ -7,6 +7,7 @@ import {
 } from "@/lib/pwa/token-resolver";
 import { PwaProfilActions } from "@/components/pwa/PwaProfilActions";
 import { rolleLabel } from "@/lib/rollen";
+import { ladeMonteurEinsaetzeZeitraum } from "@/lib/pwa/monteur-einsatz-zugriff";
 
 export default async function PwaProfilPage({
   params,
@@ -49,15 +50,20 @@ export default async function PwaProfilPage({
     new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     "yyyy-MM-dd"
   );
-  const { data: kommend } = await supabase
-    .from("assignments")
-    .select("id,date,start_time,projects(title)")
-    .eq("employee_id", resolved.employeeId)
-    .eq("organization_id", resolved.orgId)
-    .gte("date", format(jetzt, "yyyy-MM-dd"))
-    .lte("date", grenze)
-    .order("date", { ascending: true })
-    .limit(10);
+  const { rows: kommendRaw, error: kommendErr } =
+    await ladeMonteurEinsaetzeZeitraum(supabase, {
+      employeeId: resolved.employeeId,
+      orgId: resolved.orgId,
+      von: format(jetzt, "yyyy-MM-dd"),
+      bis: grenze,
+      limit: 10,
+    });
+  const kommend = (kommendErr ? [] : kommendRaw) as {
+    id: string;
+    date: string;
+    start_time: string;
+    projects: { title?: string } | { title?: string }[] | null;
+  }[];
 
   return (
     <div className="space-y-6 p-4">

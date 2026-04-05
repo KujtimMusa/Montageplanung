@@ -4,6 +4,10 @@ import {
   istGueltigeTokenZeichenfolge,
   resolveToken,
 } from "@/lib/pwa/token-resolver";
+import {
+  monteurDarfEinsatzSehen,
+  monteurIstEinsatzVertreter,
+} from "@/lib/pwa/monteur-einsatz-zugriff";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -71,7 +75,7 @@ export async function POST(request: Request) {
 
   const { data: assignment, error: aErr } = await supabase
     .from("assignments")
-    .select("id, organization_id, employee_id, project_id")
+    .select("id, organization_id, employee_id, project_id, team_id")
     .eq("id", assignmentId)
     .maybeSingle();
 
@@ -79,11 +83,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Einsatz nicht gefunden" }, { status: 404 });
   }
 
-  if (
-    (assignment.organization_id as string) !== resolved.orgId ||
-    (assignment.employee_id as string | null) !== resolved.employeeId
-  ) {
+  const darf = await monteurDarfEinsatzSehen(
+    supabase,
+    resolved.orgId,
+    resolved.employeeId,
+    {
+      organization_id: assignment.organization_id as string,
+      employee_id: (assignment.employee_id as string | null) ?? null,
+      team_id: (assignment.team_id as string | null) ?? null,
+    }
+  );
+  if (!darf) {
     return NextResponse.json({ error: "Kein Zugriff auf diesen Einsatz" }, { status: 403 });
+  }
+
+  if (
+    !monteurIstEinsatzVertreter(
+      (assignment.employee_id as string | null) ?? null,
+      resolved.employeeId
+    )
+  ) {
+    return NextResponse.json(
+      { error: "Nur der eingeteilte Kollege kann hier stempeln." },
+      { status: 403 }
+    );
   }
 
   const { data: offen } = await supabase

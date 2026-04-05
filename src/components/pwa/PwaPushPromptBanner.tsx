@@ -84,8 +84,9 @@ export function PwaPushPromptBanner({ token }: { token: string }) {
           Einsätze per Push mitbekommen
         </p>
         <p className="mt-0.5 text-zinc-400">
-          Kurz erlauben — besonders sinnvoll, wenn du die App über einen
-          E-Mail-Link im Browser öffnest.
+          Links aus der Mail öffnen oft einen <strong>anderen Browser</strong> als
+          deine installierte App — Push muss dort einmal erlaubt werden. In der
+          gespeicherten PWA bitte ebenfalls aktivieren.
         </p>
         <div className="mt-2 flex flex-wrap gap-2">
           <Button

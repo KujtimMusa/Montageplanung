@@ -6,6 +6,7 @@ import {
   istGueltigeTokenZeichenfolge,
   resolveToken,
 } from "@/lib/pwa/token-resolver";
+import { ladeMonteurEinsaetzeZeitraum } from "@/lib/pwa/monteur-einsatz-zugriff";
 import { Zap } from "lucide-react";
 
 export default async function PwaAktivPage({
@@ -50,13 +51,24 @@ export default async function PwaAktivPage({
   }
 
   const heute = format(new Date(), "yyyy-MM-dd");
-  const { data: heuteEinsaetze } = await supabase
-    .from("assignments")
-    .select("id,date,start_time,end_time,status,projects(title)")
-    .eq("employee_id", resolved.employeeId)
-    .eq("organization_id", resolved.orgId)
-    .eq("date", heute)
-    .order("start_time", { ascending: true });
+  const { rows: heuteRaw, error: heuteErr } = await ladeMonteurEinsaetzeZeitraum(
+    supabase,
+    {
+      employeeId: resolved.employeeId,
+      orgId: resolved.orgId,
+      von: heute,
+      bis: heute,
+      limit: 30,
+    }
+  );
+  const heuteEinsaetze = (heuteErr ? [] : heuteRaw) as {
+    id: string;
+    date: string;
+    start_time: string;
+    end_time: string;
+    status: string;
+    projects: { title?: string } | { title?: string }[] | null;
+  }[];
 
   return (
     <div className="space-y-6 p-4">

@@ -8,6 +8,10 @@ import {
   resolveToken,
 } from "@/lib/pwa/token-resolver";
 import { ZeiterfassungWidget } from "@/components/pwa/ZeiterfassungWidget";
+import {
+  monteurDarfEinsatzSehen,
+  monteurIstEinsatzVertreter,
+} from "@/lib/pwa/monteur-einsatz-zugriff";
 import { EinsatzBaudoku } from "@/components/pwa/EinsatzBaudoku";
 import { ArrowLeft, ExternalLink, Phone } from "lucide-react";
 
@@ -29,7 +33,7 @@ export default async function PwaEinsatzDetailPage({
   const { data: a, error } = await supabase
     .from("assignments")
     .select(
-      `id,employee_id,organization_id,date,start_time,end_time,status,notes,
+      `id,employee_id,team_id,organization_id,date,start_time,end_time,status,notes,
        project_id, project_title,
        projects(id,title,adresse,notes,customer_id,
          customers(company_name,phone,address,city))`
@@ -41,12 +45,24 @@ export default async function PwaEinsatzDetailPage({
     notFound();
   }
 
-  if (
-    (a.employee_id as string | null) !== resolved.employeeId ||
-    (a.organization_id as string) !== resolved.orgId
-  ) {
+  const darfSehen = await monteurDarfEinsatzSehen(
+    supabase,
+    resolved.orgId,
+    resolved.employeeId,
+    {
+      organization_id: a.organization_id as string,
+      employee_id: (a.employee_id as string | null) ?? null,
+      team_id: (a.team_id as string | null) ?? null,
+    }
+  );
+  if (!darfSehen) {
     notFound();
   }
+
+  const darfStempeln = monteurIstEinsatzVertreter(
+    (a.employee_id as string | null) ?? null,
+    resolved.employeeId
+  );
 
   const pid = a.project_id as string | null;
   const proj = a.projects as Record<string, unknown> | Record<string, unknown>[] | null;
@@ -186,11 +202,18 @@ export default async function PwaEinsatzDetailPage({
 
       <section>
         <h2 className="mb-2 text-sm font-semibold text-zinc-400">Zeiterfassung</h2>
-        <ZeiterfassungWidget
-          token={token}
-          assignmentId={assignmentId}
-          projectId={pid}
-        />
+        {darfStempeln ? (
+          <ZeiterfassungWidget
+            token={token}
+            assignmentId={assignmentId}
+            projectId={pid}
+          />
+        ) : (
+          <p className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-4 py-3 text-sm text-zinc-500">
+            Stempeln ist nur für den eingeteilten Kollegen möglich (Vertreter im
+            Kalender).
+          </p>
+        )}
       </section>
 
       {pid ? (

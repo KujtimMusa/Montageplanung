@@ -5,6 +5,7 @@ import {
   istGueltigeTokenZeichenfolge,
   resolveToken,
 } from "@/lib/pwa/token-resolver";
+import { monteurDarfEinsatzSehen } from "@/lib/pwa/monteur-einsatz-zugriff";
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const ERLAUBT = new Set([
@@ -86,14 +87,18 @@ export async function POST(request: Request) {
   if (assignmentId) {
     const { data: asn } = await supabase
       .from("assignments")
-      .select("id, employee_id, organization_id")
+      .select("id, employee_id, team_id, organization_id")
       .eq("id", assignmentId)
       .maybeSingle();
-    if (
-      !asn ||
-      (asn.organization_id as string) !== resolved.orgId ||
-      (asn.employee_id as string | null) !== resolved.employeeId
-    ) {
+    if (!asn) {
+      return NextResponse.json({ error: "Einsatz nicht gültig" }, { status: 403 });
+    }
+    const ok = await monteurDarfEinsatzSehen(supabase, resolved.orgId, resolved.employeeId, {
+      organization_id: asn.organization_id as string,
+      employee_id: (asn.employee_id as string | null) ?? null,
+      team_id: (asn.team_id as string | null) ?? null,
+    });
+    if (!ok) {
       return NextResponse.json({ error: "Einsatz nicht gültig" }, { status: 403 });
     }
   }

@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { PwaBottomNav } from "@/components/pwa/PwaBottomNav";
 import { PwaInstallBanner } from "@/components/pwa/PwaInstallBanner";
 import { PwaPushPromptBanner } from "@/components/pwa/PwaPushPromptBanner";
+import { MonteurAppLiveRefresh } from "@/components/pwa/MonteurAppLiveRefresh";
 
 export function PwaMonteurShell({
   token,
@@ -22,6 +23,7 @@ export function PwaMonteurShell({
   return (
     <>
       <PwaInstallBanner onBannerVisibleChange={onBannerVisibleChange} />
+      <MonteurAppLiveRefresh />
       <PwaPushPromptBanner token={token} />
       <div
         className={cn(

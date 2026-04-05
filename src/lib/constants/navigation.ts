@@ -3,6 +3,7 @@ import {
   Bot,
   CalendarDays,
   CalendarOff,
+  Clock,
   FolderKanban,
   LayoutDashboard,
   Settings,
@@ -22,6 +23,12 @@ export type NavEintrag = {
 /** Desktop-Sidebar & gemeinsame Reihenfolge */
 export const sidebarNavigation: NavEintrag[] = [
   { href: "/dashboard", label: "Dashboard", labelKurz: "Home", icon: LayoutDashboard },
+  {
+    href: "/zeiterfassung",
+    label: "Zeiterfassung",
+    labelKurz: "Zeit",
+    icon: Clock,
+  },
   { href: "/teams", label: "Teams", labelKurz: "Teams", icon: Users },
   {
     href: "/abwesenheiten",

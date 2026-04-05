@@ -9,6 +9,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { CalendarDays, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ladeMonteurEinsaetzeListe } from "@/lib/pwa/monteur-einsatz-zugriff";
 
 function initialen(name: string): string {
   const p = name.trim().split(/\s+/).filter(Boolean);
@@ -44,26 +45,16 @@ export default async function PwaProjektePage({
     "yyyy-MM-dd"
   );
 
-  const { data: rowsRaw, error } = await supabase
-    .from("assignments")
-    .select(
-      `id,date,start_time,end_time,status,notes,project_title,
-       project_id, projects(id,title,adresse,customer_id, customers(company_name,address,city,phone))`
-    )
-    .eq("employee_id", resolved.employeeId)
-    .eq("organization_id", resolved.orgId)
-    .or(`status.neq.abgeschlossen,date.gte.${grenze}`)
-    .order("date", { ascending: true })
-    .order("start_time", { ascending: true });
+  const { rows: rowsRaw, error: listeErr } = await ladeMonteurEinsaetzeListe(
+    supabase,
+    {
+      employeeId: resolved.employeeId,
+      orgId: resolved.orgId,
+      grenze,
+    }
+  );
 
-  const rows = (rowsRaw ?? []).filter((a) => {
-    const st = String(a.status ?? "").toLowerCase();
-    const d = a.date as string;
-    if (st !== "abgeschlossen") return true;
-    return d >= grenze;
-  });
-
-  if (error) {
+  if (listeErr) {
     return (
       <div className="p-4 text-sm text-red-400">
         Einsätze konnten nicht geladen werden.
@@ -71,7 +62,27 @@ export default async function PwaProjektePage({
     );
   }
 
-  const liste = rows ?? [];
+  type Zeile = {
+    id: string;
+    date: string;
+    start_time: string;
+    end_time: string;
+    status: string;
+    notes?: string | null;
+    project_title?: string | null;
+    project_id: string | null;
+    projects: unknown;
+  };
+
+  const rows = (rowsRaw ?? []).filter((raw) => {
+    const a = raw as Zeile;
+    const st = String(a.status ?? "").toLowerCase();
+    const d = a.date as string;
+    if (st !== "abgeschlossen") return true;
+    return d >= grenze;
+  }) as Zeile[];
+
+  const liste = rows;
   const projectIds = Array.from(
     new Set(
       liste
@@ -119,6 +130,9 @@ export default async function PwaProjektePage({
       <div>
         <h1 className="text-xl font-bold text-zinc-50">Meine Einsätze</h1>
         <p className="text-sm text-zinc-500">{resolved.orgName}</p>
+        <p className="mt-1 text-xs text-zinc-600">
+          Eigene Einteilungen und Einsätze Ihrer Teams (laut Kalender).
+        </p>
       </div>
 
       {sorted.length === 0 ? (
