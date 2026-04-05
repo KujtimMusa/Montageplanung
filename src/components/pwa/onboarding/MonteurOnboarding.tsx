@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   Bell,
   Briefcase,
@@ -19,7 +20,7 @@ import type { ResolvedEmployee } from "@/lib/pwa/token-resolver";
 import { usePwaOnboarding } from "@/hooks/usePwaOnboarding";
 import {
   meldePushStatus,
-  subscribeMonteurPush,
+  registerPushSubscription,
 } from "@/lib/pwa/monteur-push-client";
 
 type Platform = "ios" | "android" | "desktop";
@@ -108,30 +109,52 @@ export function MonteurOnboarding({
 
   async function pushAktivieren() {
     if (!vapid) {
-      await meldePushStatus(token, "unsupported");
+      try {
+        await meldePushStatus(token, "unsupported");
+      } catch {
+        /* ignore */
+      }
       setPushOutcome("unsupported");
       setStep(4);
       return;
     }
     if (!("Notification" in window)) {
-      await meldePushStatus(token, "unsupported");
+      try {
+        await meldePushStatus(token, "unsupported");
+      } catch {
+        /* ignore */
+      }
       setPushOutcome("unsupported");
       setStep(4);
       return;
     }
+
     setPushBusy(true);
     try {
-      await subscribeMonteurPush(token);
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") {
+        try {
+          await meldePushStatus(token, "denied");
+        } catch {
+          /* ignore */
+        }
+        setPushOutcome("denied");
+        setStep(4);
+        return;
+      }
+
+      await registerPushSubscription(token);
       setPushOutcome("granted");
       setStep(4);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "";
-      if (msg.includes("nicht erlaubt") || msg.includes("not")) {
-        await meldePushStatus(token, "denied");
-        setPushOutcome("denied");
-      } else {
-        setPushOutcome("denied");
+      const msg = e instanceof Error ? e.message : String(e);
+      try {
+        await meldePushStatus(token, "unsupported");
+      } catch {
+        /* ignore */
       }
+      toast.error(msg.length > 160 ? `${msg.slice(0, 160)}…` : msg);
+      setPushOutcome("unsupported");
       setStep(4);
     } finally {
       setPushBusy(false);
