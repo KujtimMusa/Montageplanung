@@ -52,6 +52,7 @@ import {
   MITARBEITER_ROLLEN_OPTIONS,
   rolleLabel,
 } from "@/lib/rollen";
+import { MitarbeiterPwaZugang } from "@/components/mitarbeiter/MitarbeiterPwaZugang";
 
 type MitarbeiterAbteilungEmbed = {
   department_id: string;
@@ -70,6 +71,7 @@ type Zeile = {
   phone: string | null;
   whatsapp: string | null;
   team_id: string | null;
+  pwa_token: string | null;
   abteilungsName: string | null;
   teamName: string | null;
   employee_departments?: MitarbeiterAbteilungEmbed[];
@@ -205,6 +207,7 @@ function zeileAusSupabase(
       nameAusDep ??
       (depId ? abMap[depId] ?? null : null),
     teamName: nameAusTeam ?? (tmId ? teamNameNachId[tmId] ?? null : null),
+    pwa_token: (m.pwa_token as string | null) ?? null,
     employee_departments: empDepts.length ? empDepts : undefined,
   };
 }
@@ -282,7 +285,7 @@ export function MitarbeiterVerwaltung({
           supabase
             .from("employees")
             .select(
-              "id,name,email,role,active,department_id,auth_user_id,phone,whatsapp,team_id, departments!department_id(name), teams!team_id(name,farbe)"
+              "id,name,email,role,active,department_id,auth_user_id,phone,whatsapp,team_id,pwa_token, departments!department_id(name), teams!team_id(name,farbe)"
             )
             .order("name"),
           supabase.from("departments").select("id,name,color").order("name"),
@@ -1197,6 +1200,16 @@ export function MitarbeiterVerwaltung({
                 </Select>
               </StammdatenFormField>
             </div>
+            {bearbeitenId &&
+            zeilen.find((z) => z.id === bearbeitenId)?.pwa_token ? (
+              <div className="border-t border-zinc-800 px-6 pb-2 pt-4">
+                <MitarbeiterPwaZugang
+                  mitarbeiterId={bearbeitenId}
+                  pwaToken={zeilen.find((z) => z.id === bearbeitenId)!.pwa_token!}
+                  appUrl={process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}
+                />
+              </div>
+            ) : null}
             <StammdatenSheetFooter
               onCancel={() => setMonteurSheetOffen(false)}
               isSubmitting={monteurF.formState.isSubmitting}

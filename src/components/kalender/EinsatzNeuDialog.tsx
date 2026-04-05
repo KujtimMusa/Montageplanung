@@ -369,7 +369,7 @@ export function EinsatzNeuDialog({
     try {
       const { data: mitarbeiter } = await supabase
         .from("employees")
-        .select("name,email")
+        .select("name,email,pwa_token")
         .eq("id", opts.employeeId)
         .maybeSingle();
       const email = (mitarbeiter as { email?: string | null } | null)?.email;
@@ -389,6 +389,11 @@ export function EinsatzNeuDialog({
         month: "2-digit",
         year: "numeric",
       });
+      const baseUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/\/$/, "");
+      const pwaTok = (mitarbeiter as { pwa_token?: string | null } | null)?.pwa_token;
+      const pwaLink =
+        baseUrl && pwaTok ? `${baseUrl}/m/${pwaTok}/projekte` : undefined;
+
       const { subject, html } = templateEinsatzNeu({
         mitarbeiter_name: name,
         projekt: opts.projektTitel,
@@ -396,6 +401,7 @@ export function EinsatzNeuDialog({
         start: opts.start.slice(0, 5),
         ende: opts.ende.slice(0, 5),
         betrieb_name: betriebName,
+        pwa_link: pwaLink,
       });
       const icsInhalt = generiereIcs({
         uid: opts.assignmentId,

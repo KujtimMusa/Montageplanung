@@ -1,5 +1,7 @@
+import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceRoleClient } from "@/lib/supabase/admin";
 import { darfMitarbeiterVerwalten } from "@/lib/auth/angestellter";
 
 const erlaubteRollen = [
@@ -33,6 +35,7 @@ export async function PATCH(
     .maybeSingle();
 
   const body = (await request.json()) as {
+    regenerate_pwa_token?: boolean;
     role?: string;
     active?: boolean;
     department_id?: string | null;
@@ -55,6 +58,31 @@ export async function PATCH(
 
   if (!canManageAll && !selbstNurMonteurTeamleiter) {
     return NextResponse.json({ fehler: "Keine Berechtigung." }, { status: 403 });
+  }
+
+  if (body.regenerate_pwa_token === true) {
+    if (!canManageAll) {
+      return NextResponse.json(
+        { fehler: "Nur Leitung kann den PWA-Token zurücksetzen." },
+        { status: 403 }
+      );
+    }
+    try {
+      const admin = createServiceRoleClient();
+      const { error: reErr } = await admin
+        .from("employees")
+        .update({ pwa_token: randomUUID() })
+        .eq("id", id);
+      if (reErr) {
+        return NextResponse.json({ fehler: reErr.message }, { status: 400 });
+      }
+      return NextResponse.json({ ok: true });
+    } catch (e) {
+      return NextResponse.json(
+        { fehler: e instanceof Error ? e.message : "Serverfehler" },
+        { status: 500 }
+      );
+    }
   }
 
   if (!canManageAll && selbstNurMonteurTeamleiter && body.active !== undefined) {

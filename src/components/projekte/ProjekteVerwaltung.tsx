@@ -69,6 +69,7 @@ import {
   autoStatus,
 } from "@/lib/projekt-status";
 import { KundeKombofeld } from "@/components/projekte/KundeKombofeld";
+import { ProjektPortalSektion } from "@/components/projekte/ProjektPortalSektion";
 
 type ProjektZeile = {
   id: string;
@@ -79,6 +80,7 @@ type ProjektZeile = {
   planned_end: string | null;
   weather_sensitive: boolean;
   customer_id: string | null;
+  customer_token: string | null;
   departments_involved: string[] | null;
   description: string | null;
   notes: string | null;
@@ -166,6 +168,7 @@ export const ProjekteVerwaltung = forwardRef<
   const [kunden, setKunden] = useState<KundeOpt[]>([]);
   const [abteilungen, setAbteilungen] = useState<AbteilungOpt[]>([]);
   const [eigeneId, setEigeneId] = useState<string | null>(null);
+  const [orgName, setOrgName] = useState<string>("");
   const [einsatzCounts, setEinsatzCounts] = useState<Record<string, number>>({});
   const [laden, setLaden] = useState(true);
   const [speichern, setSpeichern] = useState(false);
@@ -218,7 +221,7 @@ export const ProjekteVerwaltung = forwardRef<
           supabase
             .from("projects")
             .select(
-              "id,title,status,priority,planned_start,planned_end,weather_sensitive,customer_id,departments_involved,description,notes,created_at,customers(company_name)"
+              "id,title,status,priority,planned_start,planned_end,weather_sensitive,customer_id,customer_token,departments_involved,description,notes,created_at,customers(company_name)"
             )
             .order("created_at", { ascending: false }),
           supabase.from("customers").select("id,company_name").order("company_name"),
@@ -233,6 +236,7 @@ export const ProjekteVerwaltung = forwardRef<
             const cust = Array.isArray(c) ? c[0] : c;
             return {
               ...(row as unknown as ProjektZeile),
+              customer_token: (row.customer_token as string | null) ?? null,
               customers: (cust as { company_name: string } | null) ?? null,
             };
           })
@@ -259,6 +263,19 @@ export const ProjekteVerwaltung = forwardRef<
   useEffect(() => {
     void projekteLaden();
   }, [projekteLaden]);
+
+  useEffect(() => {
+    void (async () => {
+      const oid = await fetchMyOrganizationId(supabase);
+      if (!oid) return;
+      const { data: org } = await supabase
+        .from("organizations")
+        .select("name")
+        .eq("id", oid)
+        .maybeSingle();
+      setOrgName((org?.name as string) ?? "Betrieb");
+    })();
+  }, [supabase]);
 
   useEffect(() => {
     onAnzahlProjekteChange?.(zeilen.length);
@@ -1135,6 +1152,16 @@ export const ProjekteVerwaltung = forwardRef<
                 <div className="rounded-lg bg-zinc-900 p-3 text-sm text-zinc-300">
                   {detailProjekt.description.trim()}
                 </div>
+              ) : null}
+
+              {detailProjekt.customer_token ? (
+                <ProjektPortalSektion
+                  projectId={detailProjekt.id}
+                  customerToken={detailProjekt.customer_token}
+                  projectTitle={detailProjekt.title}
+                  orgName={orgName || "Betrieb"}
+                  appUrl={process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}
+                />
               ) : null}
 
               <SheetFooter className="mt-auto flex-col gap-2 border-t border-zinc-800 pt-4 sm:flex-row">

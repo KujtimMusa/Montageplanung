@@ -315,3 +315,47 @@
   visibility: hidden !important;
   pointer-events: none !important;
 }
+
+/* ── PWA (Monteur / Kundenportal) ── */
+.pwa-shell {
+  min-height: 100dvh;
+  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+}
+
+.pwa-bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: calc(64px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: rgb(9 9 11 / 0.95);
+  border-top: 1px solid rgb(39 39 42);
+  z-index: 50;
+}
+
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.btn-checkin {
+  height: 80px;
+  width: 100%;
+  font-size: 1.25rem;
+  font-weight: 700;
+  border-radius: 16px;
+  background: #01696f;
+  color: white;
+}
+
+.btn-checkout {
+  background: #dc2626;
+  color: white;
+}
+
+.pwa-shell input,
+.pwa-shell textarea,
+.pwa-shell select {
+  font-size: 16px !important;
+}

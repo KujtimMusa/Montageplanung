@@ -53,7 +53,17 @@ export function templateEinsatzNeu(data: {
   adresse?: string;
   anmerkung?: string;
   betrieb_name?: string;
+  /** Optional: Link zur Monteur-PWA (Einsätze). */
+  pwa_link?: string;
 }): { subject: string; html: string } {
+  const pwaBlock = data.pwa_link
+    ? `<div style="margin:20px 0">
+    <a href="${data.pwa_link}" style="display:inline-block;background:#01696f;color:#fff;text-decoration:none;padding:14px 22px;border-radius:12px;font-size:15px;font-weight:600">
+      Einsätze in der App öffnen
+    </a>
+    <p style="color:#52525b;font-size:11px;margin:10px 0 0">Monteur-App (PWA) — mit diesem Link ohne Login.</p>
+  </div>`
+    : "";
   return {
     subject: `📋 Neuer Einsatz: ${data.projekt} am ${data.datum}`,
     html: `
@@ -93,9 +103,96 @@ export function templateEinsatzNeu(data: {
         : ""
     }
   </div>
+  ${pwaBlock}
 
   <div style="${FOOTER_STYLE}">
     ${data.betrieb_name ?? "Einsatzplanung"} • Diese E-Mail wurde automatisch generiert.
+  </div>
+</div>`,
+  };
+}
+
+/** E-Mail mit PWA-Link (Monteur) — inhaltlich wie templateEinsatzNeu inkl. CTA. */
+export function templateEinsatzMonteur(data: {
+  monteursName: string;
+  projektName: string;
+  adresse: string;
+  datum: string;
+  startzeit: string;
+  teamMitglieder: string[];
+  pwaLink: string;
+  firmenName: string;
+}): { subject: string; html: string } {
+  const team =
+    data.teamMitglieder.length > 0
+      ? `<p style="${LABEL_STYLE}">Team</p><p style="${VALUE_STYLE}">${data.teamMitglieder.join(", ")}</p>`
+      : "";
+  return {
+    subject: `Neuer Einsatz: ${data.projektName} am ${data.datum}`,
+    html: `
+<div style="${BASE_STYLE}">
+  <h1 style="color:#f4f4f5;font-size:20px;font-weight:700;margin:0 0 12px">Hallo ${data.monteursName}</h1>
+  <div style="${CARD_STYLE}">
+    <p style="${LABEL_STYLE}">Projekt</p>
+    <p style="${VALUE_STYLE}">${data.projektName}</p>
+    <p style="margin-top:12px;${LABEL_STYLE}">Datum</p>
+    <p style="${VALUE_STYLE}">${data.datum}</p>
+    <p style="margin-top:12px;${LABEL_STYLE}">Start</p>
+    <p style="${VALUE_STYLE}">${data.startzeit}</p>
+    <p style="margin-top:12px;${LABEL_STYLE}">Adresse</p>
+    <p style="${VALUE_STYLE}">${data.adresse || "—"}</p>
+    ${team ? `<div style="margin-top:12px">${team}</div>` : ""}
+  </div>
+  <div style="margin:20px 0">
+    <a href="${data.pwaLink}" style="display:inline-block;background:#01696f;color:#fff;text-decoration:none;padding:14px 22px;border-radius:12px;font-size:15px;font-weight:600">
+      Zur Monteur-App
+    </a>
+  </div>
+  <div style="${FOOTER_STYLE}">${data.firmenName}</div>
+</div>`,
+  };
+}
+
+export function templateKundenZugang(data: {
+  kundenName: string;
+  projektName: string;
+  firmenName: string;
+  kundenLink: string;
+}): { subject: string; html: string } {
+  return {
+    subject: `Ihr Projektportal: ${data.projektName}`,
+    html: `
+<div style="${BASE_STYLE}">
+  <h1 style="color:#f4f4f5;font-size:20px;font-weight:700;margin:0 0 8px">Hallo ${data.kundenName}</h1>
+  <p style="color:#71717a;font-size:14px;margin:0 0 16px">Hier ist Ihr persönlicher Link zum Projektstatus bei ${data.firmenName}.</p>
+  <div style="margin:20px 0">
+    <a href="${data.kundenLink}" style="display:inline-block;background:#01696f;color:#fff;text-decoration:none;padding:14px 22px;border-radius:12px;font-size:15px;font-weight:600">
+      Projekt öffnen
+    </a>
+  </div>
+  <p style="color:#52525b;font-size:12px">${data.projektName}</p>
+</div>`,
+  };
+}
+
+export function templateKundenNachrichtAnKoordinator(data: {
+  projektName: string;
+  firmenName: string;
+  absenderName: string;
+  inhalt: string;
+}): { subject: string; html: string } {
+  return {
+    subject: `Nachricht zu „${data.projektName}“ (Kundenportal)`,
+    html: `
+<div style="${BASE_STYLE}">
+  <p style="color:#a78bfa;font-size:12px;font-weight:600;margin:0 0 8px">${data.firmenName}</p>
+  <h1 style="color:#f4f4f5;font-size:18px;font-weight:700;margin:0 0 12px">Neue Kunden-Nachricht</h1>
+  <p style="${LABEL_STYLE}">Projekt</p>
+  <p style="${VALUE_STYLE}">${data.projektName}</p>
+  <p style="margin-top:12px;${LABEL_STYLE}">Von</p>
+  <p style="${VALUE_STYLE}">${data.absenderName}</p>
+  <div style="${CARD_STYLE};margin-top:16px">
+    <p style="color:#e4e4e7;font-size:14px;line-height:1.6;white-space:pre-wrap">${data.inhalt}</p>
   </div>
 </div>`,
   };

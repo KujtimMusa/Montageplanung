@@ -9,8 +9,17 @@ function istOeffentlicheRoute(pfad: string): boolean {
   return false;
 }
 
+/** Token-PWA & öffentliche APIs: keine Session erzwingen. */
+function istOeffentlichePwaRoute(pfad: string): boolean {
+  if (pfad === "/m" || pfad.startsWith("/m/")) return true;
+  if (pfad === "/k" || pfad.startsWith("/k/")) return true;
+  if (pfad.startsWith("/api/pwa/")) return true;
+  return false;
+}
+
 /** Routen, die eine Session erzwingen (Prefix-Match inkl. Unterpfade). */
 function istGeschuetzteRoute(pfad: string): boolean {
+  if (istOeffentlichePwaRoute(pfad)) return false;
   if (pfad.startsWith("/api/")) return true;
 
   /* Fehlt eine App-Route (z. B. /benachrichtigungen)? → Prefix hier ergänzen. */

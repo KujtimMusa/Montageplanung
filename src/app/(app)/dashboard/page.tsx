@@ -1,6 +1,7 @@
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { DashboardRealtime } from "@/components/dashboard/DashboardRealtime";
+import { FeldstatusLive } from "@/components/dashboard/FeldstatusLive";
 import { DashboardUebersicht } from "@/components/dashboard/DashboardUebersicht";
 import { ladeDashboardDaten } from "@/lib/data/dashboard";
 
@@ -24,6 +25,7 @@ export default async function DashboardSeite() {
             </p>
           </div>
         </div>
+        <FeldstatusLive />
         <DashboardUebersicht daten={daten} />
       </div>
     </DashboardRealtime>
