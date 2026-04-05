@@ -39,6 +39,7 @@ function istGeschuetzteRoute(pfad: string): boolean {
     "/ki",
     "/ki-assistent",
     "/benachrichtigungen",
+    "/kalkulation",
   ];
 
   return prefixe.some(

@@ -17,6 +17,7 @@ import {
   Eye,
   FolderOpen,
   Loader2,
+  PanelRight,
   Pencil,
   Plus,
   Search,
@@ -797,6 +798,14 @@ export const ProjekteVerwaltung = forwardRef<
                     </td>
                     <td className="px-4 py-3.5">
                       <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                        <Link
+                          href={`/projekte/${z.id}`}
+                          className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+                          aria-label="Projektseite öffnen"
+                          title="Projektseite"
+                        >
+                          <PanelRight size={13} />
+                        </Link>
                         <button
                           type="button"
                           onClick={() => detailOeffnen(z)}

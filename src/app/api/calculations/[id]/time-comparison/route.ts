@@ -23,7 +23,24 @@ function epochHours(checkinIso: string, checkoutIso: string): number {
   return (b - a) / 3600000;
 }
 
-/** Geplante Stunden nur für `arbeit` aus `details.stunden` (jsonb). */
+/** Zahl aus details (Stunden/Menge), für Plan-Ist-Vergleich. */
+function parseHourField(raw: unknown): number | null {
+  if (raw === null || raw === undefined) {
+    return null;
+  }
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return raw;
+  }
+  if (typeof raw === "string") {
+    const n = parseFloat(raw.replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+/**
+ * Geplante Stunden nur für `arbeit`: KI-Vorschlag (`stunden`) oder Arbeitswert (`menge`).
+ */
 function plannedHoursFromDetails(
   positionType: string,
   details: unknown
@@ -35,15 +52,8 @@ function plannedHoursFromDetails(
     return null;
   }
   const d = details as Record<string, unknown>;
-  const raw = d.stunden;
-  if (typeof raw === "number" && Number.isFinite(raw)) {
-    return raw;
-  }
-  if (typeof raw === "string") {
-    const n = parseFloat(raw.replace(",", "."));
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
+  const stunden = d.stunden ?? d.menge ?? null;
+  return parseHourField(stunden);
 }
 
 function confidenceForPosition(

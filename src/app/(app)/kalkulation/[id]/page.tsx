@@ -59,6 +59,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { OfferModal } from "@/components/kalkulation/OfferModal";
 import { PositionDetailModal } from "@/components/kalkulation/PositionDetailModal";
 
 // ─── Typen (lokal) ───────────────────────────────────────────────────────────
@@ -1282,21 +1283,14 @@ export default function KalkulationBuilderPage() {
         </div>
       </footer>
 
-      <Dialog open={showOfferModal} onOpenChange={setShowOfferModal}>
-        <DialogContent className="border-zinc-800 bg-zinc-900 text-zinc-100">
-          <DialogHeader>
-            <DialogTitle>Angebot</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-zinc-400">
-            PDF-Erstellung und Versand folgen in einem späteren Schritt.
-          </p>
-          <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => setShowOfferModal(false)}>
-              Schließen
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <OfferModal
+        open={showOfferModal}
+        calculationId={id}
+        calculationTitle={calculation?.title ?? ""}
+        nettoGesamt={summary.nettoGesamt}
+        bruttoGesamt={summary.bruttoGesamt}
+        onClose={() => setShowOfferModal(false)}
+      />
 
       <PositionDetailModal
         positionId={activePositionId}

@@ -1,15 +1,33 @@
+"use client";
+
 import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
-import { createServiceRoleClient } from "@/lib/supabase/admin";
-import {
-  istGueltigeTokenZeichenfolge,
-  resolveToken,
-} from "@/lib/pwa/token-resolver";
 import { Badge } from "@/components/ui/badge";
-import { CalendarDays, MapPin } from "lucide-react";
+import { CalendarDays, Loader2, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ladeMonteurEinsaetzeListe } from "@/lib/pwa/monteur-einsatz-zugriff";
+
+type Zeile = {
+  id: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  status: string;
+  notes?: string | null;
+  project_title?: string | null;
+  project_id: string | null;
+  projects: unknown;
+};
+
+type ProjektePayload = {
+  orgName: string;
+  heute: string;
+  token: string;
+  rows: Zeile[];
+  teamMap: Record<string, { name: string; role: string }[]>;
+};
 
 function initialen(name: string): string {
   const p = name.trim().split(/\s+/).filter(Boolean);
@@ -24,112 +42,92 @@ function statusFarbe(status: string): string {
   return "border-blue-600/50 bg-blue-950/40 text-blue-300";
 }
 
-export default async function PwaProjektePage({
-  params,
-}: {
-  params: Promise<{ token: string }>;
-}) {
-  const { token } = await params;
-  if (!istGueltigeTokenZeichenfolge(token)) {
-    return null;
-  }
-  const resolved = await resolveToken(token);
-  if (!resolved || resolved.role === "customer") {
-    return null;
-  }
+export default function PwaProjektePage() {
+  const params = useParams();
+  const router = useRouter();
+  const tokenRaw = params?.token;
+  const token =
+    typeof tokenRaw === "string"
+      ? tokenRaw
+      : Array.isArray(tokenRaw)
+        ? tokenRaw[0] ?? ""
+        : "";
 
-  const supabase = createServiceRoleClient();
-  const heute = format(new Date(), "yyyy-MM-dd");
-  const grenze = format(
-    new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-    "yyyy-MM-dd"
-  );
+  const [gateChecked, setGateChecked] = useState(false);
+  const [data, setData] = useState<ProjektePayload | null>(null);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
 
-  const { rows: rowsRaw, error: listeErr } = await ladeMonteurEinsaetzeListe(
-    supabase,
-    {
-      employeeId: resolved.employeeId,
-      orgId: resolved.orgId,
-      grenze,
+  useEffect(() => {
+    if (!token) {
+      setGateChecked(true);
+      return;
     }
-  );
+    const onboardingKey = `pwa_onboarding_done_${token.slice(0, 8)}`;
+    try {
+      if (!localStorage.getItem(onboardingKey)) {
+        router.replace(`/m/${token}`);
+        return;
+      }
+    } catch {
+      router.replace(`/m/${token}`);
+      return;
+    }
+    setGateChecked(true);
+  }, [token, router]);
 
-  if (listeErr) {
+  useEffect(() => {
+    if (!gateChecked || !token) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const u = new URL("/api/pwa/monteur-projekte", window.location.origin);
+        u.searchParams.set("token", token);
+        const res = await fetch(u.toString(), { cache: "no-store" });
+        const j = (await res.json()) as ProjektePayload & { error?: string };
+        if (!res.ok) {
+          if (!cancelled) setLoadErr(j.error ?? "Fehler");
+          return;
+        }
+        if (!cancelled) setData(j);
+      } catch {
+        if (!cancelled) setLoadErr("Einsätze konnten nicht geladen werden.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [gateChecked, token]);
+
+  if (!gateChecked || !token) {
     return (
-      <div className="p-4 text-sm text-red-400">
-        Einsätze konnten nicht geladen werden.
+      <div className="flex min-h-[40vh] items-center justify-center p-8">
+        <Loader2 className="size-8 animate-spin text-zinc-500" aria-hidden />
       </div>
     );
   }
 
-  type Zeile = {
-    id: string;
-    date: string;
-    start_time: string;
-    end_time: string;
-    status: string;
-    notes?: string | null;
-    project_title?: string | null;
-    project_id: string | null;
-    projects: unknown;
-  };
-
-  const rows = (rowsRaw ?? []).filter((raw) => {
-    const a = raw as Zeile;
-    const st = String(a.status ?? "").toLowerCase();
-    const d = a.date as string;
-    if (st !== "abgeschlossen") return true;
-    return d >= grenze;
-  }) as Zeile[];
-
-  const liste = rows;
-  const projectIds = Array.from(
-    new Set(
-      liste
-        .map((r) => r.project_id as string | null)
-        .filter((x): x is string => Boolean(x))
-    )
-  );
-  const dates = Array.from(new Set(liste.map((r) => r.date as string)));
-
-  const teamMap = new Map<string, { name: string; role: string }[]>();
-  if (projectIds.length > 0 && dates.length > 0) {
-    const { data: peers } = await supabase
-      .from("assignments")
-      .select("project_id,date,employee_id, employees(name,role)")
-      .in("project_id", projectIds)
-      .in("date", dates)
-      .neq("employee_id", resolved.employeeId);
-
-    for (const p of peers ?? []) {
-      const pid = p.project_id as string;
-      const d = p.date as string;
-      const key = `${pid}|${d}`;
-      const emp = p.employees as
-        | { name?: string; role?: string }
-        | { name?: string; role?: string }[]
-        | null;
-      const e = Array.isArray(emp) ? emp[0] : emp;
-      if (!e?.name) continue;
-      const arr = teamMap.get(key) ?? [];
-      arr.push({ name: e.name, role: (e.role as string) ?? "" });
-      teamMap.set(key, arr);
-    }
+  if (loadErr) {
+    return (
+      <div className="p-4 text-sm text-red-400">{loadErr}</div>
+    );
   }
 
-  const sorted = [...liste].sort((a, b) => {
-    const da = a.date as string;
-    const db = b.date as string;
-    if (da === heute && db !== heute) return -1;
-    if (db === heute && da !== heute) return 1;
-    return da.localeCompare(db);
-  });
+  if (!data) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center p-8">
+        <Loader2 className="size-8 animate-spin text-zinc-500" aria-hidden />
+      </div>
+    );
+  }
+
+  const { orgName, heute, rows: sorted, teamMap: teamMapRaw, token: t } = data;
+  const teamMap = new Map(Object.entries(teamMapRaw));
 
   return (
     <div className="space-y-4 p-4">
       <div>
         <h1 className="text-xl font-bold text-zinc-50">Meine Einsätze</h1>
-        <p className="text-sm text-zinc-500">{resolved.orgName}</p>
+        <p className="text-sm text-zinc-500">{orgName}</p>
         <p className="mt-1 text-xs text-zinc-600">
           Eigene Einteilungen und Einsätze Ihrer Teams (laut Kalender).
         </p>
@@ -147,7 +145,10 @@ export default async function PwaProjektePage({
         <ul className="space-y-3">
           {sorted.map((a) => {
             const pid = a.project_id as string | null;
-            const proj = a.projects as Record<string, unknown> | Record<string, unknown>[] | null;
+            const proj = a.projects as
+              | Record<string, unknown>
+              | Record<string, unknown>[]
+              | null;
             const pOne = (Array.isArray(proj) ? proj[0] : proj) as {
               title?: string;
               adresse?: string | null;
@@ -174,7 +175,7 @@ export default async function PwaProjektePage({
             return (
               <li key={a.id as string}>
                 <Link
-                  href={`/m/${token}/einsatz/${a.id as string}`}
+                  href={`/m/${t}/einsatz/${a.id as string}`}
                   className={cn(
                     "touch-target block rounded-2xl border p-4 transition-colors",
                     heutig
