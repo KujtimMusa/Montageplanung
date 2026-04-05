@@ -9,6 +9,7 @@ import {
   DragOverlay,
   PointerSensor,
   useDraggable,
+  useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -23,6 +24,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   ArrowLeft,
+  ChevronRight,
   GripVertical,
   MoreHorizontal,
   Plus,
@@ -242,6 +244,31 @@ function lineAmountFromPosition(
   return lineAmountNonNachlass(pos);
 }
 
+/** Geschätzte Selbstkosten (EK) für Rohertrag — unabhängig vom Verkaufspreis. */
+function lineSelfCost(pos: CalculationPosition): number {
+  if (pos.position_type === "nachlass") return 0;
+  const d = pos.details ?? {};
+  switch (pos.position_type) {
+    case "arbeit": {
+      const m = num(d.menge);
+      const k = num(d.kosten_stundensatz);
+      if (m > 0 && k > 0) return m * k;
+      return 0;
+    }
+    case "material": {
+      const m = num(d.menge);
+      const ek = num(d.ek_preis);
+      if (m > 0 && ek > 0) return m * ek;
+      return 0;
+    }
+    case "fremdleistung":
+      return num(d.betrag);
+    case "pauschal":
+    default:
+      return 0;
+  }
+}
+
 function calcSummary(positions: CalculationPosition[]) {
   const sorted = [...positions].sort((a, b) => a.sort_order - b.sort_order);
   let arbeitskosten = 0;
@@ -250,6 +277,7 @@ function calcSummary(positions: CalculationPosition[]) {
   let fremdleistung = 0;
   let nachlaesse = 0;
   let arbeitsStundenGesamt = 0;
+  let selbstkostenGesamt = 0;
   const lineAmounts = new Map<string, number>();
 
   for (let i = 0; i < sorted.length; i++) {
@@ -262,6 +290,7 @@ function calcSummary(positions: CalculationPosition[]) {
     if (p.position_type === "nachlass") {
       nachlaesse += a;
     } else {
+      selbstkostenGesamt += lineSelfCost(p);
       switch (p.position_type) {
         case "arbeit":
           arbeitskosten += a;
@@ -288,11 +317,10 @@ function calcSummary(positions: CalculationPosition[]) {
   const avgStundensatz =
     arbeitsStundenGesamt > 0 ? arbeitskosten / arbeitsStundenGesamt : null;
 
-  const gesamtKosten = arbeitskosten + materialNetto;
   const margeAktuellPct =
-    nettoGesamt > 0
-      ? ((nettoGesamt - gesamtKosten) / nettoGesamt) * 100
-      : 0;
+    nettoGesamt > 0 && selbstkostenGesamt > 0
+      ? ((nettoGesamt - selbstkostenGesamt) / nettoGesamt) * 100
+      : null;
 
   return {
     arbeitskosten,
@@ -306,6 +334,7 @@ function calcSummary(positions: CalculationPosition[]) {
     arbeitsStundenGesamt,
     avgStundensatz,
     lineAmounts,
+    selbstkostenGesamt,
     margeAktuellPct,
   };
 }
@@ -402,6 +431,21 @@ function DraggableLibraryItem({
           <Plus size={16} />
         </button>
       </div>
+    </div>
+  );
+}
+
+function DroppableEmptyZone({ children }: { children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id: "calc-drop-empty" });
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "flex min-h-[min(320px,50vh)] flex-1 flex-col rounded-xl transition-colors",
+        isOver && "bg-emerald-950/25 ring-2 ring-emerald-500/35"
+      )}
+    >
+      {children}
     </div>
   );
 }
@@ -614,6 +658,19 @@ export default function KalkulationBuilderPage() {
     }
     return list;
   }, [libraryItems, librarySearchDebounced, libraryTradeFilter]);
+
+  /** Gewerk → Einträge (Baum-Navigation in der Bibliothek). */
+  const libraryGrouped = useMemo(() => {
+    const map = new Map<string, LibraryItem[]>();
+    for (const it of libraryFiltered) {
+      const label = it.trade_categories?.name?.trim() || "Ohne Gewerk";
+      if (!map.has(label)) map.set(label, []);
+      map.get(label)!.push(it);
+    }
+    return Array.from(map.entries()).sort((a, b) =>
+      a[0].localeCompare(b[0], "de")
+    );
+  }, [libraryFiltered]);
 
   const summary = useMemo(() => calcSummary(positions), [positions]);
 
@@ -904,8 +961,13 @@ export default function KalkulationBuilderPage() {
       if (overId.startsWith("lib__")) return;
       const libId = activeId.slice(5);
       const item = libraryItems.find((i) => i.id === libId);
+      if (!item) return;
+      if (overId === "calc-drop-empty") {
+        void addFromLibrary(item);
+        return;
+      }
       const overPos = positions.find((p) => p.id === overId);
-      if (!item || !overPos) return;
+      if (!overPos) return;
       void addFromLibraryDragToGroup(item, overPos, positions);
       return;
     }
@@ -1031,13 +1093,15 @@ export default function KalkulationBuilderPage() {
   const targetPct = calculation?.margin_target_percent;
   const margePct = summary.margeAktuellPct;
   const margeBadgeClass =
-    targetPct == null
-      ? "bg-zinc-800 text-zinc-400"
-      : margePct > targetPct
-        ? "bg-emerald-900/60 text-emerald-300"
-        : Math.abs(margePct - targetPct) <= 5
-          ? "bg-amber-900/60 text-amber-200"
-          : "bg-red-900/60 text-red-300";
+    margePct == null
+      ? "bg-zinc-800 text-zinc-500"
+      : targetPct == null
+        ? "bg-zinc-800 text-zinc-400"
+        : margePct > targetPct
+          ? "bg-emerald-900/60 text-emerald-300"
+          : Math.abs(margePct - targetPct) <= 5
+            ? "bg-amber-900/60 text-amber-200"
+            : "bg-red-900/60 text-red-300";
 
   if (laden && !calculation) {
     return (
@@ -1203,17 +1267,12 @@ export default function KalkulationBuilderPage() {
               onChange={(e) => setLibrarySearchInput(e.target.value)}
             />
           </div>
-          <div
-            className={cn(
-              "flex gap-1.5 overflow-x-auto px-3 pb-3",
-              "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            )}
-          >
+          <div className="flex flex-wrap gap-1.5 px-3 pb-2">
             <button
               type="button"
               onClick={() => setLibraryTradeFilter("")}
               className={cn(
-                "shrink-0 rounded-full px-3 py-1 text-xs transition-colors",
+                "rounded-full px-3 py-1 text-xs transition-colors",
                 libraryTradeFilter === ""
                   ? "bg-zinc-600 text-zinc-100"
                   : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
@@ -1227,7 +1286,7 @@ export default function KalkulationBuilderPage() {
                 type="button"
                 onClick={() => setLibraryTradeFilter(tc.id)}
                 className={cn(
-                  "shrink-0 rounded-full px-3 py-1 text-xs transition-colors",
+                  "rounded-full px-3 py-1 text-xs transition-colors",
                   libraryTradeFilter === tc.id
                     ? "bg-zinc-600 text-zinc-100"
                     : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
@@ -1237,6 +1296,10 @@ export default function KalkulationBuilderPage() {
               </button>
             ))}
           </div>
+          <p className="px-3 pb-2 text-[10px] leading-snug text-zinc-600">
+            Gewerke in der Bibliothek unten aufklappen. Filter oben wirkt auf die
+            Suche.
+          </p>
           <div className="px-4 pb-2">
             <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-400 transition-colors">
               <Checkbox
@@ -1255,12 +1318,29 @@ export default function KalkulationBuilderPage() {
           </button>
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <div className="flex-1 overflow-y-auto pb-4">
-            {libraryFiltered.map((item) => (
-              <DraggableLibraryItem
-                key={item.id}
-                item={item}
-                onAdd={(it) => void addFromLibrary(it)}
-              />
+            {libraryGrouped.map(([tradeName, items]) => (
+              <details key={tradeName} className="group border-b border-zinc-800/40">
+                <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 marker:content-none [&::-webkit-details-marker]:hidden">
+                  <ChevronRight
+                    size={14}
+                    className="shrink-0 text-zinc-600 transition-transform group-open:rotate-90"
+                    aria-hidden
+                  />
+                  <span className="min-w-0 truncate">{tradeName}</span>
+                  <span className="ml-auto shrink-0 tabular-nums text-zinc-600">
+                    {items.length}
+                  </span>
+                </summary>
+                <div className="pb-1 pt-0.5">
+                  {items.map((item) => (
+                    <DraggableLibraryItem
+                      key={item.id}
+                      item={item}
+                      onAdd={(it) => void addFromLibrary(it)}
+                    />
+                  ))}
+                </div>
+              </details>
             ))}
             {libraryFiltered.length === 0 && (
               <p className="px-4 text-xs text-zinc-500">Keine Einträge.</p>
@@ -1272,22 +1352,25 @@ export default function KalkulationBuilderPage() {
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           {sortedPositions.length === 0 ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-8 text-center">
-              <div className="text-4xl text-zinc-600">📋</div>
-              <p className="text-sm font-medium text-zinc-400">
-                Noch keine Positionen
-              </p>
-              <p className="max-w-xs text-xs text-zinc-600">
-                Ziehe Positionen aus der Bibliothek links oder lege eine neue an
-              </p>
-              <button
-                type="button"
-                onClick={() => setShowQuickAdd(true)}
-                className="rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-2 text-sm text-zinc-300 hover:border-zinc-500"
-              >
-                ＋ Erste Position hinzufügen
-              </button>
-            </div>
+            <DroppableEmptyZone>
+              <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-8 text-center">
+                <div className="text-4xl text-zinc-600">📋</div>
+                <p className="text-sm font-medium text-zinc-400">
+                  Noch keine Positionen
+                </p>
+                <p className="max-w-xs text-xs text-zinc-600">
+                  Position aus der Bibliothek hierher ziehen (auch bei leerer Liste)
+                  oder eine neue Position anlegen.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowQuickAdd(true)}
+                  className="rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-2 text-sm text-zinc-300 hover:border-zinc-500"
+                >
+                  ＋ Erste Position hinzufügen
+                </button>
+              </div>
+            </DroppableEmptyZone>
           ) : (
             groupOrder.map((gkey) => {
               const list = groupMap.get(gkey) ?? [];
@@ -1416,6 +1499,14 @@ export default function KalkulationBuilderPage() {
             <span>Netto gesamt</span>
             <span>{formatEuro(summary.nettoGesamt)}</span>
           </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-xs text-zinc-500">Selbstkosten (EK / intern)</span>
+            <span className="text-xs text-zinc-400">
+              {summary.selbstkostenGesamt > 0
+                ? formatEuro(summary.selbstkostenGesamt)
+                : "—"}
+            </span>
+          </div>
         </div>
         <div className="flex flex-col items-end justify-center gap-1">
           <div className="text-sm text-zinc-400">
@@ -1428,12 +1519,22 @@ export default function KalkulationBuilderPage() {
               {formatEuro(summary.bruttoGesamt)}
             </span>
           </div>
-          <div className="mt-1 flex items-center gap-2">
-            <Badge className={cn("text-xs", margeBadgeClass)}>
-              Marge {margePct.toFixed(1)}%
-            </Badge>
-            {targetPct != null && (
-              <span className="text-xs text-zinc-500">Ziel {targetPct}%</span>
+          <div className="mt-1 max-w-[18rem] text-right">
+            <div className="flex items-center justify-end gap-2">
+              <Badge className={cn("text-xs", margeBadgeClass)}>
+                {margePct != null
+                  ? `Rohertrag ${margePct.toFixed(1)}%`
+                  : "Rohertrag —"}
+              </Badge>
+              {targetPct != null && (
+                <span className="text-xs text-zinc-500">Ziel {targetPct}%</span>
+              )}
+            </div>
+            {margePct == null && (
+              <p className="mt-1 text-[10px] text-zinc-600">
+                In Positionen: internen Stundensatz (Arbeit) und EK-Preis (Material)
+                pflegen; bei Fremdleistung zählt der Einkaufspreis.
+              </p>
             )}
           </div>
         </div>

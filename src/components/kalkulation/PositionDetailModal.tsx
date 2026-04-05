@@ -142,9 +142,11 @@ function buildDetailsForSave(
       copyStr("einheit");
       const m = parseOptNumber(draft.menge);
       const st = parseOptNumber(draft.stundensatz);
+      const kostenStd = parseOptNumber(draft.kosten_stundensatz);
       const stunden = parseOptNumber(draft.stunden);
       if (m !== undefined) o.menge = m;
       if (st !== undefined) o.stundensatz = st;
+      if (kostenStd !== undefined) o.kosten_stundensatz = kostenStd;
       if (stunden !== undefined) o.stunden = stunden;
       return o;
     }
@@ -500,7 +502,7 @@ export function PositionDetailModal({
                   />
                 </div>
                 <div>
-                  <Label className={fieldLabel}>Stundensatz (€/Std)</Label>
+                  <Label className={fieldLabel}>Stundensatz Verkauf (€/Std)</Label>
                   <Input
                     type="text"
                     inputMode="decimal"
@@ -514,6 +516,28 @@ export function PositionDetailModal({
                   <p className="mt-1 text-xs text-zinc-500">
                     💡 Richtwert: Elektro/Sanitär 65–85 €/h · Trockenbau/Maler
                     50–65 €/h · Allgemein 40–55 €/h
+                  </p>
+                </div>
+
+                <div>
+                  <Label className={fieldLabel}>
+                    Interner Stundensatz / Kosten (€/Std)
+                  </Label>
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    className={inputClass}
+                    placeholder="z. B. 42 (Lohn + NK)"
+                    value={String(draft.kosten_stundensatz ?? "")}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        kosten_stundensatz: e.target.value,
+                      }))
+                    }
+                  />
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Für Rohertrag im Footer — nicht der VK an den Kunden.
                   </p>
                 </div>
 

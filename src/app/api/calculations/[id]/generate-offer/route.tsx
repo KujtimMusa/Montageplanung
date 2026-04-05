@@ -75,9 +75,15 @@ function lineNetFromPosition(p: CalcPosition): number {
       }
       return 0;
     }
-    case "pauschal":
-    case "fremdleistung": {
+    case "pauschal": {
       return num(d.betrag) ?? 0;
+    }
+    case "fremdleistung": {
+      const betrag = num(d.betrag);
+      if (betrag == null) return 0;
+      const pct = num(d.aufschlag_pct);
+      const p = pct != null ? pct : 0;
+      return betrag * (1 + p / 100);
     }
     case "nachlass": {
       const mode = d.mode;
@@ -119,6 +125,17 @@ const SECTION_LABELS: Record<string, string> = {
   ausschluesse: "Ausschlüsse & Voraussetzungen",
 };
 
+const SECTION_DEFAULT_TEXTS: Record<string, string> = {
+  zahlungsbedingungen:
+    "Sofern nicht anders vereinbart, ist der Rechnungsbetrag innerhalb von 14 Tagen nach Rechnungsstellung ohne Abzug fällig. Bei Zahlungsverzug gelten die gesetzlichen Regelungen.",
+  gewaehrleistung:
+    "Es gilt die gesetzliche Gewährleistung. Die Gewährleistungsfrist beträgt bei Werkleistungen an Bauwerke grundsätzlich 5 Jahre ab Abnahme, sofern nicht ausdrücklich anderes vereinbart wurde.",
+  agb:
+    "Es gelten unsere Allgemeinen Geschäftsbedingungen (AGB) in der zum Angebotszeitpunkt gültigen Fassung. Auf Wunsch stellen wir sie gerne zur Verfügung.",
+  ausschluesse:
+    "Nicht enthalten sind u. a.: behördliche Genehmigungen, Gerüst durch Dritte (sofern nicht ausdrücklich positioniert), Altlasten, unvorhergesehene Mehraufwände durch nachträgliche Planänderungen. Maßgeblich sind die Leistungsbeschreibungen in diesem Angebot.",
+};
+
 type OfferPdfProps = {
   orgName: string;
   calcTitle: string;
@@ -134,6 +151,27 @@ type OfferPdfProps = {
   includeSections: string[];
 };
 
+function IntroParagraphs({ text }: { text: string }) {
+  const lines = text.split("\n").filter((l) => l.trim().length > 0);
+  const blocks = text.includes("\n\n")
+    ? text.split(/\n\n+/).map((b) => b.trim()).filter(Boolean)
+    : lines.length > 0
+      ? [lines.join(" ")]
+      : [];
+  if (blocks.length === 0) {
+    return <Text style={pdfStyles.muted}>—</Text>;
+  }
+  return (
+    <View style={{ marginTop: 10 }}>
+      {blocks.map((b, i) => (
+        <Text key={i} style={{ marginBottom: 8, lineHeight: 1.45 }}>
+          {b}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
 function OfferPdfDocument(props: OfferPdfProps) {
   const vatAmount = props.netSubtotal * props.vatRate;
   return (
@@ -146,7 +184,7 @@ function OfferPdfDocument(props: OfferPdfProps) {
         </Text>
         <Text style={{ marginTop: 6 }}>Kunde: {props.customerLabel}</Text>
         <Text>Projekt: {props.projectLabel}</Text>
-        <Text style={{ marginTop: 12 }}>{props.introText || "—"}</Text>
+        <IntroParagraphs text={props.introText} />
 
         <Text style={pdfStyles.h2}>Leistungspositionen</Text>
         <View style={pdfStyles.tableHead}>
@@ -179,13 +217,13 @@ function OfferPdfDocument(props: OfferPdfProps) {
           <View style={{ marginTop: 12 }}>
             <Text style={pdfStyles.h2}>Weitere Hinweise</Text>
             {props.includeSections.map((k) => (
-              <View key={k} wrap={false} style={{ marginBottom: 6 }}>
-                <Text style={{ fontWeight: "bold" }}>
+              <View key={k} wrap={false} style={{ marginBottom: 10 }}>
+                <Text style={{ fontWeight: "bold", marginBottom: 4 }}>
                   {SECTION_LABELS[k] ?? k}
                 </Text>
-                <Text style={pdfStyles.muted}>
-                  [Platzhalter — Inhalt aus Einstellungen / Templates in einer
-                  späteren Version]
+                <Text style={{ ...pdfStyles.muted, lineHeight: 1.45 }}>
+                  {SECTION_DEFAULT_TEXTS[k] ??
+                    "Bitte ergänzen Sie diesen Abschnitt in den Organisationseinstellungen."}
                 </Text>
               </View>
             ))}
