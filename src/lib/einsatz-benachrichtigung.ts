@@ -77,8 +77,20 @@ async function sendePushFuerEinsatz(opts: {
   const publicKey =
     process.env.VAPID_PUBLIC_KEY?.trim() ??
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim();
+  /** Nur Server-Env (nie NEXT_PUBLIC_*): Private Key darf nicht im Client-Bundle landen. */
   const privateKey = process.env.VAPID_PRIVATE_KEY?.trim();
-  if (!vapidSubject || !publicKey || !privateKey) return false;
+
+  console.log("[Push] VAPID gesetzt:", !!privateKey, {
+    subject: !!vapidSubject,
+    publicKey: !!publicKey,
+  });
+
+  if (!vapidSubject || !publicKey || !privateKey) {
+    console.warn(
+      "[Push] Abbruch: VAPID_SUBJECT / VAPID_PUBLIC_KEY (oder NEXT_PUBLIC_VAPID_PUBLIC_KEY) / VAPID_PRIVATE_KEY fehlen auf dem Server (z. B. Vercel → Environment Variables)."
+    );
+    return false;
+  }
 
   const mailto = vapidSubject.startsWith("mailto:")
     ? vapidSubject
@@ -90,6 +102,13 @@ async function sendePushFuerEinsatz(opts: {
     .from("push_subscriptions")
     .select("endpoint, p256dh, auth")
     .eq("employee_id", opts.employeeId);
+
+  const hatSubs = Boolean(subs?.length);
+  console.log("[Push] Subscriptions gefunden:", hatSubs, subs?.length ?? 0);
+  if (subs?.length) {
+    const first = subs[0] as { endpoint?: string };
+    console.log("[Push] Versand an (erstes Endpoint):", first?.endpoint?.slice(0, 50));
+  }
 
   if (!subs?.length) return false;
 
