@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { triggerAutomatisierung } from "@/lib/automatisierungen";
+import { sendeEinsatzBenachrichtigung } from "@/lib/einsatz-benachrichtigung";
 import { requireAdmin } from "@/lib/auth-check";
 import { z } from "zod";
 
@@ -122,15 +123,19 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
-      const { error } = await supabase.from("assignments").insert({
-        employee_id,
-        project_id,
-        project_title,
-        date,
-        start_time,
-        end_time,
-        organization_id,
-      });
+      const { data: inserted, error } = await supabase
+        .from("assignments")
+        .insert({
+          employee_id,
+          project_id,
+          project_title,
+          date,
+          start_time,
+          end_time,
+          organization_id,
+        })
+        .select("id")
+        .single();
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
@@ -139,6 +144,19 @@ export async function POST(req: NextRequest) {
         einsatz_titel: project_title,
         datum: date,
       });
+      if (inserted?.id) {
+        void sendeEinsatzBenachrichtigung({
+          assignmentId: inserted.id as string,
+          organizationId: organization_id,
+          employeeId: employee_id,
+          projectId: project_id,
+          projectTitle: project_title,
+          datum: date,
+          startzeit: start_time,
+          endzeit: end_time,
+          notes: null,
+        }).catch((e) => console.warn("[ki-actions] einsatz-benachrichtigung:", e));
+      }
       return NextResponse.json({ erfolg: true });
     }
 

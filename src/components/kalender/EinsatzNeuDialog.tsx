@@ -612,28 +612,39 @@ export function EinsatzNeuDialog({
           .insert(payload)
           .select("id")
           .single();
+
+        let insertedId: string | undefined = insertedAssignment?.id as
+          | string
+          | undefined;
+
         if (error) {
           if (error.message.includes("prioritaet") || error.code === "42703") {
             delete payload.prioritaet;
-            const { error: e2 } = await supabase
+            const { data: ins2, error: e2 } = await supabase
               .from("assignments")
-              .insert(payload);
+              .insert(payload)
+              .select("id")
+              .single();
             if (e2) {
               toast.error(e2.message);
               return;
             }
+            insertedId = ins2?.id as string | undefined;
           } else if (
             error.message.includes("dienstleister_id") ||
             error.code === "42703"
           ) {
             delete payload.dienstleister_id;
-            const { error: e2 } = await supabase
+            const { data: ins2, error: e2 } = await supabase
               .from("assignments")
-              .insert(payload);
+              .insert(payload)
+              .select("id")
+              .single();
             if (e2) {
               toast.error(e2.message);
               return;
             }
+            insertedId = ins2?.id as string | undefined;
           } else {
             toast.error(error.message);
             return;
@@ -643,7 +654,7 @@ export function EinsatzNeuDialog({
         // Partner-Einsatz: automatisch Anfrage-Pivot anlegen
         // (UI zeigt diese Einträge später als "Anfragen" + Status).
         const dlId = einDl;
-        const assignmentId = insertedAssignment?.id as string | undefined;
+        const assignmentId = insertedId;
         if (dlId && assignmentId) {
           const { error: upErr } = await supabase
             .from("assignment_subcontractors")
@@ -660,15 +671,32 @@ export function EinsatzNeuDialog({
         const projektTitel =
           projekte.find((x) => x.id === werte.projekt_id)?.title ?? "Einsatz";
         void automationNeuerEinsatzFireAndForget(empId, projektTitel, d);
-        if (insertedAssignment?.id) {
+        if (insertedId && empId) {
           void sendeEinsatzMailFireAndForget({
-            assignmentId: insertedAssignment.id as string,
+            assignmentId: insertedId,
             employeeId: empId,
             projektTitel,
             datum: d,
             start: startNorm,
             ende: endNorm,
           });
+          void fetch("/api/pwa/einsatz-benachrichtigung", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              assignmentId: insertedId,
+              organizationId: organizationId,
+              employeeId: empId,
+              projectId: werte.projekt_id,
+              projectTitle: projektTitel,
+              datum: d,
+              startzeit: startNorm,
+              endzeit: endNorm,
+              notes: werte.notes?.trim() || null,
+              nurNotification: true,
+            }),
+          }).catch(() => {});
         }
         insgesamt += 1;
       }

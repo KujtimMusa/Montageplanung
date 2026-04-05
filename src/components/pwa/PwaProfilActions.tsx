@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { PwaPushSubscribe } from "@/components/pwa/PwaPushSubscribe";
 
 export function PwaProfilActions({ token }: { token: string }) {
   const [busy, setBusy] = useState(false);
@@ -23,14 +24,17 @@ export function PwaProfilActions({ token }: { token: string }) {
   }
 
   return (
-    <Button
-      type="button"
-      variant="secondary"
-      className="touch-target w-full"
-      disabled={busy}
-      onClick={kopieren}
-    >
-      Link kopieren (PWA)
-    </Button>
+    <div className="space-y-3">
+      <PwaPushSubscribe token={token} />
+      <Button
+        type="button"
+        variant="secondary"
+        className="touch-target w-full"
+        disabled={busy}
+        onClick={kopieren}
+      >
+        Link kopieren (PWA)
+      </Button>
+    </div>
   );
 }

@@ -828,22 +828,56 @@ export function PlanungsKalender() {
       };
       if (eigeneMitarbeiterId) insertPayload.created_by = eigeneMitarbeiterId;
 
-      const { error } = await supabase.from("assignments").insert(insertPayload);
+      let insertedId: string | undefined;
+      const { data: insRow, error } = await supabase
+        .from("assignments")
+        .insert(insertPayload)
+        .select("id")
+        .single();
       if (error) {
         if (error.message.includes("prioritaet") || error.code === "42703") {
           delete insertPayload.prioritaet;
-          const { error: e2 } = await supabase
+          const { data: ins2, error: e2 } = await supabase
             .from("assignments")
-            .insert(insertPayload);
+            .insert(insertPayload)
+            .select("id")
+            .single();
           if (e2) {
             toast.error(e2.message);
             return;
           }
+          insertedId = ins2?.id as string | undefined;
         } else {
           toast.error(error.message);
           return;
         }
+      } else {
+        insertedId = insRow?.id as string | undefined;
       }
+
+      if (
+        insertedId &&
+        insertPayload.employee_id &&
+        meineOrganizationId
+      ) {
+        void fetch("/api/pwa/einsatz-benachrichtigung", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            assignmentId: insertedId,
+            organizationId: meineOrganizationId,
+            employeeId: insertPayload.employee_id as string,
+            projectId: (insertPayload.project_id as string) ?? null,
+            projectTitle: (insertPayload.project_title as string | null) ?? null,
+            datum: insertPayload.date as string,
+            startzeit: (insertPayload.start_time as string) ?? null,
+            endzeit: (insertPayload.end_time as string) ?? null,
+            notes: (insertPayload.notes as string | null) ?? null,
+          }),
+        }).catch(() => {});
+      }
+
       await bumpProjektGeplantWennNeu(supabase, projectId);
       const teamName =
         teamsListe.find((t) => t.id === teamId)?.name ?? "Team";
