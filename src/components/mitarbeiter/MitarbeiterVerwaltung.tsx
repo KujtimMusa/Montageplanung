@@ -53,6 +53,7 @@ import {
   rolleLabel,
 } from "@/lib/rollen";
 import { MitarbeiterPwaZugang } from "@/components/mitarbeiter/MitarbeiterPwaZugang";
+import { KoordinatorPwaZugang } from "@/components/mitarbeiter/KoordinatorPwaZugang";
 
 type MitarbeiterAbteilungEmbed = {
   department_id: string;
@@ -1381,6 +1382,16 @@ export function MitarbeiterVerwaltung({
                 onCheckedChange={setKoorAktiv}
               />
             </div>
+            {koorBearbeiten?.pwa_token ? (
+              <div className="border-t border-zinc-800/60 px-0 pt-4">
+                <KoordinatorPwaZugang
+                  mitarbeiterId={koorBearbeiten.id}
+                  pwaToken={koorBearbeiten.pwa_token}
+                  appUrl={process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}
+                  onTokenReset={() => void laden()}
+                />
+              </div>
+            ) : null}
           </div>
           <DialogFooter className="border-t border-zinc-800/60 px-6 pb-6 pt-3">
             <Button

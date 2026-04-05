@@ -407,9 +407,40 @@ export const ProjekteVerwaltung = forwardRef<
           organization_id: orgId,
         };
         if (eigeneId) insert.created_by = eigeneId;
-        const { error } = await supabase.from("projects").insert(insert);
+        const { data: neuProjekt, error } = await supabase
+          .from("projects")
+          .insert(insert)
+          .select("id, customer_token, title, customer_id")
+          .single();
         if (error) throw error;
         toast.success("Projekt angelegt.");
+
+        if (neuProjekt?.customer_id && neuProjekt.customer_token) {
+          const { data: kunde } = await supabase
+            .from("customers")
+            .select("email, company_name, contact_name")
+            .eq("id", neuProjekt.customer_id as string)
+            .maybeSingle();
+          const email = (kunde?.email as string | null)?.trim();
+          if (email) {
+            void fetch("/api/pwa/kunden-zugang-mail", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({
+                projektId: neuProjekt.id,
+                customerToken: neuProjekt.customer_token,
+                kundenEmail: email,
+                kundenName:
+                  (kunde?.contact_name as string | null)?.trim() ||
+                  (kunde?.company_name as string | null)?.trim() ||
+                  "Kunde",
+                projektName: neuProjekt.title,
+                orgId,
+              }),
+            }).catch(() => {});
+          }
+        }
       }
       setSheetOffen(false);
       sheetLeeren();

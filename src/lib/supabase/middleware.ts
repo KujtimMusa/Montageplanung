@@ -13,6 +13,7 @@ function istOeffentlicheRoute(pfad: string): boolean {
 function istOeffentlichePwaRoute(pfad: string): boolean {
   if (pfad === "/m" || pfad.startsWith("/m/")) return true;
   if (pfad === "/k" || pfad.startsWith("/k/")) return true;
+  if (pfad === "/pwa" || pfad.startsWith("/pwa/")) return true;
   if (pfad.startsWith("/api/pwa/")) return true;
   return false;
 }
